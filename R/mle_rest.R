@@ -30,6 +30,7 @@ mle_rest <- function(npass_effort_data,
                      col_name_stay = "stay",
                      col_name_cens = "cens",
                      focal_area) {
+
   act <- activity::fitact(
       activity_data,
       bw = bwcalc(activity_data, K = 3),
