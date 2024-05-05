@@ -3,10 +3,10 @@
 #' An example of dataset containing info on camera stations
 #'
 #' @format ## `station_data`
-#' A data frame with 5 columns:
+#' A data frame with 2 columns:
 #' \describe{
-#'   \item{station}{station id}
-#'   \item{covariate}{some covarate (e.g. altitude)}
+#'   \item{Station}{station id detecting an animal pass}
+#'   \item{x}{a habitat covairate}
 #' }
 #' @source {simulated data}
 "station_data"

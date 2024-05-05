@@ -9,11 +9,13 @@
 
 A data frame with 5 columns:
 \describe{
-\item{station}{station id detecting an animal pass}
-\item{datetime}{datatime infomation of detections}
-\item{species}{species name detected}
-\item{pass_number}{the number of times an animal passed through the focal area in a single video}
-\item{stay}{staying time of animals within a focal area}
+\item{Station}{station id detecting an animal pass}
+\item{DateTime}{datatime infomation of detections}
+\item{Term}{survey terms}
+\item{Species}{species name detected}
+\item{Nfocal}{the number of times an animal passed through the focal area in a single video}
+\item{Stay}{staying time of animals within a focal area}
+\item{Cens}{censored timing for staying time}
 }
 }
 }
@@ -24,6 +26,6 @@ A data frame with 5 columns:
 detection_data
 }
 \description{
-An example of dataset used for estimating animal density using REST model
+An example of dataset used for estimating animal density using REST/REST-RAD model
 }
 \keyword{datasets}

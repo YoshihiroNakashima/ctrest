@@ -5,7 +5,7 @@ Authors@R:
     person("Yoshihiro", "Nakashima", email = "yosshi1215jp@yahoo.co.jp", role = c("aut", "cre"))
 Description: What the package does (one paragraph).
 License: MIT + file LICENSE
-Imports: dplyr, lubridate, activity
+Imports: dplyr, tidyr, rstan, ggplot2, lubridate, activity, stats, extraDistr
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.1
@@ -14,5 +14,7 @@ Depends:
 LazyData: true
 Suggests: 
     knitr,
-    rmarkdown
+    rmarkdown,
+    testthat (>= 3.0.0)
 VignetteBuilder: knitr
+Config/testthat/edition: 3

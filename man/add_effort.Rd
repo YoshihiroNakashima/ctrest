@@ -6,19 +6,28 @@
 \usage{
 add_effort(
   detection_data,
-  npass_data,
-  col_name_station = "station",
-  col_name_datetime = "datetime"
+  station_data_formatted,
+  col_name_station,
+  col_name_datetime,
+  col_name_term = NULL,
+  plot = FALSE,
+  font_size = 8
 )
 }
 \arguments{
 \item{detection_data}{A data frame containing information for individual videos, with six columns: camera station name (station), capture datetime (datetime), species name (species), number of passes through the focal area (nfocal), duration of stay within the focal area for each pass in a video (stay), and whether the observation of the pass was censored (cens).}
 
-\item{npass_data}{""}
+\item{station_data_formatted}{""}
 
 \item{col_name_station}{Column name containing station id info}
 
 \item{col_name_datetime}{Column name containing datetime info}
+
+\item{col_name_term}{Column name containing datetime info}
+
+\item{plot}{Column name containing datetime info}
+
+\item{font_size}{Column name containing datetime info}
 }
 \value{
 data frame containing camera trapping effort (days) for each station
@@ -27,11 +36,26 @@ data frame containing camera trapping effort (days) for each station
 Caluculating camera trapping efforts from the detection data
 }
 \details{
-'start' and 'end' represent the dates when the camera trap first and last captured an image, respectively.
+'Start' and 'End' represent the dates when the camera trap first and last captured an image, respectively.
 }
 \examples{
-add_effort(detection_data = detection_data,
-npass_data = station_data,
-col_name_station = "station",
-col_name_datetime = "datetime")
+station_data_rest <- format_station_data(
+  detection_data = detection_data,
+  station_data = station_data,
+  col_name_station = "Station",
+  col_name_species = "Species",
+  col_name_y = "y",
+  model = "REST",
+  target_species = "A"
+)
+
+station_data_complete <- add_effort(
+  detection_data = detection_data,
+  station_data_formatted = station_data_rest,
+  col_name_station = "Station",
+  col_name_term = "Term",
+  col_name_datetime = "DateTime",
+  plot = TRUE,
+  font_size = 5
+)
 }

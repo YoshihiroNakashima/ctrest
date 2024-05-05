@@ -2,58 +2,67 @@
 % Please edit documentation in R/mle_rest.R
 \name{mle_rest}
 \alias{mle_rest}
-\title{Maximu-likelihood estimation of animal density using the REST model}
+\title{Maximum likelihood parameter estimation for the REST/RAD-REST model based on the implementation of Nelder and Mead (1965).}
 \usage{
-mle_rest(
-  npass_effort_data,
-  stay_data,
-  activity_data,
-  col_name_npass = "npass",
-  col_name_effort = "effort",
-  col_name_stay = "stay",
-  col_name_cens = "cens",
-  focal_area
-)
+mle_rest(station_data_complete, stay_data, activity_data, focal_area, model)
 }
 \arguments{
-\item{npass_effort_data}{\subsection{}{
-}}
+\item{station_data_complete}{The output of the add_effort function.}
 
-\item{stay_data}{\subsection{}{
-}}
+\item{stay_data}{The output of the format_stay function.}
 
-\item{activity_data}{\subsection{}{
-}}
+\item{activity_data}{The output of the format_activity function.}
 
-\item{col_name_npass}{\subsection{}{
-}}
+\item{focal_area}{The area of the focal area.}
 
-\item{col_name_effort}{#E#}
-
-\item{col_name_stay}{\subsection{}{
-}}
-
-\item{col_name_cens}{\subsection{}{
-}}
-
-\item{focal_area}{\subsection{}{
-}}
+\item{model}{Specify the model to use. Choose either "REST" or "RAD-REST".}
 }
 \value{
-estimated density
+A data frame containing the estimated density, its standard deviation (SD), the 95\% lower and upper confidence limits, AIC, and delta AIC value for each model.
 }
 \description{
-Maximu-likelihood estimation of animal density using the REST model
+Maximum likelihood parameter estimation for the REST/RAD-REST model based on the implementation of Nelder and Mead (1965).
 }
 \examples{
-#' mle_rest(
-npass_effort_data = npass_effort_data,
-stay_data = stay_data,
-activity_data = activity_data,
-col_name_npass = "npass",
-col_name_effort = "effort",
-col_name_stay = "stay",
-col_name_cens = "cens",
-focal_area)
+station_data_rest <- format_station_data(
+  detection_data = detection_data,
+  station_data = station_data,
+  col_name_station = "Station",
+  col_name_species = "Species",
+  col_name_y = "y",
+  model = "REST",
+  target_species = "A"
 )
+
+station_data_complete <- add_effort(
+  detection_data = detection_data,
+  station_data_formatted = station_data_rest,
+  col_name_station = "Station",
+  col_name_term = "Term",
+  col_name_datetime = "DateTime",
+  plot = TRUE,
+  font_size = 5
+)
+
+stay_data <- format_stay(
+  detection_data,
+  col_name_station = "Station",
+  col_name_species = "Species",
+  col_name_stay = "Stay",
+  col_name_cens = "Cens",
+  target_species = "A"
+)
+
+activity_data <- format_activity(
+  detection_data = detection_data,
+  col_name_species = "Species",
+  col_name_datetime = "DateTime",
+  target_species = "A"
+)
+
+model <- mle_rest(station_data_complete,
+                  stay_data,
+                  activity_data,
+                  focal_area = 1.56,
+                  model = "REST")
 }

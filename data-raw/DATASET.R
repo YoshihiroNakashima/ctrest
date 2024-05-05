@@ -1,145 +1,138 @@
-library(tidyverse)
-set.seed(123)
-# Number of camera-traps
-nstation <- 100
-# Station Name
-station <- paste0("ST", formatC(1:nstation, flag = "0", width = 3))
-# a covariate (e.g. habitat quality) for each station
-covariate <- rnorm(nstation, 0, 1)
-
-# Survey parameters
-survey <- 50
-effort <- tibble(station = station, effort = rep(24 * 60 * 60 * survey, nstation))
-focal <- 3.0
-censored <- 50
-
 rlnorm2 <- function(n, mean, sd) {
   sdlog <- sqrt(log((sd/mean)^2 + 1))
   meanlog <- log(mean) - (sdlog^2) / 2
   rlnorm(n, meanlog = meanlog, sdlog = sdlog)
 }
 
-# Species A ---------------------------------------------------------------
+library(tidyverse)
+set.seed(1)
+# Number of camera-traps
+nstation <- 100
+# Station Name
+station <- paste0("ST", formatC(1:nstation, flag = "0", width = 3))
 
+# setting basic variables
+
+focal <- 2.0
+censored <- 20
+
+
+# Assuming that cameras were checked once before survey terminated --------
 # Species A parameters
-rate <- 0.2
+mean <- 4
+sd <- 5
 density <- 10
-activity <- 0.5
 
-# Expected number of videos per camera-trap
-mu <- density * focal * 24 * 60 * 60 * survey * rate / 1000000 * activity * exp(0.5 * covariate) / mean(exp(0.5 * covariate))
-ndetection <- rpois(nstation, mu)
+# activity
+t.temp <- rnorm(1000, pi, 0.6)
+t.temp <- t.temp[t.temp < 2 * pi]
+# ラジアンから時分秒に変換
+time_in_seconds <- t.temp * (24 * 3600 / (2 * pi))
+time_as_hms <- seconds_to_period(time_in_seconds)
 
-# Random pass within focal area
-nfocal <- rbinom(sum(ndetection), size = 1, p = 0.5)
+library(activity)
 
-# Generate date and time
-start_date <- as.Date("2024-03-02")
-end_date <- as.Date("2024-04-29")
-date_sequence <- seq(start_date, end_date, by = "day")
-date <- sample(date_sequence, sum(ndetection), replace = TRUE)
+model<-fitact(t.temp, bw = 1.5*bwcalc(t.temp, K = 3),reps=1)
+plot(model)
 
-radian_time <- rnorm(sum(ndetection), mean = pi, sd = 0.5)
-degree_time <- radian_time * (180 / pi)
-hour <- as.integer(degree_time / 15)
-minute <- (degree_time %% 15) * 4
-time <- sprintf("%02d:%02.0f", hour, minute)
-datetime <- paste(date, time)
+activity <- model@act[1]
 
-# Create detection data
-detection_data_a <- tibble(station = rep(station, ndetection), datetime, species = "A", nfocal) %>%
-  mutate(stay = rlnorm2(n(), mean = 1 / rate, sd = 5)) %>%
-  mutate(stay = if_else(nfocal >= 1, round(stay, 3), NA_real_)) %>%
-  group_by(station) %>%
-  mutate(rank = ifelse(!is.na(stay), 1:n(), NA_integer_)) %>%
-  mutate(rank = ifelse(!is.na(stay), rank(rank), NA_integer_)) %>%
-  mutate(stay = ifelse(rank <= 5, stay, NA_real_)) %>%
-  mutate(rank = ifelse(rank <= 5, rank, NA_real_)) %>%
-  select(-rank) %>%
-  ungroup() %>%
-  mutate(cens = ifelse(stay > censored, 1, 0), stay = ifelse(stay > censored, censored, stay)) %>%
-  arrange(station, datetime)
-
-print(detection_data_a, n = 100)
-
-detection_data_a %>% filter(!is.na(stay) & cens == 0) %>% pull(stay) %>% mean()
-
-# Species B ---------------------------------------------------------------
-
-# Species B parameters
-rate <- 0.1
-density <- 5
-activity <- 0.5
-
-# Expected number of videos per camera-trap
-mu <- density * focal * 24 * 60 * 60 * survey * rate / 10 ^ 6 * activity * exp(0.5 * covariate) / mean(exp(0.5 * covariate))
-ndetection <- rpois(nstation, mu)
-
-# Random pass within focal area
-nfocal <- rbinom(sum(ndetection), size = 1, p = 0.3)
-nfocal <- rbinom(sum(ndetection), size = 2, p = 0.1)
+# Term 1 ---------------------------------------------------------------
 
 # Generate date and time
-date <- sample(date_sequence, sum(ndetection), replace = TRUE)
+start_date_1 <- ymd_hms("2024-05-07 09:00:00") + minutes(round(runif(nstation, 0, 180)))
+end_date_1_0 <- ymd_hms("2024-06-10 10:00:00")  + minutes(round(runif(nstation, 0, 180)))
+smp1 <- sample(0:1, nstation, replace = T)
+temp <- minutes(round(runif(nstation, 0, 24 * 60 * 30))) * smp1
+end_date_1 <- end_date_1_0 - temp
 
-radian_time <- rnorm(sum(ndetection), mean = 0, sd = 0.2)
-degree_time <- radian_time * (180 / pi)
-hour <- as.integer(degree_time / 15)
-minute <- (degree_time %% 15) * 4
-time <- sprintf("%02d:%02.0f", hour, minute)
-datetime <- paste(date, time)
+start_date_2 <-  end_date_1_0 + minutes(round(runif(nstation, 0, 10)))
+end_date_2_0 <- ymd_hms("2024-07-12 10:00:00")  + minutes(round(runif(nstation, 0, 180)))
+smp2 <- sample(0:1, nstation, replace = T)
+temp <- minutes(round(runif(nstation, 0, 24 * 60 * 30)))* smp2
+end_date_2 <- end_date_2_0 - temp
 
-# Create detection data
-detection_data_b <- tibble(station = rep(station, ndetection), datetime, species = "B", nfocal) %>%
-  mutate(stay = rexp(n(), rate)) %>%
-  mutate(stay = if_else(nfocal >= 1, round(stay, 3), NA_real_)) %>%
-  group_by(station) %>%
-  mutate(rank = ifelse(!is.na(stay), 1:n(), NA_integer_)) %>%
-  mutate(rank = ifelse(!is.na(stay), rank(rank), NA_integer_)) %>%
-  mutate(stay = ifelse(rank <= 5, stay, NA_real_)) %>%
-  mutate(rank = ifelse(rank <= 5, rank, NA_real_)) %>%
-  select(-rank) %>%
-  ungroup() %>%
-  mutate(cens = ifelse(stay > censored, 1, 0), stay = ifelse(stay > censored, censored, stay)) %>%
-  arrange(station, datetime)
+d.check <- tibble(Station = rep(station, 2), Start = c(start_date_1, start_date_2),
+       End = c(end_date_1, end_date_2))
 
-print(detection_data_a, n = 100)
+ggplot(data = d.check) +
+  geom_segment(aes(x = Start, xend = End, y = Station, yend = Station),
+               alpha = 0.3,
+               linewidth = 2.5) +
+  geom_point(aes(x = Start, y = Station), shape = 4, col = 2, alpha = 0.8)
 
-detection_data_a %>% filter(!is.na(stay) & cens == 0) %>% pull(stay) %>% mean()
+effort <- d.check %>%
+  mutate(Effort = difftime(End, Start, unit = "days")) %>%
+  mutate(Term = rep(c("term1", "term2"), each = nstation))
 
-print(detection_data_b, n = 100)
+total_effort <- effort %>%
+  group_by(Station) %>%
+  summarize(Effort = sum(Effort))
+
+p <- c(0.5, 0.45, 0.05)
+exp.n <- sum(p * 0:2)
+
+# 撮影枚数の期待値
+mu <- density * focal * 24 * 60 * 60 * effort %>% pull(Effort) / mean / 1000000 * activity / exp.n
+ndetection <- rpois(nstation * 2, mu)
+
+# Random pass within focal area
+y <- sample(0:2, sum(ndetection), prob = p, replace = T)
+
+temp.time <- list(0)
+for(i in 1:nrow(effort)){
+  temp.time[[i]] <- sort(as.POSIXct(runif(ndetection[i], effort$Start[i], effort$End[i]), origin = "1970-01-01"))
+}
+
+time <- as.Date((as.POSIXct(unlist(temp.time)))) + time_as_hms[1:sum(ndetection)]
+
+# 滞在時間の生成
+stay <- round(rlnorm2(sum(ndetection), mean, sd), 1)
+hist(stay)
+stay[stay == 0] <- 0.1
+cens <- rep(0, sum(ndetection))
+cens[stay > 20] <- 1
+stay[stay > 20] <- 20
+
+# 動物の観測データ
+temp1 <- tibble(Station = rep(effort$Station, ndetection),
+       DateTime = time,
+       Term = rep(effort$Term, ndetection),
+       Species = "A",
+       y = y) %>%
+       mutate(Stay = stay, Cens = cens)
+
+# 調査員のデータ
+temp2 <- effort %>%
+  mutate(End = c(end_date_1_0, end_date_2_0), smp = c(smp1, smp2)) %>%
+  pivot_longer(cols = Start:End, names_to = "Start_End", values_to = "DateTime") %>%
+  mutate(Species = "Surveyor") %>%
+  filter(Start_End == "Start" | (Start_End == "Start" & smp == 1)) %>%
+  select(- Effort, - Start_End, - smp) %>%
+  mutate(y = NA, Stay = NA, Cens = NA)
 
 
-# Integrate dataset -------------------------------------------------------
+detection_data <- rbind(temp1, temp2) %>%
+  arrange(Station, DateTime)
+station_data <- tibble(Station = station) %>%
+  mutate(x1 = rnorm(n(), 0, 1)) %>%
+  mutate(x2 = sample(c("A", "B", "C"), n(), replace = TRUE))
 
-detection_data_temp <- rbind(detection_data_a, detection_data_b) %>% mutate(datetime = ymd_hm(datetime))
-station_data <- tibble(station, covariate)
-
-# add surveyor data -------------------------------------------------------
-surveyor_start <- tibble(
-  station = station,
-  datetime = ymd_hms("2024-03-01 09:00:00") + minutes(round(runif(nstation, 0, 180))),
-  species = "surveyor",
-  nfocal = NA,
-  stay = NA,
-  cens = NA
-)
-surveyor_end <- tibble(
-  station = station,
-  datetime = ymd_hms("2024-04-30 09:00:00") + minutes(round(runif(nstation, 0, 180))),
-  species = "surveyor",
-  nfocal = NA,
-  stay = NA,
-  cens = NA
-)
-malfunc <- c("ST003", sample(station, 5, replace = FALSE))
-surveyor_end[surveyor_end$station %in% malfunc, "datetime"] <- NA
-surveyor_end <- surveyor_end %>% filter(!is.na(datetime))
-
-detection_data <- rbind(detection_data_temp, surveyor_start, surveyor_end) %>%
-  arrange(station, datetime)
 
 #usethis::use_mit_license()
+effort_temp <- detection_data %>%
+  group_by(Station, Term) %>%
+  summarize(start = min(DateTime, na.rm = TRUE), end = max(DateTime, na.rm = TRUE)) %>%
+  mutate(effort = as.numeric(difftime(end, start, units = "days"))) %>%
+  ungroup() %>%
+  group_by(Station) %>%
+  summarize(effort = sum(effort))
+
 
 usethis::use_data(detection_data, overwrite = TRUE)
 usethis::use_data(station_data, overwrite = TRUE)
+
+
+devtools::document()
+load_all()
+

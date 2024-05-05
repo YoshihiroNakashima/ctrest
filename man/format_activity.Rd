@@ -2,28 +2,33 @@
 % Please edit documentation in R/format_activity.R
 \name{format_activity}
 \alias{format_activity}
-\title{Title}
+\title{Prepare data for estimating the proportion of time animal being active}
 \usage{
 format_activity(
-  detection_data = detection_data,
-  col_name_datetime = "datetime",
-  target_species = "A"
+  detection_data,
+  col_name_species,
+  col_name_datetime,
+  target_species
 )
 }
 \arguments{
 \item{detection_data}{A data frame containing information for individual videos, with six columns: camera station name (station), capture datetime (datetime), species name (species), number of passes through the focal area (nfocal), duration of stay within the focal area for each pass in a video (stay), and whether the observation of the pass was censored (cens).}
+
+\item{col_name_species}{XXX}
 
 \item{col_name_datetime}{Column name containing datetime info}
 
 \item{target_species}{The species name for which you want to estimate his density}
 }
 \value{
-A vector containing information about the times of an animal detection.
+A vector containing information about the times of an animal detection
 }
 \description{
-Title
+Prepare data for estimating the proportion of time animal being active
 }
 \examples{
 format_activity(detection_data = detection_data,
-col_name_datetime = "datetime")
+col_name_species = "Species",
+col_name_datetime = "DateTime",
+target_species = "A")
 }
