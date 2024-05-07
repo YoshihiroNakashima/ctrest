@@ -60,8 +60,8 @@ stay_data <- format_stay(
   target_species = "A"
 )
 bayes_stay_selection(formula_stay = Stay ~ 1 + x1,
-                    station_data = station_data,
-                    stay_data = stay_data,
+                    station_data,
+                    stay_data,
                     family = "lognormal",
                     local_stay = TRUE,
                     plot = TRUE,

@@ -24,8 +24,15 @@ sd <- 5
 density <- 10
 
 # activity
-t.temp <- rnorm(1000, pi, 0.6)
-t.temp <- t.temp[t.temp < 2 * pi]
+library("Rfast")
+rv1 <- rvonmises(n = 10000, pi /2, 8, rads = TRUE)
+rv2 <- rvonmises(n = 8000, 3 * pi / 2, 8, rads = TRUE)
+rv3 <- rvonmises(n = 6000, pi, 4, rads = TRUE)
+
+t.temp <- sample(c(rv1, rv2, rv3))
+
+# t.temp <- rnorm(1000, pi, 0.6)
+# t.temp <- t.temp[t.temp < 2 * pi]
 # ラジアンから時分秒に変換
 time_in_seconds <- t.temp * (24 * 3600 / (2 * pi))
 time_as_hms <- seconds_to_period(time_in_seconds)
@@ -69,15 +76,26 @@ total_effort <- effort %>%
   group_by(Station) %>%
   summarize(Effort = sum(Effort))
 
-p <- c(0.5, 0.45, 0.05)
-exp.n <- sum(p * 0:2)
 
 # 撮影枚数の期待値
-mu <- density * focal * 24 * 60 * 60 * effort %>% pull(Effort) / mean / 1000000 * activity / exp.n
-ndetection <- rpois(nstation * 2, mu)
 
-# Random pass within focal area
-y <- sample(0:2, sum(ndetection), prob = p, replace = T)
+p <- c(0.5, 0.4, 0.1)
+exp.n <- sum(p * 0:2)
+
+mu <- density * focal * 24 * 60 * 60 * effort %>% pull(Effort) / mean / 1000000 * activity / exp.n
+library(MASS)
+ndetection  <- rnegbin(n = nstation * 2, mu, theta = 1.0) # 動画枚数
+
+# E_y
+prob <- MCMCpack::rdirichlet(n = nstation, alpha = p * 20)
+prob <- rbind(prob, prob)
+y_temp <- matrix(0, nstation * 2, length(p))
+y_list <- list(0)
+for(i in 1:(nstation * 2)){
+  y_temp[i, ] <- t(stats::rmultinom(n = 1, size = ndetection[i], prob = prob[i, ]))
+}
+y <- rep(rep(0:2, nstation * 2), as.vector(t(y_temp)))
+
 
 temp.time <- list(0)
 for(i in 1:nrow(effort)){
@@ -108,7 +126,7 @@ temp2 <- effort %>%
   pivot_longer(cols = Start:End, names_to = "Start_End", values_to = "DateTime") %>%
   mutate(Species = "Surveyor") %>%
   filter(Start_End == "Start" | (Start_End == "Start" & smp == 1)) %>%
-  select(- Effort, - Start_End, - smp) %>%
+  dplyr::select(Station, Term, DateTime, Species) %>%
   mutate(y = NA, Stay = NA, Cens = NA)
 
 

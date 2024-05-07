@@ -17,7 +17,7 @@ bayes_rest(
   local_stay = FALSE,
   focal_area,
   cores = 2,
-  iter = 2000,
+  iter = 3000,
   warmup = NULL,
   chains = 2,
   thin = 1,
@@ -79,7 +79,6 @@ station_data_rest <- format_station_data(
   model = "REST",
   target_species = "A"
 )
-
 station_data_complete <- add_effort(
   detection_data = detection_data,
   station_data_formatted = station_data_rest,
@@ -89,7 +88,6 @@ station_data_complete <- add_effort(
   plot = TRUE,
   font_size = 5
 )
-
 stay_data <- format_stay(
   detection_data = detection_data,
   col_name_station = "Station",

@@ -25,8 +25,8 @@
 #'   target_species = "A"
 #' )
 #' bayes_stay_selection(formula_stay = Stay ~ 1 + x1,
-#'                     station_data = station_data,
-#'                     stay_data = stay_data,
+#'                     station_data,
+#'                     stay_data,
 #'                     family = "lognormal",
 #'                     local_stay = TRUE,
 #'                     plot = TRUE,
@@ -620,7 +620,7 @@ bayes_stay_selection <- function(formula_stay,
     waic <- -lppd[h]/N_stay + p_waic[h]/N_stay
     waic2[h] <- waic * (2*N_stay)
   }
-  res <- data.frame(Model = unlist(t),
+  result <- data.frame(Model = unlist(t),
                     Family = rep(family, length(waic2)),
                     lppd = round(lppd, 2),
                     p_waic = round(p_waic, 2),
@@ -628,7 +628,7 @@ bayes_stay_selection <- function(formula_stay,
                     ) %>%
     arrange(WAIC)
 
-  fit <- fitstan[[which(t== res$Model[1])]]
+  fit <- fitstan[[which(t== result$Model[1])]]
   mstay <- summary(fit)$summary[grep("mean_stay", rownames(summary(fit)$summary)), ]
 
   if(local_stay == FALSE) {
@@ -646,12 +646,12 @@ bayes_stay_selection <- function(formula_stay,
                           ymin = `2.5%`, ymax = `97.5%`),
                       size = 0.75, linewidth = 0.75) +
       ylim(0, max(stay_expected_local$mean) * 2) +
-      theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 8)) #+
-      #title(res$Model[1])
-    print(g)
-    return(res)
+      theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 8))
+
+    result <- list(result = result, plot = g)
+    return(result)
   } else{
-    return(res)
+    return(result)
   }
 }
 WAIC <- '2.5%' <- '97.5%' <- NULL

@@ -37,7 +37,6 @@
 #'   model = "REST",
 #'   target_species = "A"
 #' )
-#'
 #' station_data_complete <- add_effort(
 #'   detection_data = detection_data,
 #'   station_data_formatted = station_data_rest,
@@ -47,7 +46,6 @@
 #'   plot = TRUE,
 #'   font_size = 5
 #' )
-#'
 #' stay_data <- format_stay(
 #'   detection_data = detection_data,
 #'   col_name_station = "Station",
@@ -85,7 +83,7 @@ bayes_rest <- function(formula_stay,
                        stay_family = "lognormal",
                        local_stay = FALSE,
                        focal_area,
-                       cores = 2, iter = 2000, warmup = NULL, chains = 2, thin = 1,
+                       cores = 2, iter = 3000, warmup = NULL, chains = 2, thin = 1,
                        model = "REST"){
   #######################
   ###define functions###
@@ -933,7 +931,7 @@ bayes_rest <- function(formula_stay,
   rstan_options(auto_write=TRUE)
 
   options(warn = -1)
-  modelname <- paste0(formula_stay_paste, " density", formula_density_paste," [",stay_family,"]")
+  modelname <- paste0(model," ", formula_stay_paste, " density", formula_density_paste," [",stay_family,"]")
   cat(paste(modelname, "\nNow compiling!\n"))
   stanmodel <- rstan::stan_model(model_name=modelname,model_code=codestan)
   cat("\nMCMC sampling start.\n")
@@ -960,19 +958,21 @@ bayes_rest <- function(formula_stay,
   waic <- -lppd/N_stay + p_waic/N_stay
   waic2 <- waic * (2*N_stay)
 
-  attr(fitstan,"WAIC") <-c("WAIC" = waic2, "lppd" = lppd, "p_waic" = p_waic)
+  attr(fitstan,"model") <- codestan
 
   attr(fitstan,"formula_stay") <- c("formula" = formula_stay)
   attr(fitstan,"formula_density") <- c("formula" = formula_density)
+
   if(P_density > 1) res_local_dens <- round(summary(fitstan)$summary[grep("expected_local_density", rownames(summary(fitstan)$summary)), ], 2)
   res_global_dens <- round(summary(fitstan)$summary[grep("expected_global_density", rownames(summary(fitstan)$summary)), ], 2)
   mean_stay <- round(summary(fitstan)$summary[grep("mean_stay", rownames(summary(fitstan)$summary)), ], 2)
+  E_y <- round(summary(fitstan)$summary[grep("E_y", rownames(summary(fitstan)$summary)), ], 2)
 
   if(P_density > 1) attr(fitstan,"expected_local_density") <- res_local_dens
   attr(fitstan,"expected_global_density") <- res_global_dens
   attr(fitstan,"mean_stay") <- mean_stay
-
-  attr(fitstan,"model") <- stanmodel
+  if(model == "RAD-REST") attr(fitstan,"expected_N") <- E_y
+  attr(fitstan,"WAIC") <-c("WAIC" = waic2, "lppd" = lppd, "p_waic" = p_waic)
 
   outputwaic <- paste0("\nlppd = ",round(lppd,digits = 4),"\npWAIC = ",round(p_waic,digits=4),
                        "\nWAIC = ", round(waic2,digits = 4))

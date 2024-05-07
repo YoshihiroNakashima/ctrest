@@ -1,8 +1,4 @@
 
-<!-- README.md is generated from README.Rmd. Please edit that file -->
-
-# ctrest package
-
 ## パッケージの概要
 
 　“ctrest”は，RESTモデルもしくはREST-RADモデルを簡単に利用するためのRパッケージです．REST/REST-RADモデルとは，自動撮影カメラ（カメラトラップ）によって得られた動画データに基づいて地上性哺乳類・鳥類の密度推定を行うための統計モデルです．RESTモデルの詳細について[Nakashima
@@ -24,7 +20,11 @@ al. (2018)](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2
 
 　ctrestパッケージは，GitHubからインストールしてください．
 
-`{r} # install.packages("devtools")  #library(devtools) #install_github("norimune/glmmstan")}`
+``` r
+# install.packages("devtools") 
+#library(devtools)
+#install_github("norimune/glmmstan")
+```
 
 ## データの準備
 
@@ -38,11 +38,51 @@ al. (2018)](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2
 
 　以下，パッケージに含まれているexampleデータを使って説明します．パッケージを開いて，使える状態にしましょう．
 
-`{r} detection_data # 撮影データの例}`
+``` r
+library(ctrest)
+# library(devtools)
+# load_all()
+```
+
+``` r
+detection_data # 撮影データの例
+```
+
+    ## # A tibble: 1,331 × 7
+    ##    Station DateTime            Term  Species      y  Stay  Cens
+    ##    <chr>   <dttm>              <chr> <chr>    <int> <dbl> <dbl>
+    ##  1 ST001   2024-05-07 10:26:00 term1 Surveyor    NA  NA      NA
+    ##  2 ST001   2024-05-08 12:37:33 term1 A            0   1.2     0
+    ##  3 ST001   2024-05-15 17:20:41 term1 A            0   1.8     0
+    ##  4 ST001   2024-05-19 06:14:59 term1 A            0   0.3     0
+    ##  5 ST001   2024-05-20 11:17:50 term1 A            0   1.8     0
+    ##  6 ST001   2024-05-21 05:54:22 term1 A            1   2.7     0
+    ##  7 ST001   2024-05-22 06:00:55 term1 A            2   3.9     0
+    ##  8 ST001   2024-05-22 17:15:18 term1 A            1   1.8     0
+    ##  9 ST001   2024-06-10 12:00:00 term2 Surveyor    NA  NA      NA
+    ## 10 ST001   2024-06-14 13:05:42 term2 A            0   0.5     0
+    ## # ℹ 1,321 more rows
 
 この例では，StationID（地点ID），DateTime（撮影日時），Term（調査回），Species（撮影された動物種名），y（有効範囲に入った回数），Stay（有効範囲内の滞在時間），Cens（滞在時間の打ち切りの有=1，無=0）が入力されています．
 
-`{r} station_data # カメラ設置点データ}`
+``` r
+station_data # カメラ設置点データ
+```
+
+    ## # A tibble: 100 × 3
+    ##    Station      x1 x2   
+    ##    <chr>     <dbl> <chr>
+    ##  1 ST001   -0.977  B    
+    ##  2 ST002    1.23   A    
+    ##  3 ST003    0.0338 C    
+    ##  4 ST004   -1.55   A    
+    ##  5 ST005    0.674  B    
+    ##  6 ST006   -0.443  C    
+    ##  7 ST007   -0.530  C    
+    ##  8 ST008    0.506  C    
+    ##  9 ST009   -0.588  C    
+    ## 10 ST010    1.41   C    
+    ## # ℹ 90 more rows
 
 カメラ設置点データには，StationID（地点ID）と２つの共変量（x1とx2）が入力されています[^5]．
 
@@ -67,7 +107,30 @@ al. (2018)](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2
 
 　最初に使うのが，撮影枚数をステーションごとに集計する**format_station_data関数**です．exampleデータでやってみます．
 
-`{r} # REST用データの作成 station_data_rest <- format_station_data(   detection_data = detection_data, # 元データ   station_data = station_data,     # 元データ   col_name_station = "Station",    # カメラ設置点IDを含む列名   col_name_species = "Species",    # 種名を含む列名   col_name_y = "y",                # 通過回数を含む列名   model = "REST",　                # 推定に利用するモデル名（"REST" or "RAD-REST）   target_species = "A"　           # 対象種名 )  head(station_data_rest)}`
+``` r
+# REST用データの作成
+station_data_rest <- format_station_data(
+  detection_data = detection_data, # 元データ
+  station_data = station_data,     # 元データ
+  col_name_station = "Station",    # カメラ設置点IDを含む列名
+  col_name_species = "Species",    # 種名を含む列名
+  col_name_y = "y",                # 通過回数を含む列名
+  model = "REST",　                # 推定に利用するモデル名（"REST" or "RAD-REST）
+  target_species = "A"　           # 対象種名
+) 
+head(station_data_rest)
+```
+
+    ## # A tibble: 6 × 5
+    ## # Groups:   Station [6]
+    ##   Station Species     Y      x1 x2   
+    ##   <chr>   <chr>   <int>   <dbl> <chr>
+    ## 1 ST001   A           5 -0.977  B    
+    ## 2 ST002   A           9  1.23   A    
+    ## 3 ST003   A           1  0.0338 C    
+    ## 4 ST004   A           9 -1.55   A    
+    ## 5 ST005   A           9  0.674  B    
+    ## 6 ST006   A           4 -0.443  C
 
 ２つのソースデータを地点ごとに統合して，必要なデータを準備してくれます．上の通り，model
 =
@@ -75,7 +138,28 @@ al. (2018)](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2
 
 　今度は，model = “RAD-REST”にしてみましょう．
 
-`{r} station_data_rad <- format_station_data(   detection_data = detection_data, # 元データ   station_data = station_data,     # 元データ   col_name_station = "Station",    # カメラ設置点IDを含む列名   col_name_species = "Species",    # 種名を含む列名   col_name_y = "y",                # 通過回数を含む列名   model = "RAD-REST",　            # 推定に使うモデル名（"REST" or "RAD-REST）   target_species = "A"　           # 種名を含む列名 ) head(station_data_rad)}`
+``` r
+station_data_rad <- format_station_data(
+  detection_data = detection_data, # 元データ
+  station_data = station_data,     # 元データ
+  col_name_station = "Station",    # カメラ設置点IDを含む列名
+  col_name_species = "Species",    # 種名を含む列名
+  col_name_y = "y",                # 通過回数を含む列名
+  model = "RAD-REST",　            # 推定に使うモデル名（"REST" or "RAD-REST）
+  target_species = "A"　           # 種名を含む列名
+)
+head(station_data_rad)
+```
+
+    ## # A tibble: 6 × 7
+    ##   Station     N      x1 x2      y_0   y_1   y_2
+    ##   <chr>   <int>   <dbl> <chr> <int> <int> <int>
+    ## 1 ST001      10 -0.977  B         6     3     1
+    ## 2 ST002      11  1.23   A         4     5     2
+    ## 3 ST003       1  0.0338 C         0     1     0
+    ## 4 ST004       9 -1.55   A         4     1     4
+    ## 5 ST005      14  0.674  B         7     5     2
+    ## 6 ST006       5 -0.443  C         2     2     1
 
 Nに「各カメラで撮影された動画総本数」，y_0からy_3は，「あるカメラ地点で通過回数がn回だった動画本数」が入力されています．例えば，1行目のST001というステーションでは，一度も有効撮影範囲を通過しなかった動画が3本，1回だけ通過したのが8本，2回通過したのが0本撮影されたということを意味しています．RAD-RESTモデルを適用するうえでは，すべての動画に対して通過回数を測定する必要は必ずしもない（すなわちyを通過回数で重みづけした合計がNと一致する必要はない）ことに注意してください．今一致しているのは，REST用の元データ（すべての動画を計測対象にしたデータ）を仮に使っているからです．
 
@@ -85,9 +169,48 @@ Nに「各カメラで撮影された動画総本数」，y_0からy_3は，「�
 
 　add_effort関数のplot引数をTRUEにすると，カメラの稼働の様子を可視化できます．カメラの日時がくるっていることはよくあるので，目で確かめておくとよいでしょう．カメラの台数が多いとカメラ設置点名が重なって見えなくなることが多いです．その場合は，font_size引数に小さな値を入れてください．
 
-`{r} # REST用のデータに追加 station_data_comprest <- add_effort(   detection_data = detection_data,            # 元データ   station_data_formatted = station_data_rest, # format_station_data関数の返り値   col_name_station = "Station",               # カメラ設置点IDを含む列名   col_name_term = "Term",                     # 調査回ID   col_name_datetime = "DateTime",             # 日時データ   plot = TRUE,                                # 調査努力を可視化するか   font_size = 5                               # 可視化した場合の目盛フォント ) head(station_data_comprest)}`
+``` r
+# REST用のデータに追加
+station_data_comprest <- add_effort(
+  detection_data = detection_data,            # 元データ
+  station_data_formatted = station_data_rest, # format_station_data関数の返り値
+  col_name_station = "Station",               # カメラ設置点IDを含む列名
+  col_name_term = "Term",                     # 調査回ID
+  col_name_datetime = "DateTime",             # 日時データ
+  plot = TRUE,                                # 調査努力を可視化するか
+  font_size = 5                               # 可視化した場合の目盛フォント
+)
+```
 
-`{r} # RAD-REST用のデータに追加（引数指定は上と同じ） station_data_rad <- add_effort(   detection_data = detection_data,   station_data_formatted = station_data_rad,   col_name_station = "Station",   col_name_term = "Term",   col_name_datetime = "DateTime",   plot = FALSE ) # 全データを表示させたい場合 # print(station_data_comprad, n = Inf)}`
+![](README_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
+
+``` r
+head(station_data_comprest)
+```
+
+    ## # A tibble: 6 × 6
+    ##   Station Effort Species     Y      x1 x2   
+    ##   <chr>    <dbl> <chr>   <int>   <dbl> <chr>
+    ## 1 ST001    20.4  A           5 -0.977  B    
+    ## 2 ST002    44.0  A           9  1.23   A    
+    ## 3 ST003     4.89 A           1  0.0338 C    
+    ## 4 ST004    60.3  A           9 -1.55   A    
+    ## 5 ST005    36.9  A           9  0.674  B    
+    ## 6 ST006    32.2  A           4 -0.443  C
+
+``` r
+# RAD-REST用のデータに追加（引数指定は上と同じ）
+station_data_comprad <- add_effort(
+  detection_data = detection_data,
+  station_data_formatted = station_data_rad,
+  col_name_station = "Station",
+  col_name_term = "Term",
+  col_name_datetime = "DateTime",
+  plot = FALSE
+)
+# 全データを表示させたい場合
+# print(station_data_comprad, n = Inf)
+```
 
 新しくできたEffort列の数値がカメラ稼働時間（日数）を示しています．もし稼働日数が0のものがある場合は，日時の入力などにミスがないかをもう一度確認してください（0だと密度の推定もできません）．
 
@@ -95,13 +218,43 @@ Nに「各カメラで撮影された動画総本数」，y_0からy_3は，「�
 
 　滞在時間は，撮影データ（detection_data）に入力されています．RESTでもRAD-RESTでも，滞在時間の測定は必ずしもすべての動画で行う必要はありません．上述の通り，計測しなかった動画については，detection_dataの該当箇所に必ずNAを入力してください．format_stay_data関数で，NAデータを除外します．また，滞在時間に0が入力されていないかを確認します（多くの時間分布は，正の整数のみを確率変数として持ちます）．
 
-`{r} stay_data <- format_stay(   detection_data = detection_data, # 元データ   col_name_station = "Station",    # カメラ設置点IDを含む列名   col_name_species = "Species",    # 種名を含む列名   col_name_stay = "Stay",          # 滞在時間を含む列名   col_name_cens = "Cens",          # 打ち切りの有無を含む列名   target_species = "A"             # 対象種名 ) head(stay_data)}`
+``` r
+stay_data <- format_stay(
+  detection_data = detection_data, # 元データ
+  col_name_station = "Station",    # カメラ設置点IDを含む列名
+  col_name_species = "Species",    # 種名を含む列名
+  col_name_stay = "Stay",          # 滞在時間を含む列名
+  col_name_cens = "Cens",          # 打ち切りの有無を含む列名
+  target_species = "A"             # 対象種名
+)
+head(stay_data)
+```
+
+    ## # A tibble: 6 × 4
+    ##   Station Species  Stay  Cens
+    ##   <chr>   <chr>   <dbl> <dbl>
+    ## 1 ST001   A         1.2     0
+    ## 2 ST001   A         1.8     0
+    ## 3 ST001   A         0.3     0
+    ## 4 ST001   A         1.8     0
+    ## 5 ST001   A         2.7     0
+    ## 6 ST001   A         3.9     0
 
 ### 撮影時刻の変換
 
 　最後に活動時間割合を推定するために撮影時刻をラジアン変換しましょう（他の前処理関数の返り値はtbl形式のデータフレームですが，この関数はベクトルになります）．
 
-`{r} activity_data <- format_activity(   detection_data = detection_data, # 元データ   col_name_species = "Species",    # 種名を含む列名   col_name_datetime = "DateTime",  # 撮影日時を含む列名   target_species = "A"             # 対象種名 ) head(activity_data)}`
+``` r
+activity_data <- format_activity(
+  detection_data = detection_data, # 元データ
+  col_name_species = "Species",    # 種名を含む列名
+  col_name_datetime = "DateTime",  # 撮影日時を含む列名
+  target_species = "A"             # 対象種名
+)
+head(activity_data)
+```
+
+    ## [1] 3.305484 4.540851 1.636199 2.957668 1.546245 1.574809
 
 ## 最尤推定
 
@@ -110,7 +263,43 @@ Nに「各カメラで撮影された動画総本数」，y_0からy_3は，「�
 　mle_rest関数で行います．尤度関数をRのoptim関数で最適化してパラメータ推定しており，標準偏差や信頼区間はヘッセ行列から事後的に計算しています．後に紹介するMCMC法によるベイズ推定に比べて圧倒的に速いです．調査地の平均的な密度をさっと出したいときに使ってください．活動時間割合については，固定カーネル法（Rowcliffe
 et al. ）による推定値を定数として入れています．
 
-`{r} model <- mle_rest(   station_data_comprest,       # add_effort関数の返り値   stay_data,                   # format_stay関数の返り値   activity_data,               # activity_data関数の返り値   focal_area = 2.0,            # 有効撮影範囲の面積   model = "REST"               # 推定に使うモデル名（"REST" or "RAD-REST） ) model}`
+``` r
+model <- mle_rest(
+  station_data_comprest,       # REST用のadd_effort関数の返り値
+  stay_data,                   # format_stay関数の返り値
+  activity_data,               # activity_data関数の返り値
+  focal_area = 2.0,            # 有効撮影範囲の面積
+  model = "REST"               # 密度推定に使うモデル名（"REST" or "RAD-REST）
+)
+model
+```
+
+    ## $Density
+    ##              ModelName  Density        SD    Lower    Upper      AIC delta_AIC
+    ## 8   NegBinom-Lognormal 12.64502 1.0011365 10.68280 14.60725 5412.588   0.00000
+    ## 6      NegBinom-Gammma 12.27987 0.9354117 10.44646 14.11327 5477.218  64.62932
+    ## 7     NegBinom-Weibull 12.34944 0.9439784 10.49924 14.19964 5504.735  92.14671
+    ## 4    Poisson-Lognormal 12.32993 0.6295053 11.09610 13.56376 5514.041 101.45238
+    ## 5 NegBinom-Exponential 12.29780 0.9579338 10.42025 14.17535 5539.533 126.94495
+    ## 2       Poisson-Gammma 11.97622 0.5539335 10.89051 13.06193 5578.670 166.08170
+    ## 3      Poisson-Weibull 12.04036 0.5539335 10.94024 13.14048 5606.187 193.59854
+    ## 1  Poisson-Exponential 11.98484 0.5856271 10.83701 13.13267 5640.985 228.39701
+    ## 
+    ## $Stay
+    ## $Stay$Exponential
+    ## [1] 0.284538
+    ## 
+    ## $Stay$Gammma
+    ##     shape      rate 
+    ## 0.3923194 1.3782646 
+    ## 
+    ## $Stay$Weibull
+    ##    shape    scale 
+    ## 1.151017 3.711317 
+    ## 
+    ## $Stay$Lognormal
+    ##   meanlog     sdlog 
+    ## 0.8520860 0.9309364
 
 　この関数では，撮影枚数についてはポアソン分布または負の二項分布，滞在時間については４つの確率分布（指数分布，ガンマ分布，対数正規分布，ワイブル分布）を想定して，全通りの組み合わせ（2×4
 =
@@ -120,7 +309,44 @@ et al. ）による推定値を定数として入れています．
 
 　RAD-RESTに関しても，model = “RAD-REST”とするだけです．
 
-`{r} model <- mle_rest(   station_data_comprad, # RAD-REST用のデータ   stay_data,   activity_data,   focal_area = 2.0,   model = "RAD-REST" ) model}`
+``` r
+model <- mle_rest(
+  station_data_comprad, # RAD-REST用のadd_effort関数の返り値
+  stay_data,            # format_stayの返り値
+  activity_data,　　　　# format_activityの返り値
+  focal_area = 2.0,     # 有効撮影範囲の面積
+  model = "RAD-REST"    # 密度推定に使うモデル名
+)
+model
+```
+
+    ## $Density
+    ##              ModelName  Density        SD     Lower    Upper      AIC delta_AIC
+    ## 8   NegBinom-Lognormal 13.09742 0.9366263 11.261633 14.93321 6097.234   0.00000
+    ## 6      NegBinom-Gammma 13.07942 0.9307493 11.255154 14.90369 6159.360  62.12624
+    ## 7     NegBinom-Weibull 11.45105 0.7946609  9.893512 13.00858 6184.784  87.54946
+    ## 4    Poisson-Lognormal 14.34182 0.9313392 12.516390 16.16724 6221.396 124.16163
+    ## 5 NegBinom-Exponential 10.11854 0.7429208  8.662420 11.57467 6239.241 142.00654
+    ## 2       Poisson-Gammma 12.12562 0.6841645 10.784658 13.46658 6277.351 180.11671
+    ## 3      Poisson-Weibull 11.94167 0.6841645 10.660374 13.22297 6304.666 207.43152
+    ## 1  Poisson-Exponential 12.22881 0.7172226 10.823053 13.63457 6340.061 242.82680
+    ## 
+    ## $Stay
+    ## $Stay$Exponential
+    ##           
+    ## 0.3215035 
+    ## 
+    ## $Stay$Gammma
+    ##    shape     rate 
+    ## 0.391224 1.375141 
+    ## 
+    ## $Stay$Weibull
+    ##    shape    scale 
+    ## 1.150112 3.694807 
+    ## 
+    ## $Stay$Lognormal
+    ##   meanlog     sdlog 
+    ## 0.8699632 0.9232136
 
 ベストモデルの密度推定値は，少しRAD-RESTモデルの方が高く出ていますが許容範囲内でしょう．
 
@@ -139,7 +365,7 @@ et al. ）による推定値を定数として入れています．
 | **local_stay**   | FALSE            | 滞在時間の期待値をカメラごとに推定するか（TRUE），グローバルに推定するか（FALSE）の指定 |
 | **plot**         | TRUE             | 滞在時間の期待値を可視化するか（TRUE），しないか（FALSE）                               |
 | cores            | 2                | 計算に利用するコア数                                                                    |
-| iter\*           | 2000             | iterationの長さ                                                                         |
+| iter\*           | 3000             | iterationの長さ                                                                         |
 | warmup\*         | iterの半分の長さ | warmupの長さ                                                                            |
 | chains\*         | 2                | chains数                                                                                |
 | thin\*           | 1                | thiningの間隔                                                                           |
@@ -175,7 +401,47 @@ TRUEとした場合，ベストモデルに基づく期待値が描画されま�
 
 　カメラ地点IDをランダム効果に，x1を固定効果に入れてそれぞれ入れてみます．
 
-`{r} model_selection <- bayes_stay_selection(   formula_stay = Stay ~ 1 + x1,   station_data = station_data,   stay_data = stay_data,   family = "lognormal",   local_stay = TRUE,   plot = TRUE,   cores = 3,   iter = 2000,   warmup = NULL,   chains = 2,   thin = 1,   all_comb = TRUE ) model_selection}`
+``` r
+model_selection <- bayes_stay_selection(
+  formula_stay = Stay ~ 1 + x1, # 滞在時間のモデル式
+  station_data = station_data_comprad,  # add_effort関数の返り値
+  stay_data = stay_data,        # format_stay関数の返り値
+  family = "lognormal",         # 滞在時間分布
+  local_stay = TRUE,            # 上で説明
+  plot = TRUE,                  # 滞在時間の期待値を可視化するか
+  cores = 3,                    # 計算に利用するコア数
+  iter = 3000,                  # iteration数
+  warmup = NULL,                # warmup数
+  chains = 3,                   # チェーン数
+  thin = 1,                     # thinningの間隔
+  all_comb = TRUE               # 上で説明
+)
+```
+
+    ## Stay~1 [lognormal] 
+    ## Now compiling!
+    ## 
+    ## MCMC sampling start.
+    ## Stay~1 + x1 [lognormal] 
+    ## Now compiling!
+
+    ## recompiling to avoid crashing R session
+
+    ## 
+    ## MCMC sampling start.
+
+``` r
+model_selection
+```
+
+    ## $result
+    ##           Model    Family     lppd p_waic    WAIC
+    ## 1      Stay ~ 1 lognormal -2523.53   1.97 5051.00
+    ## 2 Stay ~ 1 + x1 lognormal -2523.54   2.98 5053.04
+    ## 
+    ## $plot
+
+![](README_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
 
 WAIC値を比較すると，ほとんど差がありません．このような場合はシンプルなモデルを選択すればよいでしょう．他の確率分布を試したい場合は，family引数で指定してください．
 
@@ -247,13 +513,107 @@ TRUEとします．例えば，カメラ設置点の開空度や獣道である�
 
 　RESTによる密度推定は，以下のように引数指定します．この例では，密度に共変量を与えています．与えないモデルとどちらが汎化（予測）性能が高いかは，関数の返り値の一つであるWAIC値で比較してください．推定後は，事後分布が収束しているかをRhat値やtraceplotで必ず確認してください．
 
-`{r} fitstan <- bayes_rest(   formula_stay = Stay ~ 1,   formula_density = ~ 1 + x2,   station_data_comprest,   stay_data,   activity_data,   activity_model = "kernel",   local_stay = FALSE,   stay_family = "lognormal",   focal_area = 2.0,   model = "REST" )  attr(fitstan,"expected_global_density")   # 全体での密度 # attr(fitstan,"expected_local_density")  # カメラごとの密度 attr(fitstan,"mean_stay")                 # 平均滞在時間 attr(fitstan,"WAIC")                      # WAIC値  # 全体密度のトレースプロット traceplot(fitstan, "expected_global_density")}`
+``` r
+fitstan <- bayes_rest(
+  formula_stay = Stay ~ 1,     # 滞在時間のモデル式
+  formula_density = ~ 1 + x2,　# 密度のモデル式
+  station_data_comprest,       # add_effort関数の返り値
+  stay_data,                   # format_stay関数の返り値
+  activity_data,　       　　　# format_activityの返り値
+  activity_model = "kernel",   # 活動時間割合の推定方法
+  local_stay = FALSE,          # bayes_stay_selection関数で説明
+  stay_family = "lognormal",   # 滞在時間分布
+  focal_area = 2.0,            # 有効撮影範囲の面積
+  model = "REST"               # 密度推定に使うモデル名
+)
+```
+
+    ## REST Stay~1 density~1 + x2 [lognormal] 
+    ## Now compiling!
+    ## 
+    ## MCMC sampling start.
+    ## 
+    ## lppd = -2726.6102
+    ## pWAIC = 44.8575
+    ## WAIC = 5542.9353
+
+``` r
+attr(fitstan,"expected_global_density")   # 全体での密度
+```
+
+    ##    mean se_mean      sd    2.5%     25%     50%     75%   97.5%   n_eff    Rhat 
+    ##   13.80    0.02    1.10   11.80   13.02   13.74   14.51   16.11 2473.89    1.00
+
+``` r
+# attr(fitstan,"expected_local_density")  # カメラごとの密度
+attr(fitstan,"mean_stay")                 # 平均滞在時間
+```
+
+    ##    mean se_mean      sd    2.5%     25%     50%     75%   97.5%   n_eff    Rhat 
+    ##    3.92    0.00    0.14    3.66    3.82    3.91    4.01    4.20 2275.47    1.00
+
+``` r
+attr(fitstan,"WAIC")                      # WAIC値
+```
+
+    ##        WAIC        lppd      p_waic 
+    ##  5542.93527 -2726.61017    44.85746
+
+``` r
+# 全体密度のトレースプロット
+rstan::traceplot(fitstan, "expected_global_density")
+```
+
+![](README_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
 
 ### RAD-RESTによる密度推定
 
 　RAD-RESTによる密度推定の例は以下の通りです．RESTの場合と同じ状況のコード例を示します．　
 
-`{r} fitstan <- bayes_rest(   formula_stay = Stay ~ 1,   formula_density = ~ 1 + x2,   station_data_comprad,   stay_data,   activity_data[1:200],   activity_model = "kernel",   local_stay = FALSE,   stay_family = "lognormal",   focal_area = 2.0,   model = "RAD-REST" )  attr(fitstan,"expected_global_density")  # 全体での密度 # attr(fitstan,"expected_local_density") # カメラごとの密度 attr(fitstan,"mean_density")             # 平均滞在時間 attr(fitstan,"WAIC")                     # WAIC値}`
+``` r
+fitstan <- bayes_rest(
+  formula_stay = Stay ~ 1,     # 滞在時間のモデル式
+  formula_density = ~ 1 + x2,　# 密度のモデル式
+  station_data_comprad,        # add_effort関数の返り値
+  stay_data,                   # format_stay関数の返り値
+  activity_data,               # format_activityの返り値
+  activity_model = "kernel",   # 活動時間割合の推定方法
+  local_stay = FALSE,          # bayes_stay_selection関数で説明
+  stay_family = "lognormal",   # 滞在時間分布
+  focal_area = 2.0,            # 有効撮影範囲の面積
+  model = "RAD-REST"           # 密度推定に使うモデル名
+)
+```
+
+    ## RAD-REST Stay~1 density~1 + x2 [lognormal] 
+    ## Now compiling!
+    ## 
+    ## MCMC sampling start.
+    ## 
+    ## lppd = -2753.6368
+    ## pWAIC = 45.2008
+    ## WAIC = 5597.6753
+
+``` r
+attr(fitstan,"expected_global_density")  # 全体での密度
+```
+
+    ##    mean se_mean      sd    2.5%     25%     50%     75%   97.5%   n_eff    Rhat 
+    ##   13.58    0.03    1.00   11.73   12.89   13.54   14.22   15.63 1209.51    1.00
+
+``` r
+# attr(fitstan,"expected_local_density") # カメラごとの密度
+attr(fitstan,"mean_density")             # 平均滞在時間
+```
+
+    ## NULL
+
+``` r
+attr(fitstan,"WAIC")                     # WAIC値
+```
+
+    ##       WAIC       lppd     p_waic 
+    ##  5597.6753 -2753.6368    45.2008
 
 　
 

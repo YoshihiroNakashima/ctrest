@@ -1,5 +1,5 @@
 ---
-title: "ctrest"
+title: "ctrest: RESTモデルによる密度推定を行うためのRパッケージの使い方"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{ctrest}
@@ -199,11 +199,11 @@ head(activity_data)
 
 ```{r}
 model <- mle_rest(
-  station_data_comprest,       # add_effort関数の返り値
+  station_data_comprest,       # REST用のadd_effort関数の返り値
   stay_data,                   # format_stay関数の返り値
   activity_data,               # activity_data関数の返り値
   focal_area = 2.0,            # 有効撮影範囲の面積
-  model = "REST"               # 推定に使うモデル名（"REST" or "RAD-REST）
+  model = "REST"               # 密度推定に使うモデル名（"REST" or "RAD-REST）
 )
 model
 ```
@@ -216,11 +216,11 @@ model
 
 ```{r}
 model <- mle_rest(
-  station_data_comprad, # RAD-REST用のデータ
-  stay_data,
-  activity_data,
-  focal_area = 2.0,
-  model = "RAD-REST"
+  station_data_comprad, # RAD-REST用のadd_effort関数の返り値
+  stay_data,            # format_stayの返り値
+  activity_data,　　　　# format_activityの返り値
+  focal_area = 2.0,     # 有効撮影範囲の面積
+  model = "RAD-REST"    # 密度推定に使うモデル名
 )
 model
 ```
@@ -236,7 +236,7 @@ model
 [^6]: ランダム効果を入れた場合のWAIC値は，現時点では条件付き尤度に基づくconditonal WAIC値です．
 
 | 引数名           | Default値        | 説明                                                                                    |
-|-----------------|-----------------|--------------------------------------|
+|--------------|--------------|---------------------------------------------|
 | **formula_stay** |                  | 滞在時間のモデル式                                                                      |
 | station_data     |                  | 各行に各カメラについての情報（例えばカメラIDや共変量）をもつデータフレーム              |
 | stay_data        |                  | 滞在時間・打ち切りの有無をもつデータフレーム                                            |
@@ -244,7 +244,7 @@ model
 | **local_stay**   | FALSE            | 滞在時間の期待値をカメラごとに推定するか（TRUE），グローバルに推定するか（FALSE）の指定 |
 | **plot**         | TRUE             | 滞在時間の期待値を可視化するか（TRUE），しないか（FALSE）                               |
 | cores            | 2                | 計算に利用するコア数                                                                    |
-| iter\*           | 2000             | iterationの長さ                                                                         |
+| iter\*           | 3000             | iterationの長さ                                                                         |
 | warmup\*         | iterの半分の長さ | warmupの長さ                                                                            |
 | chains\*         | 2                | chains数                                                                                |
 | thin\*           | 1                | thiningの間隔                                                                           |
@@ -282,18 +282,18 @@ model
 
 ```{r}
 model_selection <- bayes_stay_selection(
-  formula_stay = Stay ~ 1 + x1,
-  station_data = station_data,
-  stay_data = stay_data,
-  family = "lognormal",
-  local_stay = TRUE,
-  plot = TRUE,
-  cores = 3,
-  iter = 2000,
-  warmup = NULL,
-  chains = 2,
-  thin = 1,
-  all_comb = TRUE
+  formula_stay = Stay ~ 1 + x1, # 滞在時間のモデル式
+  station_data = station_data,  # 元データ
+  stay_data = stay_data,        # format_stay関数の返り値
+  family = "lognormal",         # 滞在時間分布
+  local_stay = TRUE,            # 上で説明
+  plot = TRUE,                  # 滞在時間の期待値を可視化するか
+  cores = 1,                    # 計算に利用するコア数
+  iter = 3000,                  # iteration数
+  warmup = 1000,                # warmup数
+  chains = 1,                   # チェーン数
+  thin = 1,                     # thinningの間隔
+  all_comb = TRUE               # 上で説明
 )
 model_selection
 ```
@@ -307,7 +307,7 @@ WAIC値を比較すると，ほとんど差がありません．このような�
 　密度をベイズ推定する関数は，**bayes_rest関数**です．以下のように，必要な変数を指定するだけで密度が推定できます．まず，関数の全引数を示します．
 
 | 引数名                | Default値        | 説明                                                                                                                                      |
-|------------------|------------------|-------------------------------------|
+|------------|------------|------------------------------------------------|
 | formula_stay          |                  | 滞在時間のモデル式                                                                                                                        |
 | formula_density       |                  | 密度のモデル式                                                                                                                            |
 | station_data_complete |                  | add_effort関数の返り値                                                                                                                    |
@@ -362,16 +362,16 @@ WAIC値を比較すると，ほとんど差がありません．このような�
 
 ```{r}
 fitstan <- bayes_rest(
-  formula_stay = Stay ~ 1,
-  formula_density = ~ 1 + x2,
-  station_data_comprest,
-  stay_data,
-  activity_data,
-  activity_model = "kernel",
-  local_stay = FALSE,
-  stay_family = "lognormal",
-  focal_area = 2.0,
-  model = "REST"
+  formula_stay = Stay ~ 1,     # 滞在時間のモデル式
+  formula_density = ~ 1 + x2,　# 密度のモデル式
+  station_data_comprest,       # add_effort関数の返り値
+  stay_data,                   # format_stay関数の返り値
+  activity_data,　       　　　# format_activityの返り値
+  activity_model = "kernel",   # 活動時間割合の推定方法
+  local_stay = FALSE,          # bayes_stay_selection関数で説明
+  stay_family = "lognormal",   # 滞在時間分布
+  focal_area = 2.0,            # 有効撮影範囲の面積
+  model = "REST"               # 密度推定に使うモデル名
 )
 
 attr(fitstan,"expected_global_density")   # 全体での密度
@@ -389,16 +389,16 @@ rstan::traceplot(fitstan, "expected_global_density")
 
 ```{r}
 fitstan <- bayes_rest(
-  formula_stay = Stay ~ 1,
-  formula_density = ~ 1 + x2,
-  station_data_comprad,
-  stay_data,
-  activity_data,
-  activity_model = "kernel",
-  local_stay = FALSE,
-  stay_family = "lognormal",
-  focal_area = 2.0,
-  model = "RAD-REST"
+  formula_stay = Stay ~ 1,     # 滞在時間のモデル式
+  formula_density = ~ 1 + x2,　# 密度のモデル式
+  station_data_comprad,        # add_effort関数の返り値
+  stay_data,                   # format_stay関数の返り値
+  activity_data,               # format_activityの返り値
+  activity_model = "kernel",   # 活動時間割合の推定方法
+  local_stay = FALSE,          # bayes_stay_selection関数で説明
+  stay_family = "lognormal",   # 滞在時間分布
+  focal_area = 2.0,            # 有効撮影範囲の面積
+  model = "RAD-REST"           # 密度推定に使うモデル名
 )
 
 attr(fitstan,"expected_global_density")  # 全体での密度
