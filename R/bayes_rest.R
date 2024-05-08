@@ -54,14 +54,12 @@
 #'   col_name_cens = "Cens",
 #'   target_species = "A"
 #' )
-#'
 #' activity_data <- format_activity(
 #'   detection_data = detection_data,
 #'   col_name_species = "Species",
 #'   col_name_datetime = "DateTime",
 #'   target_species = "A"
 #' )
-#'
 #' fitstan <- bayes_rest(formula_stay = Stay ~ 1,
 #'   formula_density = ~ 1,
 #'   station_data_complete,

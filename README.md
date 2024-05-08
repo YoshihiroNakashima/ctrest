@@ -40,8 +40,6 @@ al. (2018)](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2
 
 ``` r
 library(ctrest)
-# library(devtools)
-# load_all()
 ```
 
 ``` r
@@ -436,8 +434,8 @@ model_selection
 
     ## $result
     ##           Model    Family     lppd p_waic    WAIC
-    ## 1      Stay ~ 1 lognormal -2523.53   1.97 5051.00
-    ## 2 Stay ~ 1 + x1 lognormal -2523.54   2.98 5053.04
+    ## 1      Stay ~ 1 lognormal -2523.53   1.95 5050.97
+    ## 2 Stay ~ 1 + x1 lognormal -2523.54   2.87 5052.81
     ## 
     ## $plot
 
@@ -533,16 +531,16 @@ fitstan <- bayes_rest(
     ## 
     ## MCMC sampling start.
     ## 
-    ## lppd = -2726.6102
-    ## pWAIC = 44.8575
-    ## WAIC = 5542.9353
+    ## lppd = -2726.7254
+    ## pWAIC = 44.8457
+    ## WAIC = 5543.1422
 
 ``` r
 attr(fitstan,"expected_global_density")   # 全体での密度
 ```
 
     ##    mean se_mean      sd    2.5%     25%     50%     75%   97.5%   n_eff    Rhat 
-    ##   13.80    0.02    1.10   11.80   13.02   13.74   14.51   16.11 2473.89    1.00
+    ##   13.76    0.02    1.12   11.69   12.98   13.72   14.47   16.14 2851.88    1.00
 
 ``` r
 # attr(fitstan,"expected_local_density")  # カメラごとの密度
@@ -550,14 +548,14 @@ attr(fitstan,"mean_stay")                 # 平均滞在時間
 ```
 
     ##    mean se_mean      sd    2.5%     25%     50%     75%   97.5%   n_eff    Rhat 
-    ##    3.92    0.00    0.14    3.66    3.82    3.91    4.01    4.20 2275.47    1.00
+    ##    3.91    0.00    0.14    3.65    3.82    3.91    4.01    4.20 2042.91    1.00
 
 ``` r
 attr(fitstan,"WAIC")                      # WAIC値
 ```
 
     ##        WAIC        lppd      p_waic 
-    ##  5542.93527 -2726.61017    44.85746
+    ##  5543.14221 -2726.72538    44.84572
 
 ``` r
 # 全体密度のトレースプロット
@@ -590,16 +588,16 @@ fitstan <- bayes_rest(
     ## 
     ## MCMC sampling start.
     ## 
-    ## lppd = -2753.6368
-    ## pWAIC = 45.2008
-    ## WAIC = 5597.6753
+    ## lppd = -2753.5789
+    ## pWAIC = 45.0824
+    ## WAIC = 5597.3225
 
 ``` r
 attr(fitstan,"expected_global_density")  # 全体での密度
 ```
 
     ##    mean se_mean      sd    2.5%     25%     50%     75%   97.5%   n_eff    Rhat 
-    ##   13.58    0.03    1.00   11.73   12.89   13.54   14.22   15.63 1209.51    1.00
+    ##   13.55    0.03    1.00   11.75   12.84   13.51   14.22   15.59 1219.88    1.00
 
 ``` r
 # attr(fitstan,"expected_local_density") # カメラごとの密度
@@ -612,8 +610,8 @@ attr(fitstan,"mean_density")             # 平均滞在時間
 attr(fitstan,"WAIC")                     # WAIC値
 ```
 
-    ##       WAIC       lppd     p_waic 
-    ##  5597.6753 -2753.6368    45.2008
+    ##        WAIC        lppd      p_waic 
+    ##  5597.32250 -2753.57887    45.08238
 
 　
 
