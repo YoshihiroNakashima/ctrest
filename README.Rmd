@@ -23,7 +23,7 @@ output: github_document
 ```{r}
 # install.packages("devtools") 
 #library(devtools)
-#install_github("norimune/glmmstan")
+#install_github("YoshihiroNakashima/ctrest")
 ```
 
 ## データの準備
@@ -276,7 +276,7 @@ model
 ```{r}
 model_selection <- bayes_stay_selection(
   formula_stay = Stay ~ 1 + x1, # 滞在時間のモデル式
-  station_data = station_data_comprad,  # add_effort関数の返り値
+  station_data = station_data,  # add_effort関数の返り値
   stay_data = stay_data,        # format_stay関数の返り値
   family = "lognormal",         # 滞在時間分布
   local_stay = TRUE,            # 上で説明
