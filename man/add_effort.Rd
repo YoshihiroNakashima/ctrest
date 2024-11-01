@@ -46,7 +46,7 @@ station_data_rest <- format_station_data(
   col_name_species = "Species",
   col_name_y = "y",
   model = "REST",
-  target_species = "A"
+  target_species = "SP01"
 )
 
 station_data_complete <- add_effort(

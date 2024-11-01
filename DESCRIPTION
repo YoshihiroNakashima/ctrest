@@ -5,15 +5,17 @@ Authors@R:
     person("Yoshihiro", "Nakashima", email = "yosshi1215jp@yahoo.co.jp", role = c("aut", "cre"))
 Description: What the package does (one paragraph).
 License: MIT + file LICENSE
-Imports: dplyr, tidyr, rstan, ggplot2, lubridate, activity, stats, extraDistr
+Imports: dplyr, tidyr, purrr, stringr, ggplot2, magrittr, nimble, lubridate, activity, stats, extraDistr, parallel, MCMCvis
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.1
+RoxygenNote: 7.3.2
 Depends: 
     R (>= 2.10)
 LazyData: true
 Suggests: 
     knitr,
     rmarkdown,
+    bayesplot,
     testthat (>= 3.0.0)
 VignetteBuilder: knitr
+Config/testthat/edition: 3

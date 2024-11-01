@@ -43,6 +43,6 @@ format_station_data(
   col_name_species = "Species",
   col_name_y = "y",
   model = "REST",
-  target_species = "A"
+  target_species = "SP01"
 )
 }

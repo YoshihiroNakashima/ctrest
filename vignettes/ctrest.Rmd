@@ -1,5 +1,5 @@
 ---
-title: "ctrest: RESTモデルによる密度推定を行うためのRパッケージの使い方"
+title: "ctrest"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{ctrest}
@@ -7,9 +7,9 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-## パッケージの概要
+## パッケージの概要/Package Overview
 
-　"ctrest"は，RESTモデルもしくはREST-RADモデルを簡単に利用するためのRパッケージです．REST/REST-RADモデルとは，自動撮影カメラ（カメラトラップ）によって得られた動画データに基づいて地上性哺乳類・鳥類の密度推定を行うための統計モデルです．RESTモデルの詳細について[Nakashima et al. (2018)](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2664.13059)，REST-RADモデルについてはXXXXXXをご参照ください．また，データの準備までのプロセスについては，XXXを参照してください．
+　"ctrest"は，RESTモデルもしくはREST-RADモデルを簡単に利用するためのRパッケージです．REST/REST-RADモデルとは，自動撮影カメラ（カメラトラップ）によって得られた動画データに基づいて地上性哺乳類・鳥類の密度推定を行うための統計モデルです．RESTモデルの詳細について[Nakashima et al. (2018)](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2664.13059)，REST-RADモデルについてはXXXXXXをご参照ください．また，データの準備までのプロセスについては，[Nakashima et al. (2021)](https://www.biorxiv.org/content/10.1101/2021.05.18.444583v2)を参照してください．
 
 　パッケージは，以下のような関数を含みます．
 
@@ -17,27 +17,45 @@ vignette: >
 
 -   **密度推定：**推定手法によって異なる関数を定義しています．
 
-    -   **最尤法**：**mle_rest関数**は，最尤法に基づいてパラメータ推定を行います．この関数は，地点全体の平均的な密度を推定する場合のみに対応しており，シンプルな状況にのみに対応します（滞在時間や密度のパラメータに共変量やランダム効果を含めることはできません）．また，活動時間割合もRowcliffe et al.（）に基づく点推定値を使っています．
+    -   **最尤法**：**mle_rest関数**は，最尤法に基づいてパラメータ推定を行います．この関数は，地点全体の平均的な密度を推定する場合のみに対応しています（滞在時間や密度のパラメータに共変量やランダム効果を含めることはできません）．
 
-    -   **ベイズ法**：**bayes_rest関数**は，ベイズ法に基づいてパラメータ推定を行います．より発展的な解析を行うのに適しています．確率的プログラミング言語Stanを用いたMCMC法を利用しています．お手持ちのパソコンにRtoolsをインストールして**rstanを使える状態にする必要**があります（rstanのインストールに関しては，他サイトを参考にしてください）．
+    -   **ベイズ法**：**bayes_rest関数**は，ベイズ法に基づいてパラメータ推定を行います．より発展的な解析を行うのに適しています．Nimbleを用いたMCMC法を利用しています．
 
-## パッケージの入手
+"ctrest" is an R package designed to facilitate the use of REST models or REST-RAD models. REST/REST-RAD models are statistical models for estimating the density of ground-dwelling mammals and birds based on video data obtained from camera traps. For details on the REST model, please refer to [Nakashima et al. (2018)](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2664.13059), and for the REST-RAD model, please refer to XXXXXX. For the data preparation process, please refer to [Nakashima et al. (2021)](https://www.biorxiv.org/content/10.1101/2021.05.18.444583v2). The package includes the following functions:
+
+-   **Data preprocessing**: Performs necessary data preprocessing. The density estimation functions that will be used later are designed assuming that preprocessing has been done using these functions (or that the data has the same column names) to minimize the number of argument specifications.
+
+-   **Density estimation**: Different functions are defined based on the estimation method.
+
+    -   **Maximum likelihood**: The mle_rest function performs parameter estimation based on maximum likelihood. This function only supports estimating the average density across all sites (covariates and random effects cannot be included in staying time or density parameters).
+
+    -   **Bayesian method**: The bayes_rest function performs parameter estimation based on Bayesian methods. It is suitable for more advanced analyses. It uses MCMC methods implemented in Nimble.
+
+## 環境整備/Environment Setup
+
+　お手持ちのパソコンに[R](https://cran.r-project.org/)と[Rstudio](https://posit.co/download/rstudio-desktop/)、[RTools](https://cran.r-project.org/bin/windows/Rtools/)（Windowsの場合、Macの場合はxcode）をインストールしてください（.exeファイルをダブルクリックするだけでインストール可能）。ただし、R Toolsは、Rのバージョンに対応したものにしてください。
+
+Please install R, Rstudio, and RTools (for Windows; xcode for Mac) on your computer (installation can be done by simply double-clicking the .exe file). However, please ensure that RTools corresponds to your R version.
+
+## パッケージの入手/Package Installation
 
 　ctrestパッケージは，GitHubからインストールしてください．
 
+Please install the ctrest package from GitHub using "devtools" package.
+
 ```{r}
 # install.packages("devtools") 
-#library(devtools)
-#install_github("YoshihiroNakashima/ctrest")
+# library(devtools)
+# install_github("YoshihiroNakashima/ctrest")
 ```
 
-## データの準備
+## データの準備/Data Preparation
 
-　解析を始める前に，２つのCSVファイルを準備します．
+　解析を始める前に，２つのCSVファイルを準備します（以下のexampleデータを参照してください）．
 
--   **撮影データ（detection_data）**：各行に１本の動画情報が入力されたデータシートです．合計で1000回の撮影があった場合は，1000行の表（変数名も含めれば1001行）になります．最低限必要なのは，撮影された地点ID，撮影時刻，動物の種名，各動画における有効範囲の通過回数，滞在時間の測定値[^1]，滞在時間測定における打ち切りの有無です．欠損値にはNAを入力します[^2]．カメラの点検に複数回赴いた場合，調査回IDの列を入力しておくと，以下で説明するカメラ稼働時間の集計用の関数を使えます．
+-   **撮影データ（detection_data）**：各行に１本の動画情報が入力されたデータシートです．合計で1000回の撮影があった場合は，1000行の表（変数名も含めれば1001行）になります．最低限必要なのは，撮影された地点ID，撮影日時，動物種名，各動画における有効範囲における通過回数，滞在時間の測定値[^1]，滞在時間測定における打ち切りの有無です．欠損値にはNAを入力します[^2]．カメラの点検に複数回赴いた場合，調査回IDの列を入力しておきましょう。以下で説明するカメラ稼働時間の集計用の関数を使えます．
 
--   **カメラ地点データ（station_data）**：各行に各カメラ地点の情報が入力されたデータです．100地点にカメラを設置した場合，100行の表（変数名も含めれば101行）になります．最低限必要なのは，設置点IDです[^3]．状況に応じて，設置点の座標，カメラの稼働開始日時（設置日時）や終了日時（回収日，もしくは，最後の撮影日時），各地点の環境共変量などが入力されます．
+-   **カメラ地点データ（station_data）**：各行に各カメラ地点の情報が入力されたデータです．100地点にカメラを設置した場合，100行の表（変数名も含めれば101行）になります．最低限必要なのは，設置点IDです[^3]．状況に応じて，設置点の座標，カメラの稼働開始日時（設置日時）や終了日時（回収日/最後の撮影日時），各地点の環境共変量などが入力されます．
 
 [^1]: 複数の動画にまたがって滞在した場合は，1本目の動画に滞在時間の合計値を入力するか，１本目の滞在時間を入力して，打ち切りの列に1（=打ち切り有）と入力するか，のどちらかです．また，１本の動画で複数の通過がある場合は，どれか１回の滞在時間を入力します．
 
@@ -47,62 +65,93 @@ vignette: >
 
 　RESTモデルは，対象種が有効撮影範囲を何回通過したかを**すべての動画**に対して計測しなければいけません．一方，REST-RADモデルは，この判定を一部の動画に対して行うだけで密度推定できます[^4]．２つのモデルの違いはこの点だけなので，REST用の元データにREST-RADモデルを適用することは可能です（その反対は不可能）．
 
-[^4]: REST-RADを使う上で，何本の動画を測定対象にするべきかについては，Nakashima et al. （）を参考にしてください．
+[^4]: REST-RADを使う上で，何本の動画を測定対象にするべきかについては，XXXXを参考にしてください．
 
-　以下，パッケージに含まれているexampleデータを使って説明します．パッケージを開いて，使える状態にしましょう．
+　以下，パッケージに含まれているexampleデータを使って説明します．
 
-```{r setup}
-library(ctrest)
-# library(devtools)
-# load_all()
+Before starting the analysis, you need to prepare two CSV files (refer to the example data below).
+
+-   **Detection data (detection_data)**: A data sheet where each row contains information from one video. If there are 1000 recordings in total, it will be a table with 1000 rows (1001 rows including variable names). The minimum required information includes the camera station ID, date and time of detection, species name, number of passes through the effective detection area (or "focal area") in each video, staying time measurement, and whether the staying time measurement was censored or not (Censored = 1). Enter NA for missing values. If you visited the cameras multiple times for maintenance, include a survey round ID column. You can use the function explained below for calculating camera operation time.
+
+-   **Camera station data (station_data)**: A data sheet where each row contains information about each camera station. If cameras were installed at 100 locations, it will be a table with 100 rows (101 rows including variable names). The minimum requirement is the station ID. Depending on the situation, you may also include station coordinates, camera operation start time (installation time), end time (collection date/last recording time), and environmental covariates for each location.
+
+The REST model requires counting how many times the target species passed through the effective detection area for **all videos**. In contrast, the REST-RAD model can estimate density by making this determination for only a subset of videos. Since this is the only difference between the two models, it is possible to apply the REST-RAD model to data prepared for REST (but not vice versa).
+
+The following explanation uses the example data included in the package.
+
+```{r setup, cache=FALSE}
+library(ctrest) # ctrestパッケージ内の関数が使える状態に
 ```
 
 ```{r}
-detection_data # 撮影データの例
+detection_data # Detection data
 ```
 
-この例では，StationID（地点ID），DateTime（撮影日時），Term（調査回），Species（撮影された動物種名），y（有効範囲に入った回数），Stay（有効範囲内の滞在時間），Cens（滞在時間の打ち切りの有=1，無=0）が入力されています．
+StationID（地点ID），DateTime（撮影日時），Term（調査回），Species（撮影された動物種名），y（有効範囲に入った回数），Stay（有効範囲内の滞在時間），Cens（滞在時間の打ち切りの有=1，無=0）が入力されています．
+
+The data includes StationID (station ID), DateTime ( date and time of detection), Term (survey round), Species (recorded animal species), y (number of times entering the effective area), Stay (staying time within the effective area), and Cens (staying time censoring: 1 = yes, 0 = no).
 
 ```{r}
-station_data # カメラ設置点データ
+station_data # Camera station data
 ```
 
 カメラ設置点データには，StationID（地点ID）と２つの共変量（x1とx2）が入力されています[^5]．
 
 [^5]: 滞在時間に共変量を入れたい場合も，環境変数の値はstation_dataに入力してください．
 
-　以下では，REST用のデータを使って，それぞれのモデルに必要なデータを準備する方法について説明します．
+　以下では，REST用のデータを使って，密度推定用の関数を動かすのに必要なデータを準備する方法について説明します．
 
-## データの**前処理**
+The camera station data contains StationID (station ID) and two covariates (x1 and x2).
 
-### データ前処理用の関数
+Below, we will explain how to prepare the necessary data for density estimation functions using REST data.
 
-| 関数名                  | 目的                             |
-|-------------------------|----------------------------------|
-| format_station_data関数 | カメラ設置点ごとの撮影枚数の集計 |
-| add_effort関数          | カメラ稼働日数の計算             |
-| format_stay関数         | 滞在時間・打ち切りの有無の集計   |
-| format_activity関数     | 撮影時刻のラジアン変換           |
+## データの**前処理/Data Processing**
 
-: 前処理用の関数一覧
+### データ前処理用の関数/Data Preprocessing Functions
 
-### 撮影枚数の整理
++------------------------+-----------------------------------------------+
+| 関数名/Function Name   | 目的/Purpose                                  |
++========================+===============================================+
+| format_station_data    | カメラ設置点ごとの通過回数の集計              |
+|                        |                                               |
+|                        | Summarize number of passes per camera station |
++------------------------+-----------------------------------------------+
+| add_effort             | カメラ稼働日数の計算                          |
+|                        |                                               |
+|                        | Calculate camera operation days               |
++------------------------+-----------------------------------------------+
+| format_stay            | 滞在時間・打ち切りの有無の集計                |
+|                        |                                               |
+|                        | Summarize staying time and censoring status   |
++------------------------+-----------------------------------------------+
+| format_activity        | 撮影時刻のラジアン変換                        |
+|                        |                                               |
+|                        | Convert recording times to radians            |
++------------------------+-----------------------------------------------+
+
+: 前処理用の関数一覧/List of preprocessing functions
+
+### 撮影枚数の整理/Organizing the number of passes
 
 　これら２つの元データに基づいて，REST/REST-RADに必要なデータを準備していきます．
 
 　最初に使うのが，撮影枚数をステーションごとに集計する**format_station_data関数**です．exampleデータでやってみます．
 
+Based on these two source datasets, we will prepare the data needed for REST/REST-RAD.
+
+The first function we'll use is the **format_station_data function**, which summarizes the number of recordings by station. Let's try it with the example data.
+
 ```{r}
-# REST用データの作成
+# Creating data for REST
 station_data_rest <- format_station_data(
-  detection_data = detection_data, # 元データ
-  station_data = station_data,     # 元データ
-  col_name_station = "Station",    # カメラ設置点IDを含む列名
-  col_name_species = "Species",    # 種名を含む列名
-  col_name_y = "y",                # 通過回数を含む列名
-  model = "REST",　                # 推定に利用するモデル名（"REST" or "RAD-REST）
-  target_species = "A"　           # 対象種名
-) 
+  detection_data = detection_data,    # source data
+  station_data = station_data,        # source data
+  col_name_station = "Station",       # column name containing camera station ID
+  col_name_species = "Species",       # column name containing species name
+  col_name_y = "y",                   # column name containing number of passes
+  model = "REST",                     # model name to use for estimation ("REST" or "RAD-REST")
+  target_species = "SP01"             # target species name
+)
 head(station_data_rest)
 ```
 
@@ -110,30 +159,40 @@ head(station_data_rest)
 
 　今度は，model = "RAD-REST"にしてみましょう．
 
+This function integrates the two source datasets by station and prepares the necessary data. As shown above, when model = "REST", the Y column shows the total number of passes through the effective detection area summarized by station.
+
+Now, let's try setting model = "RAD-REST".
+
 ```{r}
 station_data_rad <- format_station_data(
-  detection_data = detection_data, # 元データ
-  station_data = station_data,     # 元データ
-  col_name_station = "Station",    # カメラ設置点IDを含む列名
-  col_name_species = "Species",    # 種名を含む列名
-  col_name_y = "y",                # 通過回数を含む列名
-  model = "RAD-REST",　            # 推定に使うモデル名（"REST" or "RAD-REST）
-  target_species = "A"　           # 種名を含む列名
+  detection_data = detection_data,    # source data
+  station_data = station_data,        # source data
+  col_name_station = "Station",       # column name containing camera station ID
+  col_name_species = "Species",       # column name containing species name
+  col_name_y = "y",                   # column name containing number of passes
+  model = "RAD-REST",                 # model name to use for estimation ("REST" or "RAD-REST")
+  target_species = "SP01"             # target species name
 )
 head(station_data_rad)
 ```
 
-Nに「各カメラで撮影された動画総本数」，y_0からy_3は，「あるカメラ地点で通過回数がn回だった動画本数」が入力されています．例えば，1行目のST001というステーションでは，一度も有効撮影範囲を通過しなかった動画が3本，1回だけ通過したのが8本，2回通過したのが0本撮影されたということを意味しています．RAD-RESTモデルを適用するうえでは，すべての動画に対して通過回数を測定する必要は必ずしもない（すなわちyを通過回数で重みづけした合計がNと一致する必要はない）ことに注意してください．今一致しているのは，REST用の元データ（すべての動画を計測対象にしたデータ）を仮に使っているからです．
+Nに「各カメラで撮影された動画総本数」，y_0からy_3は，「あるカメラ地点で通過回数がn回（y_の次の数字が通過回数）だった動画本数」が入力されています．例えば，1行目のST001というステーションでは，一度も有効撮影範囲を通過しなかった動画が0本，1回だけ通過したのが2本，2回通過したのが0本撮影されたということを意味しています．RAD-RESTモデルを適用するうえでは，すべての動画に対して通過回数を測定する必要は必ずしもない（すなわちy_0 + y_1 + y_2 = Nである必要は必ずしもない）ことに注意してください．今一致しているのは，REST用の元データ（すべての動画を計測対象にしたデータ）を仮に使っているからです．
+
+N contains the "total number of videos recorded at each camera", and y_0 to y_3 contain "the number of videos where the number of passes at a camera station was n times (where n is the number after y\_)". For example, at station ST001 in the first row, there were 0 videos with no passes through the effective detection area, 2 videos with one pass, and 0 videos with two passes. Note that when applying the RAD-REST model, it's not necessary to measure the number of passes for all videos (i.e., y_0 + y_1 + y_2 doesn't necessarily need to equal N). They match here only because we're using source data prepared for REST (data where all videos were measured).
 
 ### カメラ稼働期間の追加
 
-　先ほど作成したstation_data2には，各カメラが何日稼働していたのかについての情報がありません．**add_effort関数**を使えば，detection_dataの撮影情報から稼働日数を計算して追加することができます．最初の撮影日時を調査開始，最後の撮影日時を調査終了と仮定します．RESTでは，有効範囲の撮影を行うので，最初の撮影日時が稼働開始と一致することは多いはずです．調査終了時に関しても，カメラの電池が残っているものに関しては，手動で撮影を行うことで日時を記録することができます．調査期間途中で稼働しなくなったものは，最後の撮影日までを稼働日数とみなします．調査が複数回にわたる場合，調査回のIDが入力された列をcol_name_term引数にしているすることで合計の稼働日数を計算してくれます．
+　先ほど作成したstation_data2には，各カメラが何日稼働していたのかについての情報がありません．**add_effort関数**を使えば，detection_dataの撮影情報から稼働日数を計算して追加することができます．最初の撮影日時を調査開始，最後の撮影日時を調査終了と仮定します．RESTでは，有効範囲の撮影を行うので，最初の撮影日時が稼働開始と一致することは多いはずです．調査終了時に関しても，カメラの電池が残っているものに関しては，手動で撮影を行うことで日時を記録することができます．調査期間途中で稼働しなくなったものは最後の撮影日までを稼働日数とみなします．調査が複数回にわたる場合，調査回のIDが入力された列をcol_name_term引数にしているすることで合計の稼働日数を計算してくれます．
 
 　add_effort関数のplot引数をTRUEにすると，カメラの稼働の様子を可視化できます．カメラの日時がくるっていることはよくあるので，目で確かめておくとよいでしょう．カメラの台数が多いとカメラ設置点名が重なって見えなくなることが多いです．その場合は，font_size引数に小さな値を入れてください．
 
+The station_data2 we created earlier doesn't contain information about how many days each camera was operational. Using the **add_effort function**, we can calculate and add the operation days based on the recording information in detection_data. The function assumes the first recording time as the survey start and the last recording time as the survey end. In REST, since we're recording the effective detection area, the first recording time should often match the start of operation. For survey end times, you can manually record the time for cameras with remaining battery power. For cameras that stopped working during the survey period, the last recording date is considered as the final operation day. If the survey spans multiple rounds, you can calculate the total operation days by specifying the column containing survey round IDs in the col_name_term argument.
+
+By setting the plot argument to TRUE in the add_effort function, you can visualize the camera operation patterns. Since camera date/time settings often get misaligned, it's good to verify this visually. When there are many cameras, the station names may overlap and become illegible. In such cases, use a smaller value for the font_size argument.
+
 ```{r}
 # REST用のデータに追加
-station_data_comprest <- add_effort(
+station_effort_REST <- add_effort(
   detection_data = detection_data,            # 元データ
   station_data_formatted = station_data_rest, # format_station_data関数の返り値
   col_name_station = "Station",               # カメラ設置点IDを含む列名
@@ -142,12 +201,12 @@ station_data_comprest <- add_effort(
   plot = TRUE,                                # 調査努力を可視化するか
   font_size = 5                               # 可視化した場合の目盛フォント
 )
-head(station_data_comprest)
+head(station_effort_REST)
 ```
 
 ```{r}
 # RAD-REST用のデータに追加（引数指定は上と同じ）
-station_data_comprad <- add_effort(
+station_effort_RAD <- add_effort(
   detection_data = detection_data,
   station_data_formatted = station_data_rad,
   col_name_station = "Station",
@@ -156,231 +215,308 @@ station_data_comprad <- add_effort(
   plot = FALSE
 )
 # 全データを表示させたい場合
-# print(station_data_comprad, n = Inf)
+print(station_effort_RAD, n = Inf)
 ```
 
-新しくできたEffort列の数値がカメラ稼働時間（日数）を示しています．もし稼働日数が0のものがある場合は，日時の入力などにミスがないかをもう一度確認してください（0だと密度の推定もできません）．
+新しくできたEffort列の数値がカメラ稼働時間（日数）を示しています．**稼働日数が0のものがある場合は，日時の入力などにミスがないかをもう一度確認してください（0だと密度の推定もできません）**．
 
-### 滞在時間の取得
+The newly created Effort column shows the camera operation time (in days). **If there are any entries with 0 operation days, please check again for possible errors in date/time entries (density estimation is impossible with 0 days)**.
 
-　滞在時間は，撮影データ（detection_data）に入力されています．RESTでもRAD-RESTでも，滞在時間の測定は必ずしもすべての動画で行う必要はありません．上述の通り，計測しなかった動画については，detection_dataの該当箇所に必ずNAを入力してください．format_stay_data関数で，NAデータを除外します．また，滞在時間に0が入力されていないかを確認します（多くの時間分布は，正の整数のみを確率変数として持ちます）．
+### 滞在時間の取得/Obtaining Staying Time Data
+
+　滞在時間は，撮影データ（detection_data）に入力されています．RESTでもRAD-RESTでも，滞在時間の測定は必ずしもすべての動画で行う必要はありません．上述の通り，計測しなかった動画については，detection_dataの該当箇所に必ずNAを入力してください．format_stay関数で，NAデータを除外します．また，滞在時間に0が入力されていないかを確認します（多くの時間分布は，正の整数のみを確率変数として持ちます）．
+
+Staying time is recorded in the detection data (detection_data). For both REST and RAD-REST, it's not necessary to measure staying time for all videos. As mentioned above, for videos where measurements weren't taken, be sure to enter NA in the corresponding fields of detection_data. The format_stay function will exclude NA data. It also checks whether any staying times are entered as 0 (most time distributions only accept positive integers as probability variables).
 
 ```{r}
 stay_data <- format_stay(
-  detection_data = detection_data, # 元データ
-  col_name_station = "Station",    # カメラ設置点IDを含む列名
-  col_name_species = "Species",    # 種名を含む列名
-  col_name_stay = "Stay",          # 滞在時間を含む列名
-  col_name_cens = "Cens",          # 打ち切りの有無を含む列名
-  target_species = "A"             # 対象種名
+  detection_data = detection_data,    # source data
+  station_data = station_data,
+  col_name_station = "Station",       # column name containing camera station ID
+  col_name_species = "Species",       # column name containing species name
+  col_name_stay = "Stay",             # column name containing staying time
+  col_name_cens = "Cens",             # column name containing censoring status
+  target_species = "SP01"             # target species name
 )
 head(stay_data)
 ```
 
-### 撮影時刻の変換
+### 撮影時刻の変換/Convert Recording Times
 
 　最後に活動時間割合を推定するために撮影時刻をラジアン変換しましょう（他の前処理関数の返り値はtbl形式のデータフレームですが，この関数はベクトルになります）．
+
+Finally, let's convert the recording times to radians for estimating activity time proportions (unlike other preprocessing functions that return data frames in tbl format, this function returns a vector).
 
 ```{r}
 activity_data <- format_activity(
   detection_data = detection_data, # 元データ
+  col_name_station = "Station",    # カメラ設置点IDを含む列名
   col_name_species = "Species",    # 種名を含む列名
   col_name_datetime = "DateTime",  # 撮影日時を含む列名
-  target_species = "A"             # 対象種名
-)
+  target_species = "SP01",            # 対象種名
+  indep_time = 30　　　　　　　　　# 独立なデータ間隔
+  )
 head(activity_data)
 ```
 
-## 最尤推定
+## 最尤推定/Maximum Likelihood Estimation
 
-### RESTによる密度推定
+### RESTによる密度推定/Density Estimation using REST
 
-　mle_rest関数で行います．尤度関数をRのoptim関数で最適化してパラメータ推定しており，標準偏差や信頼区間はヘッセ行列から事後的に計算しています．後に紹介するMCMC法によるベイズ推定に比べて圧倒的に速いです．調査地の平均的な密度をさっと出したいときに使ってください．活動時間割合については，固定カーネル法（Rowcliffe et al. ）による推定値を定数として入れています．
+　mle_rest関数で行います．尤度関数をRのoptim関数で最適化してパラメータ推定しており，標準偏差や信頼区間はヘッセ行列から事後的に計算しています．後に紹介するMCMC法によるベイズ推定に比べて圧倒的に速いです．調査地の平均的な密度をさっと出したいときに使ってください．活動時間割合については，固定カーネル法（Rowcliffe et al. 2014）による推定値を定数として入れています．
+
+Density estimation is performed using the mle_rest function. It optimizes the likelihood function using R's optim function for parameter estimation, and calculates standard deviations and confidence intervals from the Hessian matrix afterwards. This is dramatically faster than the Bayesian estimation using MCMC method that we'll introduce later. Use this when you want to quickly calculate the average density of a study area. For activity time proportions, it uses fixed kernel method estimates (Rowcliffe et al. 2014) as a constant.
 
 ```{r}
 model <- mle_rest(
-  station_data_comprest,       # REST用のadd_effort関数の返り値
-  stay_data,                   # format_stay関数の返り値
-  activity_data,               # activity_data関数の返り値
-  focal_area = 2.0,            # 有効撮影範囲の面積
-  model = "REST"               # 密度推定に使うモデル名（"REST" or "RAD-REST）
+  station_effort_REST,         # return value from add_effort function for REST
+  stay_data,                   # return value from format_stay function
+  activity_data,               # return value from activity_data function
+  focal_area = 2.0,            # effective detection area
+  model = "REST"               # model name for density estimation ("REST" or "RAD-REST")
 )
 model
 ```
 
 　この関数では，撮影枚数についてはポアソン分布または負の二項分布，滞在時間については４つの確率分布（指数分布，ガンマ分布，対数正規分布，ワイブル分布）を想定して，全通りの組み合わせ（2×4 = 8通り）で密度推定します．密度の点推定値だけでなく，標準偏差や95%信頼区間，AIC値などを見ることができます．結果の表は，AIC値の小さい順にソートされます．
 
-### RAD-RESTによる密度推定
+This function assumes either a Poisson distribution or negative binomial distribution for the number of recordings, and four probability distributions (exponential, gamma, log-normal, and Weibull distributions) for staying time, estimating density for all possible combinations (2 × 4 = 8 combinations). You can see not only point estimates of density but also standard deviations, 95% confidence intervals, and AIC values. The results table is sorted by AIC values in ascending order.
+
+### RAD-RESTによる密度推定/Density Estimation using RAD-REST
 
 　RAD-RESTに関しても，model = "RAD-REST"とするだけです．
 
+For RAD-REST, you just need to set model = "RAD-REST".
+
 ```{r}
 model <- mle_rest(
-  station_data_comprad, # RAD-REST用のadd_effort関数の返り値
-  stay_data,            # format_stayの返り値
-  activity_data,　　　　# format_activityの返り値
-  focal_area = 2.0,     # 有効撮影範囲の面積
-  model = "RAD-REST"    # 密度推定に使うモデル名
+  station_effort_RAD,    # return value from add_effort function for RAD-REST
+  stay_data,             # return value from format_stay function
+  activity_data,         # return value from format_activity function
+  focal_area = 2.0,      # effective detection area
+  model = "RAD-REST"     # model name for density estimation
 )
 model
 ```
 
 ベストモデルの密度推定値は，少しRAD-RESTモデルの方が高く出ていますが許容範囲内でしょう．
 
-## ベイズ推定
+The density estimate from the best model is slightly higher with the RAD-REST model, but this is within acceptable range.
 
-### 滞在時間のモデル選択
+## ベイズ推定/Bayesian Estimation
 
-　MCMCによる密度推定には結構時間がかかるので，先に滞在時間のモデル選択をしておくと良いでしょう．このための関数が，**bayes_stay_selection関数**です．現時点で，指数分布，ガンマ分布，対数正規分布，ワイブル分布の4つの確率分布を利用可能で，評価したモデルのWAIC値を返します．それぞれの確率分布の期待値に固定効果やランダム効果を入れることもできます[^6]．この関数の引数を先に示します．
+### 滞在時間のモデル選択/Staying Time Model Selection
+
+　MCMCによる密度推定には結構時間がかかるので，先に滞在時間のモデル選択をしておくと良いでしょう．このための関数が，**bayes_stay_selection関数**です．現時点で，指数分布，ガンマ分布，対数正規分布，ワイブル分布の4つの確率分布を利用可能で，評価したモデルのWAIC値を返します．それぞれの確率分布の期待値に固定効果やランダム効果（現時点では1つだけ）を入れることもできます[^6]．この関数の引数を先に示します．
 
 [^6]: ランダム効果を入れた場合のWAIC値は，現時点では条件付き尤度に基づくconditonal WAIC値です．
 
-| 引数名           | Default値        | 説明                                                                                    |
-|--------------|--------------|---------------------------------------------|
-| **formula_stay** |                  | 滞在時間のモデル式                                                                      |
-| station_data     |                  | 各行に各カメラについての情報（例えばカメラIDや共変量）をもつデータフレーム              |
-| stay_data        |                  | 滞在時間・打ち切りの有無をもつデータフレーム                                            |
-| family           | "lognormal"      | 滞在時間分布の指定．"exponential"，"gamma"，"lognormal"，"weibull"のいずれかを選択      |
-| **local_stay**   | FALSE            | 滞在時間の期待値をカメラごとに推定するか（TRUE），グローバルに推定するか（FALSE）の指定 |
-| **plot**         | TRUE             | 滞在時間の期待値を可視化するか（TRUE），しないか（FALSE）                               |
-| cores            | 2                | 計算に利用するコア数                                                                    |
-| iter\*           | 3000             | iterationの長さ                                                                         |
-| warmup\*         | iterの半分の長さ | warmupの長さ                                                                            |
-| chains\*         | 2                | chains数                                                                                |
-| thin\*           | 1                | thiningの間隔                                                                           |
-| **all_comb**     | FALSE            | 総当たりのモデルを評価するか（TRUE），しないか（FALSE）                                 |
+Since MCMC density estimation takes considerable time, it's good to perform staying time model selection first. The **bayes_stay_selection function** is used for this purpose. Currently, four probability distributions are available: exponential, gamma, log-normal, and Weibull distributions, and the function returns WAIC values for evaluated models. You can also include fixed effects and random effects (currently limited to one) in the expected value of each probability distribution. Here are the function arguments:
 
-: **bayes_stay_selection関数の引数一覧．太字の引数については以下で説明．\*の意味については，一般的なMCMC法によるベイズ推定に関する書籍やサイトを参考にしてください．**
++----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| 引数名               | Default値            | 説明                                                                                                   |
++======================+======================+========================================================================================================+
+| **formula_stay**     | Stay \~ 1            | 滞在時間のモデル式                                                                                     |
+|                      |                      |                                                                                                        |
+|                      |                      | Model formula for staying time                                                                         |
++----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| station_data         |                      | 各行に各カメラについての情報（例えばカメラIDや共変量）をもつデータフレーム                             |
+|                      |                      |                                                                                                        |
+|                      |                      | Data frame containing information for each camera (e.g., camera ID and covariates)                     |
++----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| stay_data            |                      | 滞在時間・打ち切りの有無をもつデータフレーム                                                           |
+|                      |                      |                                                                                                        |
+|                      |                      | Data frame containing staying time and censoring status                                                |
++----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| family               | "lognormal"          | 滞在時間分布の指定．"exponential"，"gamma"，"lognormal"，"weibull"のいずれかを選択                     |
+|                      |                      |                                                                                                        |
+|                      |                      | Specification of staying time distribution. Choose from "exponential", "gamma", "lognormal", "weibull" |
++----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| **plot**             | TRUE                 | 滞在時間の期待値を可視化するか（TRUE），しないか（FALSE）                                              |
+|                      |                      |                                                                                                        |
+|                      |                      | Whether to visualize expected staying time (TRUE) or not (FALSE)                                       |
++----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| cores                | 2                    | 計算に利用するコア数                                                                                   |
+|                      |                      |                                                                                                        |
+|                      |                      | Number of cores to use for calculation                                                                 |
++----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| iter\*               | 3000                 | iterationの長さ                                                                                        |
+|                      |                      |                                                                                                        |
+|                      |                      | Length of iterations                                                                                   |
++----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| warmup\*             | NULL                 | warmupの長さ                                                                                           |
+|                      |                      |                                                                                                        |
+|                      |                      | Length of warmup                                                                                       |
++----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| chains\*             | 2                    | chains数                                                                                               |
+|                      |                      |                                                                                                        |
+|                      |                      | Number of chains                                                                                       |
++----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| thin\*               | 1                    | thiningの間隔                                                                                          |
+|                      |                      |                                                                                                        |
+|                      |                      | Thinning interval                                                                                      |
++----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| **all_comb**         | FALSE                | 総当たりのモデルを評価するか（TRUE），しないか（FALSE）                                                |
+|                      |                      |                                                                                                        |
+|                      |                      | Whether to evaluate all possible models (TRUE) or not (FALSE)                                          |
++----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
 
-#### **formula_stay引数**
+: **bayes_stay_selection関数の引数一覧．太字の引数については以下で説明．\*の意味については，一般的なMCMC法によるベイズ推定に関する書籍やサイトを参考にしてください/**List of arguments for bayes_stay_selection function. Bold arguments are explained below. For the meaning of arguments with , please refer to general books or websites about Bayesian estimation using MCMC methods.
 
-　推定したい滞在時間のモデル式を指定します．モデル式の書き方は，一般化線形混合モデル用のＲのパッケージlme4のlmer関数と同じにしています．あまり複雑なモデルにしても仕方がないので，ランダム効果は切片のみに入れることを想定しており，交互作用などには対応していません．
+#### **formula_stay引数/formula_stay Argument**
 
-**local_stay引数とplot引数**
+　推定したい滞在時間のモデル式を指定します．あまり複雑なモデルにしても仕方がないので，ランダム効果は切片に一つだけ入れることを想定しており，交互作用などには対応していません．モデル式は、Stay \~ 1 + x1のように、stay_dataの列名で指定してください。
 
-　この引数は，「どのレベルの滞在時間の期待値を密度推定に利用しようとしているのか」を指定します．滞在時間のモデルに固定効果やランダム効果を入れる場合，滞在時間の期待値には，各カメラの前でのlocalな滞在時間の期待値と，調査地全体のglobalな滞在時間の期待値の２つが存在します．
+Specifies the model formula for staying time estimation. Since overly complex models aren't necessarily beneficial, it's designed to include only one random effect in the intercept and doesn't support interactions. Specify the model formula using column names from stay_data, like Stay \~ 1 + x1.
 
-　どちらを利用するべきかは状況次第です．
+**plot引数/plot Argument**
 
-　例えば，カメラが動物の行動圏に対して比較的狭い範囲に集中して設置されており，同一個体を複数のカメラが撮影しうる状況では，localな滞在時間は，カメラの前の微小環境を反映したものに過ぎません．この場合，密度推定には，globalな滞在時間の期待値を使った方が良いでしょう[^7]（local_stay = FALSE）．
+　plot引数をTRUEにしておけば，各カメラでの滞在時間の期待値がどのような値として推定されたのかを可視化してくれます．あまり極端な値がある場合は，その原因となる共変量を外したり，グローバルな推定地の利用を考えたり，何らかの対処をした方がよいです[^7]．
 
-[^7]: 狭い調査地であったとしても，調査地内が大きく２つの環境に区分される場合などは，この限りではありません．
+[^7]: 現時点で一番簡単な解決策は，滞在時間の共変量はカテゴリカル変数に限るというものです．現在，ディレクレ過程混合モデルの利用も検討しており，将来的にはこのパッケージで利用できるようにしようと思っています．
 
-　一方，カメラ間の距離が十分に大きく，それぞれのカメラに撮影されるが別のポピュレーションであると想定される場合には，localな滞在時間は，カメラの前の微小環境だけでなく，各地点での動物の平均的な移動速度も反映している可能性があります．この場合，localな滞在時間の期待値を密度推定に使った方が良いかもしれません（local_stay = TRUE）．
+When plot is set to TRUE, it visualizes the estimated staying time values at each camera. If there are extreme values, you should consider removing the covariates, using global estimation, or taking other appropriate measures.
 
-　**localな滞在時間の期待値を使う場合，その値が現実的な範囲のものであるかを必ず確認する必要があります**．とくに連続型の共変量を入れたモデルでは，共変量側に外れ値がある場合には，滞在時間の方もそれに応じてあり得ない値を示すかもしれません．plot引数をTRUEにしておけば，各カメラでの滞在時間の期待値がどのような値として推定されたのかを可視化してくれます．あまり極端な値がある場合は，その原因となる共変量を外したり，グローバルな推定地の利用を考えたり，何らかの対処をした方がよいです[^8]．
-
-[^8]: 現時点で一番簡単な解決策は，滞在時間の共変量はカテゴリカル変数に限るというものです．現在，ディレクレ過程混合モデルの利用も検討しており，将来的にはこのパッケージで利用できるようにしようと思っています．
-
-**all_comb引数**
+**all_comb引数/all_comb Argument**
 
 　TRUEにしておくと，formula_stay引数で指定したモデルをフルモデルとして，固定効果・ランダム効果あるなしの総当たりのモデルを作成し，それぞれのモデルのWAIC値を計算します．当然，それなりの時間がかかります．とくに，ランダム効果を入れたモデルだと推定に要する時間は長くなるので注意してください．all_comb = TRUEでplot = TRUEとした場合，ベストモデルに基づく期待値が描画されます．
 
-#### 関数の利用
+When set to TRUE, it uses the model specified in formula_stay as the full model and creates all possible combinations of models with and without fixed effects and random effects, calculating WAIC values for each model. This naturally takes considerable time. Note that models with random effects particularly take longer to estimate. When both all_comb = TRUE and plot = TRUE, it draws expected values based on the best model.
+
+#### 関数の利用/Function Usage
 
 　カメラ地点IDをランダム効果に，x1を固定効果に入れてそれぞれ入れてみます．
 
+Let's try including camera station ID as a random effect and x1 as a fixed effect:
+
 ```{r}
+library(nimble)
 model_selection <- bayes_stay_selection(
-  formula_stay = Stay ~ 1 + x1, # 滞在時間のモデル式
-  station_data = station_data,  # 元データ
-  stay_data = stay_data,        # format_stay関数の返り値
-  family = "lognormal",         # 滞在時間分布
-  local_stay = TRUE,            # 上で説明
-  plot = TRUE,                  # 滞在時間の期待値を可視化するか
-  cores = 1,                    # 計算に利用するコア数
-  iter = 3000,                  # iteration数
-  warmup = 1000,                # warmup数
-  chains = 1,                   # チェーン数
-  thin = 1,                     # thinningの間隔
-  all_comb = TRUE               # 上で説明
+  formula_stay = Stay ~ 1 + x1,     # staying time model formula
+  station_data = station_data,      # source data
+  stay_data = stay_data,            # return value from format_stay function
+  family = "lognormal",             # staying time distribution
+  plot = TRUE,                      # whether to visualize expected staying time
+  cores = 2,                        # number of cores to use
+  iter = 3000,                      # number of iterations
+  warmup = 1000,                    # number of warmup iterations
+  chains = 2,                       # number of chains
+  thin = 1,                         # thinning interval
+  all_comb = TRUE,                  # explained above
+  target_species = "SP01"           # target species
 )
 model_selection
 ```
 
-WAIC値を比較すると，ほとんど差がありません．このような場合はシンプルなモデルを選択すればよいでしょう．他の確率分布を試したい場合は，family引数で指定してください．
+Comparing WAIC values shows little difference. In such cases, it's best to choose the simpler model. If you want to try other probability distributions, specify them in the family argument.
 
-### 密度推定のための関数
+### 密度推定のための関数/Function for Density Estimation
 
 　滞在時間のモデル選択が出来たらいよいよ密度推定です．
 
 　密度をベイズ推定する関数は，**bayes_rest関数**です．以下のように，必要な変数を指定するだけで密度が推定できます．まず，関数の全引数を示します．
 
-| 引数名                | Default値        | 説明                                                                                                                                      |
-|------------|------------|------------------------------------------------|
-| formula_stay          |                  | 滞在時間のモデル式                                                                                                                        |
-| formula_density       |                  | 密度のモデル式                                                                                                                            |
-| station_data_complete |                  | add_effort関数の返り値                                                                                                                    |
-| stay_data             |                  | format_stay関数の返り値                                                                                                                   |
-| activity_data         |                  | format_activity関数の返り値                                                                                                               |
-| **activity_model**    | "kernel"         | 活動時間割合の推定手法，"kernel"または"mixed"                                                                                             |
-| **K**                 | 5                | 活動時間割合の推定にvon Mises混合分布を用いる場合（activity_model = "mixed"）の場合の混合数．                                             |
-| **bw_adj**            | 1.5              | 活動時間割合の推定に固定カーネル法を用いる場合のバンド幅の調整                                                                            |
-| stay_family           | "lognormal"      | 滞在時間分布の指定．"exponential"，"gamma"，"lognormal"，"weibull"のいずれかを選択                                                        |
-| local_stay            | FALSE            | 滞在時間の期待値をカメラごとに推定するか（TRUE），グローバルに推定するか（FALSE）の指定．詳細は，bayes_stay_selection関数のところで説明． |
-| focal_area            |                  | 滞在時間の期待値をカメラごとに推定するか（TRUE），グローバルに推定するか（FALSE）の指定                                                   |
-| cores\*               | 2                | 計算に利用するコア数                                                                                                                      |
-| iter\*                | 2000             | iterationの長さ                                                                                                                           |
-| warmup\*              | iterの半分の長さ | warmupの長さ                                                                                                                              |
-| chains\*              | 2                | chains数                                                                                                                                  |
-| thin\*                | 1                | thiningの間隔                                                                                                                             |
-| model                 | "REST"           | 密度推定モデルの選択．"REST"または"RAD-REST"のいずれか                                                                                    |
+Once the staying time model selection is complete, we can move on to density estimation.
 
-: **bayes_rest関数の引数一覧．太字の引数については以下で説明．\*の意味については，一般的なMCMC法によるベイズ推定に関する書籍やサイトを参考にしてください．**
+The function for Bayesian density estimation is **bayes_rest**. Density can be estimated by simply specifying the necessary variables as shown below. First, here are all the function arguments:
 
-#### 活動時間割合に関わる引数
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| 引数名/Argument       | Default              | 説明/Description                                                                                       |
++=======================+======================+========================================================================================================+
+| formula_stay          |                      | 滞在時間のモデル式                                                                                     |
+|                       |                      |                                                                                                        |
+|                       |                      | Model formula for staying time e.g. Stay \~ 1 + x1                                                     |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| formula_density       |                      | 密度のモデル式                                                                                         |
+|                       |                      |                                                                                                        |
+|                       |                      | Model formula for density e.g. \~ 1 + x2                                                               |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| station_data_complete |                      | add_effort関数の返り値                                                                                 |
+|                       |                      |                                                                                                        |
+|                       |                      | Return value from add_effort function                                                                  |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| stay_data             |                      | format_stay関数の返り値                                                                                |
+|                       |                      |                                                                                                        |
+|                       |                      | Return value from format_stay function                                                                 |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| activity_data         |                      | format_activity関数の返り値                                                                            |
+|                       |                      |                                                                                                        |
+|                       |                      | Return value from format_activity function                                                             |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| **bw_adj**            | 1.5                  | 活動時間割合の推定に固定カーネル法を用いる場合のバンド幅の調整                                         |
+|                       |                      |                                                                                                        |
+|                       |                      | Bandwidth adjustment for fixed kernel method in estimating activity proportion                         |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| stay_family           | "lognormal"          | 滞在時間分布の指定．"exponential"，"gamma"，"lognormal"，"weibull"のいずれかを選択                     |
+|                       |                      |                                                                                                        |
+|                       |                      | Specification of staying time distribution. Choose from "exponential", "gamma", "lognormal", "weibull" |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| focal_area            |                      | 有効撮影範囲の面積(m2)                                                                                 |
+|                       |                      |                                                                                                        |
+|                       |                      | Effective detection area (m2)                                                                          |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| cores\*               | 2                    | 計算に利用するコア数                                                                                   |
+|                       |                      |                                                                                                        |
+|                       |                      | Number of cores to use                                                                                 |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| iter\*                | 3000                 | iterationの長さ                                                                                        |
+|                       |                      |                                                                                                        |
+|                       |                      | Length of iterations                                                                                   |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| warmup\*              | NULL                 | warmupの長さ                                                                                           |
+|                       |                      |                                                                                                        |
+|                       |                      | Length of warmup                                                                                       |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| chains\*              | 2                    | chains数                                                                                               |
+|                       |                      |                                                                                                        |
+|                       |                      | Number of chains                                                                                       |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| thin\*                | 1                    | thiningの間隔                                                                                          |
+|                       |                      |                                                                                                        |
+|                       |                      | Thinning interval                                                                                      |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
+| model                 | "REST"               | 密度推定モデルの選択．"REST"または"RAD-REST"のいずれか                                                 |
+|                       |                      |                                                                                                        |
+|                       |                      | Choice of density estimation model. Either "REST" or "RAD-REST"                                        |
++-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
 
-　活動時間割合の推定方法を指定するのがactivity_moel引数です．２つの方法が利用可能です．
+: **bayes_rest関数の引数一覧．太字の引数については以下で説明．\*の意味については，一般的なMCMC法によるベイズ推定に関する書籍やサイトを参考にしてください/**List of arguments for bayes_rest function. Bold arguments are explained below. For the meaning of arguments with , please refer to general books or websites about Bayesian estimation using MCMC methods.
 
-　**activity = "kernel"**とした場合，固定カーネル法による推定を行います．詳細は，Rowcliffe et al. (2014)を参照してください．この推定方法を用いる場合，バンド幅の調整方法を指定するbw_adj引数も同時に指定できます．デフォルト値は，Rowcliffe et al. (2014)の論文のシミュレーション結果に基づいて1.5にしています．特別な事情がない限り，デフォルト値のままでよいでしょう．
+#### **bw_adj**引数/**bw_adj Argument**
 
-　**activity = "mixed"**とした場合，撮影時間をvon Mises混合分布に従う確率変数であると考えます．混合分布では，何個の確率分布を混ぜ合わせるかが問題になります．それを指定するのがK引数です．Kのデフォルト値は5にしています．経験的には，大体この値で対処できるようです．Kの値を大きくすればその分だけ推定に要する時間が長くなります．あまり小さいと，うまく活動レベルの変動にフィットしなくなります[^9]．
+　意味不明な引数ですが、活動時間割合を推定するのに使うカーネル・バンド幅を調整するための値です。詳細はRwocliffe et al. (2014)を参照してください。デフォルトはこの論文で推奨されている1.5にしています。よく分からなければデフォルトのまま使ってもらったらいいです。
 
-[^9]: 混合数もWAIC値に基づいて決めることは可能ですが，今のところこのパッケージでは実装していません．
-
-　２つの推定手法にはいくつかの点で顕著な違いがあります．
-
-　１つ目の違いは，不確実性の評価に関してです．混合von Mises分布を利用した方法では，他の変数と同様にパラメータのベイズ推定を行います．活動時間割合も点推定値ではなく，不確実性を含んだ値として扱われます．一方で，固定カーネル法の方はRowcliffe et al. (2014)が作成したactivityパッケージの点推定値をそのまま定数として入れています．したがって，密度の見た目上の推定精度は，固定カーネル法を利用した方が良くなります．
-
-　２つ目は，推定に要する時間の違いです．一般に混合分布のパラメータ推定には非常に時間がかかります．MCMCで混合分布を解くのは結構しんどいことと，Stanのvon Mises分布の確率密度関数（von_mises_lpdf）がベクトル化に対応していないことが原因です．推定結果が出るまでに数十分はかかると思ってください．一方，カーネル法は定数として入れるので，それに比べるとはるかに速いです（最尤推定よりは遅い）．
-
-　３つ目は，推定のバイアスに関する違いです．Rowcliffe et al. (2014)は，von Mises混合分布を利用した方法は，サンプルサイズが小さい場合（50未満），活動時間割合を過小評価する（密度は過大評価される）傾向があると指摘しています．同様の傾向を私も確認しています．あまり気にする必要はありませんが，推定値を比較する場合には少し注意が必要です．
-
-　これらの違いを踏まえたうえで，どちらの方法を使うかを判断してください．活動時間割合のパラメータだけ定数で入れるのはなんとなく気持ち悪いので混合分布を実装しましたが[^10]，必ずしもお勧めしません．推定にかかる時間を考えると，少なくとも試行錯誤の段階では固定カーネル法の方が良いでしょう．そして解析の最終段階で．混合分布の利用を考えてみるのも一つの手です．いずれにせよ，活動時間割合の推定は，REST/RAD-RESTを含む，無標識個体群のための密度推定手法の最大の弱点です．どちらの方法も抱えている弱点（仮定の強さ）は同じなので，こだわりすぎる必要はありません．
-
-[^10]: 因みにWearn et al. 2022は，活動時間割合をこれとは別の方法で行っていますが，これはインチキなので真似しないでください．
-
-#### local_stay引数
-
-　引数の意味は，bayes_stay_selection関数の場合と同じです．滞在時間に共変量を入れて，グローバルな滞在時間の期待値を使って密度推定を行う場合，local_stay = TRUEとします．例えば，カメラ設置点の開空度や獣道であるかどうかなどを入れることが考えられます．これらを考慮することで，グローバルな滞在時間の推定精度も向上できることがあります[^11]．
-
-[^11]: この場合，滞在時間の期待値は，exp(切片 + 係数 \* 共変量の期待値)で与えています．共変量の期待値の不確実性は考慮していません．
+Though the name might be unclear, this value adjusts the kernel bandwidth used for estimating activity time proportion. For details, refer to Rowcliffe et al. (2014). The default is set to 1.5 as recommended in that paper. If you're unsure, it's fine to use the default value.
 
 ### RESTによる密度推定
 
 　RESTによる密度推定は，以下のように引数指定します．この例では，密度に共変量を与えています．与えないモデルとどちらが汎化（予測）性能が高いかは，関数の返り値の一つであるWAIC値で比較してください．推定後は，事後分布が収束しているかをRhat値やtraceplotで必ず確認してください．
 
 ```{r}
-fitstan <- bayes_rest(
-  formula_stay = Stay ~ 1,     # 滞在時間のモデル式
-  formula_density = ~ 1 + x2,　# 密度のモデル式
-  station_data_comprest,       # add_effort関数の返り値
-  stay_data,                   # format_stay関数の返り値
-  activity_data,　       　　　# format_activityの返り値
-  activity_model = "kernel",   # 活動時間割合の推定方法
-  local_stay = FALSE,          # bayes_stay_selection関数で説明
-  stay_family = "lognormal",   # 滞在時間分布
-  focal_area = 2.0,            # 有効撮影範囲の面積
-  model = "REST"               # 密度推定に使うモデル名
+# library(nimble)
+mdl <- bayes_rest(
+  formula_stay = Stay ~ 1 + x1,
+  formula_density = ~ 1,
+  station_effort_data = station_effort_REST,
+  stay_data = stay_data,
+  col_name_cens = "Cens",
+  activity_data = activity_data,
+  bw_adj = 1.5,
+  stay_family = "lognormal",
+  focal_area = 1.96,
+  cores = 2,
+  iter = 3000,
+  warmup = 1000,
+  chains = 2,
+  thin = 1,
+  model = "REST",
+  all_comb = FALSE
 )
-
-attr(fitstan,"expected_global_density")   # 全体での密度
-# attr(fitstan,"expected_local_density")  # カメラごとの密度
-attr(fitstan,"mean_stay")                 # 平均滞在時間
-attr(fitstan,"WAIC")                      # WAIC値
-
-# 全体密度のトレースプロット
-rstan::traceplot(fitstan, "expected_global_density")
+mdl$WAIC
+mdl$density
+library(bayesplot)
+ # Station01における推定密度
+bayesplot::mcmc_trace(mdl$all_samples, pars = "density[1]")
 ```
 
 ### RAD-RESTによる密度推定
@@ -388,23 +524,29 @@ rstan::traceplot(fitstan, "expected_global_density")
 　RAD-RESTによる密度推定の例は以下の通りです．RESTの場合と同じ状況のコード例を示します．　
 
 ```{r}
-fitstan <- bayes_rest(
-  formula_stay = Stay ~ 1,     # 滞在時間のモデル式
-  formula_density = ~ 1 + x2,　# 密度のモデル式
-  station_data_comprad,        # add_effort関数の返り値
-  stay_data,                   # format_stay関数の返り値
-  activity_data,               # format_activityの返り値
-  activity_model = "kernel",   # 活動時間割合の推定方法
-  local_stay = FALSE,          # bayes_stay_selection関数で説明
-  stay_family = "lognormal",   # 滞在時間分布
-  focal_area = 2.0,            # 有効撮影範囲の面積
-  model = "RAD-REST"           # 密度推定に使うモデル名
+# library(nimble)
+mdl <- bayes_rest(
+  formula_stay = Stay ~ 1,
+  formula_density = ~ 1 + x1,
+  station_effort_data = station_effort_RAD,
+  stay_data = stay_data,
+  col_name_cens = "Cens",
+  activity_data = activity_data,
+  bw_adj = 1.5,
+  stay_family = "lognormal",
+  focal_area = 1.96,
+  cores = 2,
+  iter = 3000,
+  warmup = 1000,
+  chains = 2,
+  thin = 1,
+  model = "RAD-REST",
+  all_comb = F
 )
-
-attr(fitstan,"expected_global_density")  # 全体での密度
-# attr(fitstan,"expected_local_density") # カメラごとの密度
-attr(fitstan,"mean_density")             # 平均滞在時間
-attr(fitstan,"WAIC")                     # WAIC値
+mdl$WAIC
+mdl$density
+library(bayesplot)
+mcmc_trace(mdl$all_samples, pars = "density[1]")
 ```
 
 　

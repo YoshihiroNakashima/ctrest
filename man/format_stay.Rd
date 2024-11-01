@@ -2,10 +2,11 @@
 % Please edit documentation in R/format_stay.R
 \name{format_stay}
 \alias{format_stay}
-\title{Prepare staying}
+\title{Pre}
 \usage{
 format_stay(
   detection_data,
+  station_data,
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_stay = "Stay",
@@ -14,7 +15,9 @@ format_stay(
 )
 }
 \arguments{
-\item{detection_data}{A data frame containing information for individual videos, with six columns: camera station name (station), capture datetime (datetime), species name (species), number of passes through the focal area (nfocal), duration of stay within the focal area for each pass in a video (stay), and whether the observation of the pass was censored (cens).}
+\item{detection_data}{A data frame containing information for each camera station, with one row per station. It includes the station name (station), location coordinates, covariates, and so forth. Unlike the detection_data, it lists all the camera stations that have been set up.}
+
+\item{station_data}{""}
 
 \item{col_name_station}{Column name containing station id info}
 
@@ -30,13 +33,15 @@ format_stay(
 Dataframe contaning staying time
 }
 \description{
-Prepare staying
+Pre
 }
 \examples{
-format_stay(detection_data = detection_data,
+format_stay(
+ detection_data = detection_data,
+ station_data = station_data,
  col_name_station = "Station",
  col_name_species = "Species",
  col_name_stay = "Stay",
  col_name_cens = "Cens",
- target_species = "A")
+ target_species = "SP01")
 }

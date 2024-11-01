@@ -9,7 +9,7 @@
 #' @param model Model name used ("REST" or "RAD-REST")
 #' @return data frame containing at least 3 columns (station, species and npass)
 #' @export
-#' @import dplyr
+#' @import dplyr tidyr
 #' @examples
 #' format_station_data(
 #'   detection_data = detection_data,
@@ -18,7 +18,7 @@
 #'   col_name_species = "Species",
 #'   col_name_y = "y",
 #'   model = "REST",
-#'   target_species = "A"
+#'   target_species = "SP01"
 #' )
 
 format_station_data <- function(detection_data,
@@ -33,32 +33,40 @@ format_station_data <- function(detection_data,
   }
   if(model == "REST"){
     detection_temp <- detection_data %>%
-      filter(!!sym(col_name_species) == target_species) %>%
-      group_by(!!sym(col_name_station), !!sym(col_name_species)) %>%
-      summarize(Y = sum(!!sym(col_name_y))) %>%
-      left_join(station_data, by = col_name_station) %>%
-      rename(Species = !!sym(col_name_species),
-             Station = !!sym(col_name_station)) %>%
-      arrange(!!sym(col_name_species))
-  } else if(model == "RAD-REST") {
+      rename(Station = !!sym(col_name_station), Species = !!sym(col_name_species), y = !!sym(col_name_y)) %>%
+      filter(Species %in% target_species) %>%
+      group_by(Station, Species) %>%
+      summarize(Y = sum(y)) %>%
+      right_join(station_data, by = "Station") %>%
+      replace_na(list(Y = 0)) %>%
+      arrange(Station) %>%
+      arrange(Species)
+
+  } else if (model == "RAD-REST") {
     detection_temp_1 <- detection_data %>%
-      filter(!is.na(col_name_y)) %>%
-      filter(!!sym(col_name_species) == target_species) %>%
-      group_by(Station, !!sym(col_name_y)) %>%
+      rename(Station = !!sym(col_name_station), Species = !!sym(col_name_species), y = !!sym(col_name_y)) %>%
+      filter(!is.na(y)) %>%
+      filter(Species == target_species) %>%
+      group_by(Station, y) %>%
       summarise(n = n(), .groups = 'drop') %>%
-      left_join(station_data, by = col_name_station) %>%
-      tidyr::complete(!!sym(col_name_y), fill = list(n = 0)) %>%
+      tidyr::complete(y, fill = list(n = 0)) %>%
+      drop_na("y") %>%
       tidyr::pivot_wider(
-        names_from = !!sym(col_name_y),
+        names_from = y,
         values_from = n,
         names_prefix = "y_",
         values_fill = list(n = 0)
-      )
+      ) %>%
+      right_join(station_data, by = "Station") %>%
+      mutate(Species = target_species)
+
     detection_temp <- detection_data %>%
-      filter(!!sym(col_name_species) == target_species) %>%
+      rename(Station = !!sym(col_name_station), Species = !!sym(col_name_species), y = !!sym(col_name_y)) %>%
+      filter(Species == target_species) %>%
       group_by(Station) %>%
       summarise(N = n(), .groups = 'drop') %>%
-      left_join(detection_temp_1, by = "Station")
+      right_join(detection_temp_1, by = "Station")  %>%
+      dplyr::mutate(across(everything(), \(x) tidyr::replace_na(x, 0)))
   }
 }
-Station <- NULL
+Station <- Species <- y <- NULL

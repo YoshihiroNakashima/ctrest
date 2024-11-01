@@ -4,10 +4,10 @@
 \alias{mle_rest}
 \title{Maximum likelihood parameter estimation for the REST/RAD-REST model based on the implementation of Nelder and Mead (1965).}
 \usage{
-mle_rest(station_data_complete, stay_data, activity_data, focal_area, model)
+mle_rest(station_effort_data, stay_data, activity_data, focal_area, model)
 }
 \arguments{
-\item{station_data_complete}{The output of the add_effort function.}
+\item{station_effort_data}{The output of the add_effort function.}
 
 \item{stay_data}{The output of the format_stay function.}
 
@@ -31,10 +31,10 @@ station_data_rest <- format_station_data(
   col_name_species = "Species",
   col_name_y = "y",
   model = "REST",
-  target_species = "A"
+  target_species = "SP01"
 )
 
-station_data_complete <- add_effort(
+station_effort_data <- add_effort(
   detection_data = detection_data,
   station_data_formatted = station_data_rest,
   col_name_station = "Station",
@@ -45,24 +45,28 @@ station_data_complete <- add_effort(
 )
 
 stay_data <- format_stay(
-  detection_data,
+  detection_data = detection_data,
+  station_data = station_data,
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_stay = "Stay",
   col_name_cens = "Cens",
-  target_species = "A"
+  target_species = "SP01"
 )
 
 activity_data <- format_activity(
   detection_data = detection_data,
+  col_name_station = "Station",
   col_name_species = "Species",
   col_name_datetime = "DateTime",
-  target_species = "A"
+  target_species = "SP01",
+  indep_time = 30
 )
 
-model <- mle_rest(station_data_complete,
+model <- mle_rest(station_effort_data,
                   stay_data,
                   activity_data,
                   focal_area = 1.56,
                   model = "REST")
+
 }

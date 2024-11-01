@@ -6,33 +6,37 @@
 \usage{
 bayes_stay_selection(
   formula_stay,
-  station_data,
-  stay_data,
+  random_effect = NULL,
+  station_data = station_data,
+  stay_data = stay_data,
+  col_name_cens = "Cens",
   family = "lognormal",
-  local_stay = FALSE,
   plot = TRUE,
-  cores = 3,
-  iter = 2000,
+  cores = 1,
+  iter = 3000,
   warmup = NULL,
-  chains = 2,
+  chains = 3,
   thin = 1,
-  all_comb = TRUE
+  all_comb = TRUE,
+  target_species = NULL
 )
 }
 \arguments{
-\item{formula_stay}{Model formula for the residence time within a focal area. Grammar follows lme4::glmer function. e.g. Stay ~ 1 + (1|Group)}
+\item{formula_stay}{Model formula for the residence time within a focal area. e.g. Stay ~ 1 + x1}
+
+\item{random_effect}{random_effect effect on the parameter of staying time model (as a character). e.g. random_effect = "Station"}
 
 \item{station_data}{A data frame containing information for each camera station in each row}
 
 \item{stay_data}{A data frame containing the time spent within a focal area}
 
-\item{family}{The probability distribution of the time spent. Specify the probability distribution selected by the bayes_stay_selection function.}
+\item{col_name_cens}{Column name of stay_data containing information on censored (1) or not (0)}
 
-\item{local_stay}{Specify whether to use the expected value of the time spent for each camera station (local_stay = TRUE) or the global expected value (FALSE) for density estimation.}
+\item{family}{The probability distribution of the time spent. Specify the probability distribution selected by the bayes_stay_selection function.}
 
 \item{plot}{If TRUE, plots the expected values of residence times.}
 
-\item{cores}{The number of cores to use for parallel computation. The default value is 1.}
+\item{cores}{The number of cores used for calculations.}
 
 \item{iter}{The number of iterations. The default value is 2000.}
 
@@ -42,7 +46,9 @@ bayes_stay_selection(
 
 \item{thin}{The thinning interval. The default value is 1.}
 
-\item{all_comb}{If TRUE, models with all combinations of covariates are compared. If FALSE, the WAIC value of the designated model is shown.}
+\item{all_comb}{If TRUE, models with all combinations of covariates are compared. If FALSE, only the designated model in model_formula is run.}
+
+\item{target_species}{Species name of interest.}
 }
 \value{
 WAIC values for each model
@@ -52,23 +58,25 @@ Model selection for the residence time model based on WAIC for REST/REST-RAD mod
 }
 \examples{
 stay_data <- format_stay(
-  detection_data,
+  detection_data = detection_data,
+  station_data = station_data,
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_stay = "Stay",
   col_name_cens = "Cens",
-  target_species = "A"
+  target_species = "SP01"
 )
+library(nimble)
 bayes_stay_selection(formula_stay = Stay ~ 1 + x1,
-                    station_data,
-                    stay_data,
+                    station_data = station_data,
+                    stay_data = stay_data,
+                    col_name_cens = "Cens",
                     family = "lognormal",
-                    local_stay = TRUE,
                     plot = TRUE,
-                    cores = 3,
                     iter = 2000,
-                    warmup = NULL,
+                    warmup = 1000,
                     chains = 2,
                     thin = 1,
-                    all_comb = FALSE)
+                    all_comb = FALSE,
+                    target_species = "SP01")
 }

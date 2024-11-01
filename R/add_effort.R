@@ -19,7 +19,7 @@
 #'   col_name_species = "Species",
 #'   col_name_y = "y",
 #'   model = "REST",
-#'   target_species = "A"
+#'   target_species = "SP01"
 #' )
 #'
 #' station_data_complete <- add_effort(
@@ -41,22 +41,24 @@ add_effort <-
            font_size = 8){
     if(is.null(col_name_term)){
       effort_temp <- detection_data %>%
-        group_by(!!sym(col_name_station)) %>%
-        summarize(Start = min(!!sym(col_name_datetime), na.rm = TRUE), End = max(!!sym(col_name_datetime), na.rm = TRUE)) %>%
+        rename(Station = !!sym(col_name_station), DateTime = !!sym(col_name_datetime), Term = !!sym(col_name_term)) %>%
+        group_by(Station) %>%
+        summarize(Start = min(DateTime, na.rm = TRUE), End = max(DateTime, na.rm = TRUE)) %>%
         mutate(effort = as.numeric(difftime(End, Start, units = "days")))
     } else {
       effort_temp <- detection_data %>%
-        group_by(!!sym(col_name_station), !!sym(col_name_term)) %>%
-        summarize(Start = min(!!sym(col_name_datetime), na.rm = TRUE), End = max(!!sym(col_name_datetime), na.rm = TRUE)) %>%
+        group_by(Station, Term) %>%
+        summarize(Start = min(DateTime, na.rm = TRUE), End = max(DateTime, na.rm = TRUE)) %>%
         mutate(effort = as.numeric(difftime(End, Start, units = "days"))) %>%
         ungroup()
     }
 
     effort_temp2 <- effort_temp %>%
-      group_by(!!sym(col_name_station)) %>%
+      group_by(Station) %>%
       summarize(Effort = sum(effort)) %>%
-      right_join(station_data_formatted, by = col_name_station) %>%
-      filter(Effort != 0)
+      left_join(station_data_formatted, by = col_name_station) %>%
+      #filter(Effort != 0) %>%
+      arrange(Species)
 
 
     if(plot == TRUE){
@@ -74,4 +76,4 @@ add_effort <-
     }
 
   }
-Start <- End <- effort <- Effort <- Station <- NULL
+Start <- End <- effort <- Effort <- Station <- DateTime <- Term <- Species <- NULL

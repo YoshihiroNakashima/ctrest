@@ -7,21 +7,21 @@
 bayes_rest(
   formula_stay,
   formula_density,
-  station_data_complete,
+  station_effort_data,
   stay_data,
+  col_name_cens = "Cens",
+  random_effect = NULL,
   activity_data,
-  activity_model = "kernel",
-  K = 5,
   bw_adj = 1.5,
   stay_family = "lognormal",
-  local_stay = FALSE,
   focal_area,
   cores = 2,
   iter = 3000,
   warmup = NULL,
   chains = 2,
   thin = 1,
-  model = "REST"
+  model = "REST",
+  all_comb = F
 )
 }
 \arguments{
@@ -29,21 +29,19 @@ bayes_rest(
 
 \item{formula_density}{Model formula for animal density. e.g. ~ 1 + x1}
 
-\item{station_data_complete}{A data frame containing information for each camera station in each row}
+\item{station_effort_data}{A data frame containing information for each camera station (with sampling days) in each row}
 
 \item{stay_data}{A data frame containing the time spent within a focal area}
 
+\item{col_name_cens}{Column name of stay_data containing information on censored (1) or not (0)}
+
+\item{random_effect}{A random effect on mean staying time}
+
 \item{activity_data}{A vector of detection times transformed into radians}
 
-\item{activity_model}{The method for estimating the proportion of active animals. If "kernel", the fixed kernel method by Rowcliffe et al. () is used. If "mixed", a von Mises mixture distribution is used. The default value is "kernel".}
+\item{bw_adj}{Bandwidth adjustment of kernel density estimation. The default value is 1.5. See Rowcliffe et al. () for details.}
 
-\item{K}{The number of mixtures when activity_model = "mixed". The default value is 5.}
-
-\item{bw_adj}{Bandwidth adjustment when activity_model = "mixed". The default value is 1.5. See Rowcliffe et al. () for details.}
-
-\item{stay_family}{The probability distribution of the time spent. Specify the probability distribution selected by the bayes_stay_selection function.}
-
-\item{local_stay}{Specify whether to use the expected value of the time spent for each camera station (local_stay = TRUE) or the global expected value (FALSE) for density estimation.}
+\item{stay_family}{The probability distribution of staying times. Specify the probability distribution selected by the bayes_stay_selection function.}
 
 \item{focal_area}{The area of a focal area}
 
@@ -58,13 +56,11 @@ bayes_rest(
 \item{thin}{The thinning interval. The default value is 1.}
 
 \item{model}{Specify the model to use. Choose either "REST" or "RAD-REST".}
+
+\item{all_comb}{If TRUE, models with all combinations of covariates are compared. If FALSE, only the designated model in model_formula is run.}
 }
 \value{
-An object of class "stanfit" representing
-the fitted Bayesian model. It contains samples from the posterior
-distribution of the model parameters, which can be accessed using
-the rstan extraction functions like rstan::extract. The object also
-contains other useful quantities like the MCMC chains, sampling metadata etc.
+XXXX
 }
 \description{
 Bayesian parameter estimation of REST/RAD-REST model based on MCMC samplings with Rstan
@@ -77,9 +73,9 @@ station_data_rest <- format_station_data(
   col_name_species = "Species",
   col_name_y = "y",
   model = "REST",
-  target_species = "A"
+  target_species = "SP01"
 )
-station_data_complete <- add_effort(
+station_effort_REST <- add_effort(
   detection_data = detection_data,
   station_data_formatted = station_data_rest,
   col_name_station = "Station",
@@ -90,28 +86,39 @@ station_data_complete <- add_effort(
 )
 stay_data <- format_stay(
   detection_data = detection_data,
+  station_data = station_data,
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_stay = "Stay",
   col_name_cens = "Cens",
-  target_species = "A"
+  target_species = "SP01"
 )
-
 activity_data <- format_activity(
   detection_data = detection_data,
+  col_name_station = "Station",
   col_name_species = "Species",
   col_name_datetime = "DateTime",
-  target_species = "A"
+  target_species = "SP01",
+  indep_time = 30
+)
+library(nimble)
+rest_model <- bayes_rest(
+  formula_stay = Stay ~ 1 + x1,
+  formula_density = ~ 1,
+  station_effort_data = station_effort_REST,
+  stay_data = stay_data,
+  col_name_cens = "Cens",
+  activity_data = activity_data,
+  bw_adj = 1.5,
+  stay_family = "lognormal",
+  focal_area = 1.96,
+  cores = 2,
+  iter = 3000,
+  warmup = 1000,
+  chains = 2,
+  thin = 1,
+  model = "REST",
+  all_comb = FALSE
 )
 
-fitstan <- bayes_rest(formula_stay = Stay ~ 1,
-  formula_density = ~ 1,
-  station_data_complete,
-  stay_data,
-  activity_data,
-  activity_model = "kernel",
-  local_stay = FALSE,
-  stay_family = "exponential",
-  focal_area = 2.0,
-  model = "REST")
 }
