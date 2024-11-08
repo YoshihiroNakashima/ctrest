@@ -9,7 +9,7 @@ vignette: >
 
 ## パッケージの概要/Package Overview
 
-　"ctrest"は，RESTモデルもしくはREST-RADモデルを簡単に利用するためのRパッケージです．
+　"ctrest"は，RESTモデルもしくはREST-RADモデルを簡単に利用するためのRパッケージです．詳しい利用法は、[vignettes](https://github.com/YoshihiroNakashima/ctrest/blob/main/vignettes/ctrest.Rmd)をご覧ください。
 
 REST/REST-RADモデルとは，自動撮影カメラ（カメラトラップ）によって得られた動画データに基づいて地上性哺乳類・鳥類の密度推定を行うための統計モデルです．RESTモデルの詳細について[Nakashima et al. (2018)](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2664.13059)，REST-RADモデルについてはXXXXXX（執筆中）をご参照ください．また，データの準備までのプロセスについては，[Nakashima et al. (2021)](https://www.biorxiv.org/content/10.1101/2021.05.18.444583v2)を参照してください．
 

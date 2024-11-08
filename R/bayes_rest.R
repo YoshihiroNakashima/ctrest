@@ -679,14 +679,14 @@ bayes_rest <- function(formula_stay,
         inits$sd_density <- 0.1
       }
 
-      # pattern <- c(paste0("mean_stay\\[", 1:N_station, "\\]"), "e_y")
-      #
-      # out_trace <- out_pre %>%
-      #   map(~ .[, grep(paste(pattern, collapse = "|"), colnames(.))])
+      pattern <- c(paste0("mean_stay\\[", 1:N_station, "\\]"), "e_y")
 
-      out_trace <- lapply(coda::mcmc.list(out_pre), function(chain) {
-        chain[, grep("^mean_stay\\[", colnames(chain))]
-      })
+      out_trace <- out_pre %>%
+        map(~ .[, grep(paste(pattern, collapse = "|"), colnames(.))])
+
+      # out_trace <- lapply(coda::mcmc.list(out_pre), function(chain) {
+      #   chain[, grep("^mean_stay\\[", colnames(chain))]
+      # })
 
 
       S <- focal_area * 10^-6

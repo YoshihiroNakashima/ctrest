@@ -233,6 +233,7 @@ bayes_stay_selection <- function(
       inits$u <- rep(0, nLevels)
       inits$sigma_u <- 1
     }
+
     cat("Compiling the model. This may take a moment...\n")
 
     model <-  suppressMessages(nimbleModel(code, constants = cons_pre, data = data_pre, inits = inits))

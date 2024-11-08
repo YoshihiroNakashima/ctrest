@@ -5,7 +5,7 @@
 \title{Model selection for the residence time model based on WAIC for REST/REST-RAD models}
 \usage{
 bayes_stay_selection(
-  formula_stay,
+  formula_stay = Stay ~ 1,
   random_effect = NULL,
   station_data = station_data,
   stay_data = stay_data,

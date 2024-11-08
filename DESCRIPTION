@@ -5,7 +5,7 @@ Authors@R:
     person("Yoshihiro", "Nakashima", email = "yosshi1215jp@yahoo.co.jp", role = c("aut", "cre"))
 Description: What the package does (one paragraph).
 License: MIT + file LICENSE
-Imports: dplyr, tidyr, purrr, stringr, ggplot2, magrittr, nimble, lubridate, activity, stats, extraDistr, parallel, MCMCvis
+Imports: dplyr, tidyr, purrr, stringr, ggplot2, magrittr, nimble, lubridate, activity, stats, extraDistr, parallel, MCMCvis, coda
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2

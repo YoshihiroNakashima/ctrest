@@ -80,7 +80,7 @@ The REST model requires counting how many times the target species passed throug
 The following explanation uses the example data included in the package.
 
 ```{r setup, cache=FALSE}
-library(ctrest) # ctrestパッケージ内の関数が使える状態に
+library(ctrest)  # Enable use of functions in ctrest package
 ```
 
 ```{r}
@@ -109,25 +109,25 @@ Below, we will explain how to prepare the necessary data for density estimation 
 
 ### データ前処理用の関数/Data Preprocessing Functions
 
-+------------------------+-----------------------------------------------+
-| 関数名/Function Name   | 目的/Purpose                                  |
-+========================+===============================================+
-| format_station_data    | カメラ設置点ごとの通過回数の集計              |
-|                        |                                               |
-|                        | Summarize number of passes per camera station |
-+------------------------+-----------------------------------------------+
-| add_effort             | カメラ稼働日数の計算                          |
-|                        |                                               |
-|                        | Calculate camera operation days               |
-+------------------------+-----------------------------------------------+
-| format_stay            | 滞在時間・打ち切りの有無の集計                |
-|                        |                                               |
-|                        | Summarize staying time and censoring status   |
-+------------------------+-----------------------------------------------+
-| format_activity        | 撮影時刻のラジアン変換                        |
-|                        |                                               |
-|                        | Convert recording times to radians            |
-+------------------------+-----------------------------------------------+
++----------------------+-----------------------------------------------+
+| 関数名/Function Name | 目的/Purpose                                  |
++======================+===============================================+
+| format_station_data  | カメラ設置点ごとの通過回数の集計              |
+|                      |                                               |
+|                      | Summarize number of passes per camera station |
++----------------------+-----------------------------------------------+
+| add_effort           | カメラ稼働日数の計算                          |
+|                      |                                               |
+|                      | Calculate camera operation days               |
++----------------------+-----------------------------------------------+
+| format_stay          | 滞在時間・打ち切りの有無の集計                |
+|                      |                                               |
+|                      | Summarize staying time and censoring status   |
++----------------------+-----------------------------------------------+
+| format_activity      | 撮影時刻のラジアン変換                        |
+|                      |                                               |
+|                      | Convert recording times to radians            |
++----------------------+-----------------------------------------------+
 
 : 前処理用の関数一覧/List of preprocessing functions
 
@@ -191,21 +191,21 @@ The station_data2 we created earlier doesn't contain information about how many 
 By setting the plot argument to TRUE in the add_effort function, you can visualize the camera operation patterns. Since camera date/time settings often get misaligned, it's good to verify this visually. When there are many cameras, the station names may overlap and become illegible. In such cases, use a smaller value for the font_size argument.
 
 ```{r}
-# REST用のデータに追加
+# Add trapping efforts for REST data
 station_effort_REST <- add_effort(
-  detection_data = detection_data,            # 元データ
-  station_data_formatted = station_data_rest, # format_station_data関数の返り値
-  col_name_station = "Station",               # カメラ設置点IDを含む列名
-  col_name_term = "Term",                     # 調査回ID
-  col_name_datetime = "DateTime",             # 日時データ
-  plot = TRUE,                                # 調査努力を可視化するか
-  font_size = 5                               # 可視化した場合の目盛フォント
+  detection_data = detection_data, # source data
+  station_data_formatted = station_data_rest,# return value from format_station_data function
+  col_name_station = "Station",   # column name containing camera station ID
+  col_name_term = "Term",         # survey round ID
+  col_name_datetime = "DateTime", # date/time data
+  plot = TRUE,                    # whether to visualize survey effort
+  font_size = 5                   # font size for visualization ticks
 )
 head(station_effort_REST)
 ```
 
 ```{r}
-# RAD-REST用のデータに追加（引数指定は上と同じ）
+# Add data for RAD-REST (argument specifications are the same as above)
 station_effort_RAD <- add_effort(
   detection_data = detection_data,
   station_data_formatted = station_data_rad,
@@ -214,7 +214,7 @@ station_effort_RAD <- add_effort(
   col_name_datetime = "DateTime",
   plot = FALSE
 )
-# 全データを表示させたい場合
+# To display all data
 print(station_effort_RAD, n = Inf)
 ```
 
@@ -249,13 +249,13 @@ Finally, let's convert the recording times to radians for estimating activity ti
 
 ```{r}
 activity_data <- format_activity(
-  detection_data = detection_data, # 元データ
-  col_name_station = "Station",    # カメラ設置点IDを含む列名
-  col_name_species = "Species",    # 種名を含む列名
-  col_name_datetime = "DateTime",  # 撮影日時を含む列名
-  target_species = "SP01",            # 対象種名
-  indep_time = 30　　　　　　　　　# 独立なデータ間隔
-  )
+  detection_data = detection_data,     # Original data
+  col_name_station = "Station",        # Column name containing camera station IDs
+  col_name_species = "Species",        # Column name containing species names
+  col_name_datetime = "DateTime",      # Column name containing detection timestamps
+  target_species = "SP01",             # Target species name
+  indep_time = 30                      # Time interval for independent detections
+)
 head(activity_data)
 ```
 
@@ -313,53 +313,53 @@ The density estimate from the best model is slightly higher with the RAD-REST mo
 
 Since MCMC density estimation takes considerable time, it's good to perform staying time model selection first. The **bayes_stay_selection function** is used for this purpose. Currently, four probability distributions are available: exponential, gamma, log-normal, and Weibull distributions, and the function returns WAIC values for evaluated models. You can also include fixed effects and random effects (currently limited to one) in the expected value of each probability distribution. Here are the function arguments:
 
-+----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| 引数名               | Default値            | 説明                                                                                                   |
-+======================+======================+========================================================================================================+
-| **formula_stay**     | Stay \~ 1            | 滞在時間のモデル式                                                                                     |
-|                      |                      |                                                                                                        |
-|                      |                      | Model formula for staying time                                                                         |
-+----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| station_data         |                      | 各行に各カメラについての情報（例えばカメラIDや共変量）をもつデータフレーム                             |
-|                      |                      |                                                                                                        |
-|                      |                      | Data frame containing information for each camera (e.g., camera ID and covariates)                     |
-+----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| stay_data            |                      | 滞在時間・打ち切りの有無をもつデータフレーム                                                           |
-|                      |                      |                                                                                                        |
-|                      |                      | Data frame containing staying time and censoring status                                                |
-+----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| family               | "lognormal"          | 滞在時間分布の指定．"exponential"，"gamma"，"lognormal"，"weibull"のいずれかを選択                     |
-|                      |                      |                                                                                                        |
-|                      |                      | Specification of staying time distribution. Choose from "exponential", "gamma", "lognormal", "weibull" |
-+----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| **plot**             | TRUE                 | 滞在時間の期待値を可視化するか（TRUE），しないか（FALSE）                                              |
-|                      |                      |                                                                                                        |
-|                      |                      | Whether to visualize expected staying time (TRUE) or not (FALSE)                                       |
-+----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| cores                | 2                    | 計算に利用するコア数                                                                                   |
-|                      |                      |                                                                                                        |
-|                      |                      | Number of cores to use for calculation                                                                 |
-+----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| iter\*               | 3000                 | iterationの長さ                                                                                        |
-|                      |                      |                                                                                                        |
-|                      |                      | Length of iterations                                                                                   |
-+----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| warmup\*             | NULL                 | warmupの長さ                                                                                           |
-|                      |                      |                                                                                                        |
-|                      |                      | Length of warmup                                                                                       |
-+----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| chains\*             | 2                    | chains数                                                                                               |
-|                      |                      |                                                                                                        |
-|                      |                      | Number of chains                                                                                       |
-+----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| thin\*               | 1                    | thiningの間隔                                                                                          |
-|                      |                      |                                                                                                        |
-|                      |                      | Thinning interval                                                                                      |
-+----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| **all_comb**         | FALSE                | 総当たりのモデルを評価するか（TRUE），しないか（FALSE）                                                |
-|                      |                      |                                                                                                        |
-|                      |                      | Whether to evaluate all possible models (TRUE) or not (FALSE)                                          |
-+----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
++------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| 引数名           | Default値   | 説明                                                                                                   |
++==================+=============+========================================================================================================+
+| **formula_stay** | Stay \~ 1   | 滞在時間のモデル式                                                                                     |
+|                  |             |                                                                                                        |
+|                  |             | Model formula for staying time                                                                         |
++------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| station_data     |             | 各行に各カメラについての情報（例えばカメラIDや共変量）をもつデータフレーム                             |
+|                  |             |                                                                                                        |
+|                  |             | Data frame containing information for each camera (e.g., camera ID and covariates)                     |
++------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| stay_data        |             | 滞在時間・打ち切りの有無をもつデータフレーム                                                           |
+|                  |             |                                                                                                        |
+|                  |             | Data frame containing staying time and censoring status                                                |
++------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| family           | "lognormal" | 滞在時間分布の指定．"exponential"，"gamma"，"lognormal"，"weibull"のいずれかを選択                     |
+|                  |             |                                                                                                        |
+|                  |             | Specification of staying time distribution. Choose from "exponential", "gamma", "lognormal", "weibull" |
++------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| **plot**         | TRUE        | 滞在時間の期待値を可視化するか（TRUE），しないか（FALSE）                                              |
+|                  |             |                                                                                                        |
+|                  |             | Whether to visualize expected staying time (TRUE) or not (FALSE)                                       |
++------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| cores            | 2           | 計算に利用するコア数                                                                                   |
+|                  |             |                                                                                                        |
+|                  |             | Number of cores to use for calculation                                                                 |
++------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| iter\*           | 3000        | iterationの長さ                                                                                        |
+|                  |             |                                                                                                        |
+|                  |             | Length of iterations                                                                                   |
++------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| warmup\*         | NULL        | warmupの長さ                                                                                           |
+|                  |             |                                                                                                        |
+|                  |             | Length of warmup                                                                                       |
++------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| chains\*         | 2           | chains数                                                                                               |
+|                  |             |                                                                                                        |
+|                  |             | Number of chains                                                                                       |
++------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| thin\*           | 1           | thiningの間隔                                                                                          |
+|                  |             |                                                                                                        |
+|                  |             | Thinning interval                                                                                      |
++------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| **all_comb**     | FALSE       | 総当たりのモデルを評価するか（TRUE），しないか（FALSE）                                                |
+|                  |             |                                                                                                        |
+|                  |             | Whether to evaluate all possible models (TRUE) or not (FALSE)                                          |
++------------------+-------------+--------------------------------------------------------------------------------------------------------+
 
 : **bayes_stay_selection関数の引数一覧．太字の引数については以下で説明．\*の意味については，一般的なMCMC法によるベイズ推定に関する書籍やサイトを参考にしてください/**List of arguments for bayes_stay_selection function. Bold arguments are explained below. For the meaning of arguments with , please refer to general books or websites about Bayesian estimation using MCMC methods.
 
@@ -420,65 +420,65 @@ Once the staying time model selection is complete, we can move on to density est
 
 The function for Bayesian density estimation is **bayes_rest**. Density can be estimated by simply specifying the necessary variables as shown below. First, here are all the function arguments:
 
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| 引数名/Argument       | Default              | 説明/Description                                                                                       |
-+=======================+======================+========================================================================================================+
-| formula_stay          |                      | 滞在時間のモデル式                                                                                     |
-|                       |                      |                                                                                                        |
-|                       |                      | Model formula for staying time e.g. Stay \~ 1 + x1                                                     |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| formula_density       |                      | 密度のモデル式                                                                                         |
-|                       |                      |                                                                                                        |
-|                       |                      | Model formula for density e.g. \~ 1 + x2                                                               |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| station_data_complete |                      | add_effort関数の返り値                                                                                 |
-|                       |                      |                                                                                                        |
-|                       |                      | Return value from add_effort function                                                                  |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| stay_data             |                      | format_stay関数の返り値                                                                                |
-|                       |                      |                                                                                                        |
-|                       |                      | Return value from format_stay function                                                                 |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| activity_data         |                      | format_activity関数の返り値                                                                            |
-|                       |                      |                                                                                                        |
-|                       |                      | Return value from format_activity function                                                             |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| **bw_adj**            | 1.5                  | 活動時間割合の推定に固定カーネル法を用いる場合のバンド幅の調整                                         |
-|                       |                      |                                                                                                        |
-|                       |                      | Bandwidth adjustment for fixed kernel method in estimating activity proportion                         |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| stay_family           | "lognormal"          | 滞在時間分布の指定．"exponential"，"gamma"，"lognormal"，"weibull"のいずれかを選択                     |
-|                       |                      |                                                                                                        |
-|                       |                      | Specification of staying time distribution. Choose from "exponential", "gamma", "lognormal", "weibull" |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| focal_area            |                      | 有効撮影範囲の面積(m2)                                                                                 |
-|                       |                      |                                                                                                        |
-|                       |                      | Effective detection area (m2)                                                                          |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| cores\*               | 2                    | 計算に利用するコア数                                                                                   |
-|                       |                      |                                                                                                        |
-|                       |                      | Number of cores to use                                                                                 |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| iter\*                | 3000                 | iterationの長さ                                                                                        |
-|                       |                      |                                                                                                        |
-|                       |                      | Length of iterations                                                                                   |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| warmup\*              | NULL                 | warmupの長さ                                                                                           |
-|                       |                      |                                                                                                        |
-|                       |                      | Length of warmup                                                                                       |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| chains\*              | 2                    | chains数                                                                                               |
-|                       |                      |                                                                                                        |
-|                       |                      | Number of chains                                                                                       |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| thin\*                | 1                    | thiningの間隔                                                                                          |
-|                       |                      |                                                                                                        |
-|                       |                      | Thinning interval                                                                                      |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
-| model                 | "REST"               | 密度推定モデルの選択．"REST"または"RAD-REST"のいずれか                                                 |
-|                       |                      |                                                                                                        |
-|                       |                      | Choice of density estimation model. Either "REST" or "RAD-REST"                                        |
-+-----------------------+----------------------+--------------------------------------------------------------------------------------------------------+
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| 引数名/Argument       | Default     | 説明/Description                                                                                       |
++=======================+=============+========================================================================================================+
+| formula_stay          |             | 滞在時間のモデル式                                                                                     |
+|                       |             |                                                                                                        |
+|                       |             | Model formula for staying time e.g. Stay \~ 1 + x1                                                     |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| formula_density       |             | 密度のモデル式                                                                                         |
+|                       |             |                                                                                                        |
+|                       |             | Model formula for density e.g. \~ 1 + x2                                                               |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| station_data_complete |             | add_effort関数の返り値                                                                                 |
+|                       |             |                                                                                                        |
+|                       |             | Return value from add_effort function                                                                  |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| stay_data             |             | format_stay関数の返り値                                                                                |
+|                       |             |                                                                                                        |
+|                       |             | Return value from format_stay function                                                                 |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| activity_data         |             | format_activity関数の返り値                                                                            |
+|                       |             |                                                                                                        |
+|                       |             | Return value from format_activity function                                                             |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| **bw_adj**            | 1.5         | 活動時間割合の推定に固定カーネル法を用いる場合のバンド幅の調整                                         |
+|                       |             |                                                                                                        |
+|                       |             | Bandwidth adjustment for fixed kernel method in estimating activity proportion                         |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| stay_family           | "lognormal" | 滞在時間分布の指定．"exponential"，"gamma"，"lognormal"，"weibull"のいずれかを選択                     |
+|                       |             |                                                                                                        |
+|                       |             | Specification of staying time distribution. Choose from "exponential", "gamma", "lognormal", "weibull" |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| focal_area            |             | 有効撮影範囲の面積(m2)                                                                                 |
+|                       |             |                                                                                                        |
+|                       |             | Effective detection area (m2)                                                                          |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| cores\*               | 2           | 計算に利用するコア数                                                                                   |
+|                       |             |                                                                                                        |
+|                       |             | Number of cores to use                                                                                 |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| iter\*                | 3000        | iterationの長さ                                                                                        |
+|                       |             |                                                                                                        |
+|                       |             | Length of iterations                                                                                   |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| warmup\*              | NULL        | warmupの長さ                                                                                           |
+|                       |             |                                                                                                        |
+|                       |             | Length of warmup                                                                                       |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| chains\*              | 2           | chains数                                                                                               |
+|                       |             |                                                                                                        |
+|                       |             | Number of chains                                                                                       |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| thin\*                | 1           | thiningの間隔                                                                                          |
+|                       |             |                                                                                                        |
+|                       |             | Thinning interval                                                                                      |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| model                 | "REST"      | 密度推定モデルの選択．"REST"または"RAD-REST"のいずれか                                                 |
+|                       |             |                                                                                                        |
+|                       |             | Choice of density estimation model. Either "REST" or "RAD-REST"                                        |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
 
 : **bayes_rest関数の引数一覧．太字の引数については以下で説明．\*の意味については，一般的なMCMC法によるベイズ推定に関する書籍やサイトを参考にしてください/**List of arguments for bayes_rest function. Bold arguments are explained below. For the meaning of arguments with , please refer to general books or websites about Bayesian estimation using MCMC methods.
 
@@ -495,27 +495,27 @@ Though the name might be unclear, this value adjusts the kernel bandwidth used f
 ```{r}
 # library(nimble)
 mdl <- bayes_rest(
-  formula_stay = Stay ~ 1 + x1,
-  formula_density = ~ 1,
-  station_effort_data = station_effort_REST,
-  stay_data = stay_data,
-  col_name_cens = "Cens",
-  activity_data = activity_data,
-  bw_adj = 1.5,
-  stay_family = "lognormal",
-  focal_area = 1.96,
-  cores = 2,
+  formula_stay = Stay ~ 1,        # Model formula (left-hand side is column name)
+  formula_density = ~ 1 + x1,     # Formula for density (no left-hand side)
+  station_effort_data = station_effort_REST,  # Return value from add_effort function
+  stay_data = stay_data,          # Return value from format_stay function
+  col_name_cens = "Cens",         # Column name containing censoring status
+  activity_data = activity_data,  # Return value from format_activity function
+  bw_adj = 1.5,                   # Bandwidth for kernel density estimation
+  stay_family = "lognormal",      # Distribution assumed for staying times
+  focal_area = 1.96,              # Effective detection area
+  cores = 2,                        
   iter = 3000,
   warmup = 1000,
   chains = 2,
-  thin = 1,
-  model = "REST",
-  all_comb = FALSE
+  thin = 2,
+  model = "REST",                 # REST/RAD-REST
+  all_comb = FALSE                # See above
 )
 mdl$WAIC
 mdl$density
 library(bayesplot)
- # Station01における推定密度
+# Estimated density at Station01
 bayesplot::mcmc_trace(mdl$all_samples, pars = "density[1]")
 ```
 
@@ -526,22 +526,22 @@ bayesplot::mcmc_trace(mdl$all_samples, pars = "density[1]")
 ```{r}
 # library(nimble)
 mdl <- bayes_rest(
-  formula_stay = Stay ~ 1,
-  formula_density = ~ 1 + x1,
-  station_effort_data = station_effort_RAD,
-  stay_data = stay_data,
-  col_name_cens = "Cens",
-  activity_data = activity_data,
-  bw_adj = 1.5,
-  stay_family = "lognormal",
-  focal_area = 1.96,
+  formula_stay = Stay ~ 1,      # Model formula (left-hand side is column name)
+  formula_density = ~ 1 + x1,   # Model formula for density (no left-hand side)
+  station_effort_data = station_effort_RAD,  # Return value from add_effort function
+  stay_data = stay_data,        # Return value from format_stay function
+  col_name_cens = "Cens",       # Column name containing censoring status
+  activity_data = activity_data,# Return value from format_activity function
+  bw_adj = 1.5,                 # Bandwidth for kernel density estimation
+  stay_family = "lognormal",    # Distribution assumed for staying times
+  focal_area = 1.96,            # Effective detection area
   cores = 2,
   iter = 3000,
   warmup = 1000,
   chains = 2,
-  thin = 1,
-  model = "RAD-REST",
-  all_comb = F
+  thin = 2,
+  model = "RAD-REST",           # REST/RAD-REST
+  all_comb = FALSE              # See the explanation for bayes_stay_selection
 )
 mdl$WAIC
 mdl$density
