@@ -1,6 +1,6 @@
 ---
 title: "ctrest"
-output: rmarkdown::html_vignette
+output: github_document
 vignette: >
   %\VignetteIndexEntry{ctrest}
   %\VignetteEngine{knitr::rmarkdown}
