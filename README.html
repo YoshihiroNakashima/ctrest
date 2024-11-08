@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>ctrest</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">ctrest</h1>
+
+
+
+<div id="パッケージの概要package-overview" class="section level2">
+<h2>パッケージの概要/Package Overview</h2>
+<p>　“ctrest”は，RESTモデルもしくはREST-RADモデルを簡単に利用するためのRパッケージです．詳しい利用法は、<a href="https://github.com/YoshihiroNakashima/ctrest/blob/main/vignettes/ctrest.Rmd">vignettes</a>をご覧ください。</p>
+<p>REST/REST-RADモデルとは，自動撮影カメラ（カメラトラップ）によって得られた動画データに基づいて地上性哺乳類・鳥類の密度推定を行うための統計モデルです．RESTモデルの詳細について<a href="https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2664.13059">Nakashima
+et
+al. (2018)</a>，REST-RADモデルについてはXXXXXX（執筆中）をご参照ください．また，データの準備までのプロセスについては，<a href="https://www.biorxiv.org/content/10.1101/2021.05.18.444583v2">Nakashima
+et al. (2021)</a>を参照してください．</p>
+<p>　パッケージは，以下のような関数を含みます．</p>
+<ul>
+<li><p><strong>データの前処理</strong>：必要なデータの前処理を行います．後で使う密度推定用の関数は，これらの関数を利用して前処理を行ったこと（もしくは，それと同じ列名を持つデータであること）を前提に作られています（引数指定の数を出来るだけ減らすため）．</p></li>
+<li><p><strong>密度推定：</strong>推定手法によって異なる関数を定義しています．</p>
+<ul>
+<li><p><strong>最尤法</strong>：<strong>mle_rest関数</strong>は，最尤法に基づいてパラメータ推定を行います．この関数は，地点全体の平均的な密度を推定する場合のみに対応しています（滞在時間や密度のパラメータに共変量やランダム効果を含めることはできません）．</p></li>
+<li><p><strong>ベイズ法</strong>：<strong>bayes_rest関数</strong>は，ベイズ法に基づいてパラメータ推定を行います．より発展的な解析を行うのに適しています．Nimbleを用いたMCMC法を利用しています．</p></li>
+</ul></li>
+</ul>
+<p>“ctrest” is an R package designed to facilitate the use of REST
+models or REST-RAD models. REST/REST-RAD models are statistical models
+for estimating the density of ground-dwelling mammals and birds based on
+video data obtained from camera traps. For details on the REST model,
+please refer to <a href="https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2664.13059">Nakashima
+et al. (2018)</a>, and for the REST-RAD model, please refer to XXXXXX.
+For the data preparation process, please refer to <a href="https://www.biorxiv.org/content/10.1101/2021.05.18.444583v2">Nakashima
+et al. (2021)</a>. The package includes the following functions:</p>
+<ul>
+<li><p><strong>Data preprocessing</strong>: Performs necessary data
+preprocessing. The density estimation functions that will be used later
+are designed assuming that preprocessing has been done using these
+functions (or that the data has the same column names) to minimize the
+number of argument specifications.</p></li>
+<li><p><strong>Density estimation</strong>: Different functions are
+defined based on the estimation method.</p>
+<ul>
+<li><p><strong>Maximum likelihood</strong>: The mle_rest function
+performs parameter estimation based on maximum likelihood. This function
+only supports estimating the average density across all sites
+(covariates and random effects cannot be included in staying time or
+density parameters).</p></li>
+<li><p><strong>Bayesian method</strong>: The bayes_rest function
+performs parameter estimation based on Bayesian methods. It is suitable
+for more advanced analyses. It uses MCMC methods implemented in
+Nimble.</p></li>
+</ul></li>
+</ul>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
