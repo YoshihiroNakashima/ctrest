@@ -31,45 +31,6 @@ To install this package, run the following code:
 devtools::install_github("YoshihiroNakashima/ctrest",build_vignettes = TRUE)
 ```
 
-    ## Using github PAT from envvar GITHUB_PAT. Use `gitcreds::gitcreds_set()` and unset GITHUB_PAT in .Renviron (or elsewhere) if you want to use the more secure git credential store instead.
-
-    ## Downloading GitHub repo YoshihiroNakashima/ctrest@HEAD
-
-    ## waldo (0.5.3  -> 0.6.1   ) [CRAN]
-    ## Rcpp  (1.0.13 -> 1.0.13-1) [CRAN]
-
-    ## Installing 2 packages: waldo, Rcpp
-
-    ## Installing packages into 'C:/Users/25069/AppData/Local/Temp/Rtmp6NIg68/temp_libpath2a24437d79dc'
-    ## (as 'lib' is unspecified)
-
-    ## 
-    ##   There is a binary version available but the source version is later:
-    ##       binary source needs_compilation
-    ## waldo  0.5.3  0.6.1             FALSE
-    ## 
-    ## package 'Rcpp' successfully unpacked and MD5 sums checked
-    ## 
-    ## The downloaded binary packages are in
-    ##  C:\Users\25069\AppData\Local\Temp\RtmpIN3V7d\downloaded_packages
-
-    ## installing the source package 'waldo'
-
-    ## ── R CMD build ─────────────────────────────────────────────────────────────────
-    ##          checking for file 'C:\Users\25069\AppData\Local\Temp\RtmpIN3V7d\remotes74c859837b2e\YoshihiroNakashima-ctrest-0d0bb63/DESCRIPTION' ...  ✔  checking for file 'C:\Users\25069\AppData\Local\Temp\RtmpIN3V7d\remotes74c859837b2e\YoshihiroNakashima-ctrest-0d0bb63/DESCRIPTION'
-    ##       ─  preparing 'ctrest':
-    ##    checking DESCRIPTION meta-information ...     checking DESCRIPTION meta-information ...   ✔  checking DESCRIPTION meta-information
-    ##       ─  installing the package to build vignettes
-    ##          creating vignettes ...     creating vignettes ...   ✔  creating vignettes (2m 38.5s)
-    ##       ─  checking for LF line-endings in source and make files and shell scripts (400ms)
-    ##       ─  checking for empty or unneeded directories
-    ##       ─  building 'ctrest_0.0.0.9000.tar.gz'
-    ##      
-    ## 
-
-    ## Installing package into 'C:/Users/25069/AppData/Local/Temp/Rtmp6NIg68/temp_libpath2a24437d79dc'
-    ## (as 'lib' is unspecified)
-
 ### Vignette
 
 Vignette（使い方の説明）を見るには、、以下のコードを走らせてください。
@@ -82,4 +43,4 @@ library(ctrest)
 vignette("ctrest")
 ```
 
-    ## starting httpd help server ... done
+    ## Warning: vignette 'ctrest' not found

@@ -19,7 +19,7 @@ vignette: >
 
 To install this package, run the following code:
 
-```{r}
+```{r eval = FALSE}
 #install.packages("devtools")
 devtools::install_github("YoshihiroNakashima/ctrest",build_vignettes = TRUE)
 ```
