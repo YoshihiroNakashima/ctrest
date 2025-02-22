@@ -33,7 +33,7 @@ format_stay <-
       warning("too many censored data! Check 1 indicates censored (unobserved) data!", call. = FALSE)
     }
     stay_data <- detection_data %>%
-      #rename(Stay = !!sym(col_name_stay), Cens = !!sym(col_name_cens), Species = !!sym(col_name_species)) %>%
+      rename(Stay = !!sym(col_name_stay), Cens = !!sym(col_name_cens), Species = !!sym(col_name_species)) %>%
       filter(!is.na(Stay) & !is.na(Cens) & Species %in% target_species) %>%
       dplyr::select(Station, Species, Stay, Cens) %>%
       arrange(Species) %>%

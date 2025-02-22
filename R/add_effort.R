@@ -47,6 +47,7 @@ add_effort <-
         mutate(effort = as.numeric(difftime(End, Start, units = "days")))
     } else {
       effort_temp <- detection_data %>%
+        rename(Station = !!sym(col_name_station), DateTime = !!sym(col_name_datetime), Term = !!sym(col_name_term)) %>%
         group_by(Station, Term) %>%
         summarize(Start = min(DateTime, na.rm = TRUE), End = max(DateTime, na.rm = TRUE)) %>%
         mutate(effort = as.numeric(difftime(End, Start, units = "days"))) %>%
@@ -56,17 +57,20 @@ add_effort <-
     effort_temp2 <- effort_temp %>%
       group_by(Station) %>%
       summarize(Effort = sum(effort)) %>%
-      left_join(station_data_formatted, by = col_name_station) %>%
-      #filter(Effort != 0) %>%
-      arrange(Species)
+      left_join(station_data_formatted, by = "Station") %>%
+      arrange(Species) %>%
+      filter(Effort != 0)
 
+    if(sum(effort_temp2$Effort == 0)){
+      print("Sampling efforts of some stations were calculated as 0 possibly due to only one detection. The stations' records were removed" , call. = FALSE)
+    }
 
     if(plot == TRUE){
       g <- ggplot(data = effort_temp) +
         geom_segment(aes(x = Start, xend = End, y = Station, yend = Station),
                      alpha = 0.3,
                      linewidth = 2.5) +
-        geom_point(aes(x = Start, y = Station), shape = 4, col = 2, alpha = 0.8) +
+        geom_point(aes(x = Start, y = Station), shape = 4, col = "red", alpha = 0.8) +
         theme(axis.text.y = element_text(size = font_size)) +
         xlab("Survey Period")
       print(g)

@@ -22,12 +22,12 @@ format_activity(
 
 \item{col_name_datetime}{Column name containing datetime info}
 
-\item{target_species}{The species name for which you want to estimate his density}
+\item{target_species}{The species names for which you want to estimate their activity proportion}
 
 \item{indep_time}{The interval (in seconds) to consider detection as independent}
 }
 \value{
-A vector containing information about the times of an animal detection
+A data frame containing information about the times of an animal detection
 }
 \description{
 Prepare data for estimating the proportion of time animal being active

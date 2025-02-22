@@ -15,17 +15,17 @@ format_station_data(
 )
 }
 \arguments{
-\item{detection_data}{A data frame containing information for individual videos, with six columns: camera station name (station), capture datetime (datetime), species name (species), number of passes through the focal area (nfocal), duration of stay within the focal area for each pass in a video (stay), and whether the observation of the pass was censored (cens).}
+\item{detection_data}{A data frame containing information for individual videos, with six columns: camera station name (Station), capture datetime (Datetime), species name (Species), number of passes through the focal area (y), duration of stay within the focal area for each pass in a video (Stay), and whether the observation of the pass was censored (Cens).}
 
-\item{station_data}{A data frame containing information for each camera station, with one row per station. It includes the station name (station), location coordinates, covariates, and so forth. Unlike the detection_data, it lists all the camera stations that have been set up.}
+\item{station_data}{A data frame containing information for each camera station, with one row per station. It includes the station name (Station), location coordinates, covariates, and so forth. Unlike the detection_data, it lists all the camera stations that have been set up.}
 
-\item{col_name_station}{Column name containing station id info}
+\item{col_name_station}{Column name containing station ID info}
 
 \item{col_name_species}{Column name containing species name detected}
 
 \item{col_name_y}{Column name containing number of animal passage within a focal area}
 
-\item{target_species}{The species name for which you want to estimate his density}
+\item{target_species}{The species names for which you want to estimate thier density}
 
 \item{model}{Model name used ("REST" or "RAD-REST")}
 }
