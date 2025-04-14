@@ -1,15 +1,35 @@
 #' Maximum likelihood parameter estimation for the REST/RAD-REST model based on the implementation of Nelder and Mead (1965).
 #'
-#' @param station_effort_data The output of the add_effort function.
-#' @param stay_data The output of the format_stay function.
-#' @param activity_data The output of the format_activity function.
-#' @param focal_area The area of the focal area.
+#' @param station_effort_data A data frame containing information for each camera station. Typically, this is the output of the `add_effort` function. Alternatively, a manually prepared data frame may be provided, with the required columns as follows:
+#'   - If `model = "REST"`, the data frame must contain:
+#'     - `Station` (character): Camera station ID.
+#'     - `Effort` (numeric): Camera trapping effort (days) for each station.
+#'     - `Species` (character): Species name.
+#'     - `Y` (numeric): Total number of passes through the focal area for each station-species pair.
+#'   - If `model = "RAD-REST"`, the data frame must contain:
+#'     - `Station` (character): Camera station ID.
+#'     - `Effort` (numeric): Camera trapping effort (days) for each station.
+#'     - `Species` (character): Species name.
+#'     - `N` (numeric): Total number of detected videos for each station-species pair.
+#'     - `y_X` columns (`y_0`, `y_1`, ..., `y_max`): Number of videos classified by the number of passes observed.
+#' @param stay_data A data frame returned by the `format_stay` function, containing:
+#'   - `Station` (character): Camera station ID.
+#'   - `Species` (character): Species name.
+#'   - `Stay` (numeric): Staying time (in seconds) within the focal area for each detected pass.
+#'   - `Censored` (binary): Whether the staying time was censored (1 = censored, 0 = observed).
+#' @param stay_data A data frame returned by the `format_stay` function, containing:
+#'   - `Station` (character): Camera station ID.
+#'   - `Species` (character): Species name.
+#'   - `Stay` (numeric): Staying time (in seconds) within the focal area for each detected pass.
+#'   - `Censored` (binary): Whether the staying time was censored (1 = censored, 0 = observed).
+#' @param activity_data A numeric vector of detection times (in radians), returned by the `format_activity` function.
+#' @param focal_area The area of the focal area, in square meters.
 #' @param model Specify the model to use. Choose either "REST" or "RAD-REST".
+#' @param target_species A character string specifying the species to be analyzed. Only a single species can be specified.
 #' @return A data frame containing the estimated density, its standard deviation (SD), the 95% lower and upper confidence limits, AIC, and delta AIC value for each model.
 #' @export
 #' @import activity
-#' @importFrom stats dexp dgamma dlnorm dnbinom dpois dweibull optim pexp pgamma plnorm pweibull
-#' @importFrom extraDistr ddirmnom
+#' @importFrom stats dexp dgamma dlnorm dnbinom dpois dweibull optim pexp pgamma plnorm pweibull na.omit rexp rnorm step time
 #' @examples
 #' station_data_rest <- format_station_data(
 #'   detection_data = detection_data,
@@ -20,8 +40,7 @@
 #'   model = "REST",
 #'   target_species = "SP01"
 #' )
-#'
-#' station_effort_data <- add_effort(
+#' station_effort_rest <- add_effort(
 #'   detection_data = detection_data,
 #'   station_data_formatted = station_data_rest,
 #'   col_name_station = "Station",
@@ -50,20 +69,24 @@
 #'   indep_time = 30
 #' )
 #'
-#' model <- mle_rest(station_effort_data,
-#'                   stay_data,
-#'                   activity_data,
+#' model <- mle_rest(station_effort_data = station_effort_rest,
+#'                   stay_data = stay_data,
+#'                   activity_data = activity_data,
 #'                   focal_area = 1.56,
-#'                   model = "REST")
+#'                   model = "REST",
+#'                   target_species = "SP01")
 #'
 mle_rest <- function(station_effort_data,
                      stay_data,
                      activity_data,
                      focal_area,
-                     model) {
+                     model,
+                     target_species) {
+
+  vector_time <- activity_data %>% pull(time)
   model_act <- activity::fitact(
-    dat = activity_data,
-    bw = activity::bwcalc(activity_data, K = 3),
+    dat = vector_time,
+    bw = activity::bwcalc(vector_time, K = 3),
     adj = 1.5,
     sample  = "none"
   )

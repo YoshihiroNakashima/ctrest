@@ -1,24 +1,32 @@
-#' Model selection for the residence time model based on WAIC for REST/REST-RAD models
+#' Model selection for staying time analysis using WAIC for REST/REST-RAD models based on MCMC samplings with nimble
 #'
-#' @param formula_stay Model formula for the residence time within a focal area. e.g. Stay ~ 1 + x1
-#' @param random_effect random_effect effect on the parameter of staying time model (as a character). e.g. random_effect = "Station"
-#' @param station_data A data frame containing information for each camera station in each row
-#' @param stay_data A data frame containing the time spent within a focal area
-#' @param col_name_cens Column name of stay_data containing information on censored (1) or not (0)
-#' @param family The probability distribution of the time spent. Specify the probability distribution selected by the bayes_stay_selection function.
-#' @param plot If TRUE, plots the expected values of residence times.
-#' @param iter The number of iterations. The default value is 2000.
-#' @param cores The number of cores used for calculations.
-#' @param warmup The number of warmup iterations. The default value is NULL (half of the iterations will be used for warmup).
-#' @param chains The number of chains. The default value is 2.
-#' @param thin The thinning interval. The default value is 1.
-#' @param all_comb If TRUE, models with all combinations of covariates are compared. If FALSE, only the designated model in model_formula is run.
-#' @param target_species Species name of interest.
-#' @return WAIC values for each model
-#' @import dplyr ggplot2 nimble
+#' @param formula_stay A model formula for staying time within a focal area. For example, `Stay ~ 1 + x1`.
+#' @param random_effect A character string specifying the random effect on the parameter of the staying time model. For example, `random_effect = "Station"`.
+#' @param stay_data A data frame returned by the `format_stay` function, containing the processed staying time data.
+#' @param col_name_cens A string specifying the column name in `stay_data` that indicates whether the observation is censored (1) or not (0).
+#' @param family A character string specifying the probability distribution of staying time. Choose from `"exponential"`, `"gamma"`, `"weibull"`, or `"lognormal"`.
+#' @param cores The number of CPU cores to use for parallel computation. Default is 3.
+#' @param iter The total number of MCMC iterations per chain. Default is 5000
+#' @param warmup The number of warm-up (burn-in) iterations per chain. Default is 1000.
+#' @param thin The thinning interval for MCMC sampling. Default is 4 (no thinning).
+#' @param chains The number of MCMC chains. Default is 3.
+#' @param all_comb A logical value indicating whether to compare models with all possible combinations of covariates. If `FALSE`, only the specified model in `formula_stay` is evaluated.
+#' @param target_species A character string specifying the species of interest. Only a single species can be specified.
+#' @return A list of class \code{"ResultStay"}, which includes the following components:
+#' \describe{
+#'   \item{\code{WAIC}}{An object containing WAIC (Widely Applicable Information Criterion) results for model comparison.}
+#'   \item{\code{Bayesian_p_value}}{Bayesian p-value for the best model, used to assess model fit.}
+#'   \item{\code{summary_result}}{A data frame summarizing posterior estimates of the mean staying time.}
+#'   \item{\code{samples}}{A \code{coda::mcmc.list} object containing MCMC samples for all parameters.}
+#' }
+#' The returned object has a custom print method that displays WAIC, Bayesian p-value, and summary of staying time estimates.
+#' You can access full MCMC samples via \code{$samples}, and analyze convergence using the \code{MCMCvis} package.
+
+#' @export
+#' @import dplyr nimble
 #' @importFrom tidyr unite extract
 #' @importFrom purrr map
-#' @importFrom stringr str_extract
+#' @importFrom stringr str_extract str_detect
 #' @importFrom stats median model.response quantile
 #' @export
 #' @examples
@@ -31,28 +39,23 @@
 #'   col_name_cens = "Cens",
 #'   target_species = "SP01"
 #' )
-#' library(nimble)
 #' bayes_stay_selection(formula_stay = Stay ~ 1 + x1,
-#'                     station_data = station_data,
 #'                     stay_data = stay_data,
 #'                     col_name_cens = "Cens",
 #'                     family = "lognormal",
-#'                     plot = TRUE,
-#'                     iter = 2000,
+#'                     iter = 5000,
 #'                     warmup = 1000,
-#'                     chains = 2,
-#'                     thin = 1,
+#'                     chains = 3,
+#'                     thin = 4,
 #'                     all_comb = FALSE,
 #'                     target_species = "SP01")
 
 bayes_stay_selection <- function(
     formula_stay = Stay ~ 1,
     random_effect = NULL,
-    station_data = station_data,
     stay_data = stay_data,
     col_name_cens = "Cens",
     family = "lognormal",
-    plot = TRUE,
     cores = 1,
     iter = 3000,
     warmup = NULL,
@@ -65,6 +68,46 @@ bayes_stay_selection <- function(
   if(family=="lognormal" || family=="log-normal" || family=="gamma" || family=="weibull" || family=="exponential"){
   } else{
     stop(paste0("Input family type(", family,") is incorrect."))
+  }
+
+  if (!inherits(formula_stay, "formula")) {
+    stop("formula_stay must be a formula.")
+  }
+
+  if (!is.null(random_effect) && !(random_effect %in% colnames(stay_data))) {
+    stop(paste0("random_effect column '", random_effect, "' not found in stay_data."))
+  }
+
+  if (!is.data.frame(stay_data)) {
+    stop("stay_data must be a data frame.")
+  }
+
+  if (!(col_name_cens %in% colnames(stay_data))) {
+    stop(paste0("Column '", col_name_cens, "' not found in stay_data."))
+  }
+
+  if (!is.numeric(cores) || cores < 1 || (cores %% 1 != 0)) {
+    stop("cores must be a positive integer.")
+  }
+
+  if (!is.numeric(iter) || iter < 1 || (iter %% 1 != 0)) {
+    stop("iter must be a positive integer.")
+  }
+
+  if (!is.null(warmup) && (!is.numeric(warmup) || warmup < 1 || (warmup %% 1 != 0))) {
+    stop("warmup must be a positive integer or NULL.")
+  }
+
+  if (!is.numeric(chains) || chains < 1 || (chains %% 1 != 0)) {
+    stop("chains must be a positive integer.")
+  }
+
+  if (!is.numeric(thin) || thin < 1 || (thin %% 1 != 0)) {
+    stop("thin must be a positive integer.")
+  }
+
+  if (!is.null(target_species) && !all(target_species %in% stay_data$Species)) {
+    stop("Some values in target_species are not found in stay_data$Species.")
   }
 
 
@@ -91,9 +134,12 @@ bayes_stay_selection <- function(
   }
 
   # Define data for stay ----------------------------------------------------
+  stay_data <- stay_data %>%
+    filter(Species == target_species) %>%
+    arrange(Station)
 
-  stay_data_join <- stay_data %>%
-    left_join(station_data, by = intersect(names(stay_data), names(station_data)))
+  station.id <- stay_data %>% pull(Station) %>% unique(.)
+
 
   if (family == "lognormal" ||
       family == "gamma" || family == "weibull" || family == "exponential") {
@@ -102,36 +148,9 @@ bayes_stay_selection <- function(
     stop(paste0("Input family type(", family, ") is incorrect."))
   }
 
-  target_species <- sort(target_species)
-
   # Extract variable names
   vars_stay <- all.vars(formula_stay)
-  response_stay <- vars_stay[1]
   predictors_stay <- vars_stay[-1]
-
-  model_frame_stay <- model.frame(formula_stay, stay_data_join)
-  X_stay <- model.matrix(as.formula(formula_stay), model_frame_stay) # model.matrix(formula_stay, model_frame_stay)
-  t <- model.response(model_frame_stay)
-  censored <- stay_data_join[["Cens"]]
-
-  # N of random effects
-  if (!is.null(random_effect)) {
-    levels <- unique(stay_data_join[[random_effect]])
-    nLevels_stay <- length(levels)
-  } else {
-    nLevels_stay <- 0
-  }
-
-  # N of covariates
-  N_station_species <- nrow(station_data)
-  N_station <- length(unique(station_data$Station))
-  nPreds_stay <- ncol(X_stay)
-
-  names(t) <- NULL
-  c_time <- t
-  c_time[censored == 0] <- c_time[censored == 0] + 1
-  t[censored == 1] <- NA
-  N_stay <- length(t)
 
   formula_stay_all <- list(0)
   if (all_comb == TRUE) {
@@ -140,8 +159,8 @@ bayes_stay_selection <- function(
     formula_stay_all[[1]] <- formula_stay
   }
 
-  raw_samples <- tidy_samples <- list(0)
-  waic <- numeric(0)
+  mcmc_samples <- tidy_samples <- list(0)
+  waic <- nPreds <- p_value <- numeric(0)
 
   for(k in 1:length(formula_stay_all)) {
 
@@ -160,14 +179,13 @@ bayes_stay_selection <- function(
     }
 
     nPreds_stay <- ncol(X_stay)
-    N_station <- nrow(station_data)
+    N_station <- length(unique(stay_data$Station))
 
     names(t) <- NULL
     c_time <- t
-    c_time[censored == 0] <- c_time[censored == 0] + 1
+    c_time[censored == 0] <- c_time[censored == 0] + 0.1
     t[censored == 1] <- NA
     N_stay <- length(t)
-
     data_stay <- list(t = t, censored = censored)
     cons_stay <- list(N_stay = N_stay, nPreds_stay = nPreds_stay, N_station = N_station, c_time = c_time, family = family)
 
@@ -181,7 +199,7 @@ bayes_stay_selection <- function(
       cons_stay$nLevels_stay <- 0
     }
     if (!is.null(random_effect)) {
-      cons_stay$group <- as.numeric(factor(stay_data_join[[random_effect]]))
+      cons_stay$group <- as.numeric(factor(stay_data[[random_effect]]))
       cons_stay$nLevels_stay <- nLevels_stay
     } else {
       cons_stay$nLevels_stay <- 0
@@ -190,137 +208,189 @@ bayes_stay_selection <- function(
       data_stay$X_stay <- X_stay
     }
 
-    nSpecies <- length(target_species)
-    species_stay <- stay_data_join %>% pull(Species) %>% factor() %>% as.numeric()
-
-    cons_stay$nSpecies <- nSpecies
-    cons_stay$species_stay <- species_stay
-
-    ni <- iter
-    nt <- thin
-    nc <- chains
-    nb <- warmup
     nmcmc <- (iter - warmup) * chains / thin
 
+    # MCMC2
     # MCMC
     code <- nimbleCode({
-      for(i in 1:N_stay) {
+      for (i in 1:N_stay) {
         censored[i] ~ dinterval(t[i], c_time[i])
 
-        if(family == "exponential") {
-          t[i] ~ dexp(rate = 1/exp(log_scale[i]))
-        }
-        if(family == "gamma") {
-          t[i] ~ dgamma(shape = theta[species_stay[i]], rate = 1/exp(log_scale[i]))  # theta[species_stay[i]]を指数変換
-        }
-        if(family == "lognormal") {
-          t[i] ~ dlnorm(meanlog = log_scale[i], sdlog = theta[species_stay[i]])  # theta[species_stay[i]]を指数変換
-        }
-        if(family == "weibull") {
-          t[i] ~ dweibull(shape = theta[species_stay[i]], scale = exp(log_scale[i]))  # thetaを指数変換
+        if (family == "exponential") {
+          t[i] ~ dexp(rate = 1/scale[i])
+          pred_t[i] ~ dexp(rate = 1/scale[i])
+          loglike_obs[i] <- (1 - step(censored[i] - 0.5)) * dexp(t[i], rate = 1/scale[i], log = 1) +
+          step(censored[i] - 0.5) * log(1 - pexp(c_time[i], rate = 1/scale[i]))
+          loglike_pred[i] <- dexp(pred_t[i], rate = 1/scale[i], log = 1)
         }
 
-        if (nPreds_stay > 1) {
-          if (nLevels_stay == 0) {
-            log_scale[i] <- inprod(beta_stay[1:nPreds_stay] + v_stay[species_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay])
-          } else {
-            log_scale[i] <- inprod(beta_stay[1:nPreds_stay] + v_stay[species_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + u[group[i]]
+        if (family == "gamma") {
+          t[i] ~ dgamma(shape = theta_stay, rate = exp(-log(scale[i])))
+          pred_t[i] ~ dgamma(shape = theta_stay, rate = exp(-log(scale[i])))
+          loglike_obs[i] <- (1 - step(censored[i] - 0.5)) * dgamma(t[i], shape = theta_stay, rate = exp(-log(scale[i])), log = 1) +
+            step(censored[i] - 0.5) * log(1 - pgamma(c_time[i], shape = theta_stay, rate = exp(-log(scale[i]))))
+          loglike_pred[i] <- dgamma(pred_t[i], shape = theta_stay, rate = exp(-log(scale[i])), log = 1)
+        }
+
+        if (family == "lognormal") {
+          t[i] ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay)
+          pred_t[i] ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay)
+          loglike_obs[i] <- (1 - step(censored[i] - 0.5)) * dlnorm(t[i], meanlog = log(scale[i]), sdlog = theta_stay, log = 1) +
+            step(censored[i] - 0.5) * log(1 - plnorm(c_time[i], meanlog = log(scale[i]), sdlog = theta_stay))
+          loglike_pred[i] <- dlnorm(pred_t[i], meanlog = log(scale[i]), sdlog = theta_stay, log = 1)
+          meanlog[i] <- log(scale[i])
+        }
+
+        if (family == "weibull") {
+          t[i] ~ dweibull(shape = theta_stay, scale = scale[i])
+          pred_t[i] ~ dweibull(shape = theta_stay, scale = scale[i])
+          loglike_obs[i] <- (1 - step(censored[i] - 0.5)) * dweibull(t[i], shape = theta_stay, scale = scale[i], log = 1) +
+            step(censored[i] - 0.5) * log(1 - pweibull(c_time[i], shape = theta_stay, scale = scale[i]))
+          loglike_pred[i] <- dweibull(pred_t[i], shape = theta_stay, scale = scale[i], log = 1)
+        }
+
+        # Calculate log(scale[i])
+        if (nPreds_stay == 1) {
+          if(nLevels_stay > 0){
+            log(scale[i]) <- beta_stay[1] +  random_effect[group[i]]
+          } else{
+            log(scale[i]) <- beta_stay[1]
           }
+
         } else {
-          if (nLevels_stay == 0) {
-            log_scale[i] <- beta_stay[1] + v_stay[species_stay[i], 1]
+          if(nLevels_stay > 0){
+            log(scale[i]) <- inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect[group[i]]
           } else {
-            log_scale[i] <- beta_stay[1] + v_stay[species_stay[i], 1] + u[group[i]]
+            log(scale[i]) <- inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay])
           }
         }
       }
+      if (family == "lognormal") {
+        sdlog <- theta_stay
+      } else {
+        shape <- theta_stay
+      }
 
-      # 事前分布の修正
-      for(j in 1:nPreds_stay) {
+      # Priors
+      for (j in 1:nPreds_stay) {
         beta_stay[j] ~ dnorm(0, sd = 100)
       }
-
-      for(m in 1:nSpecies) {
-        theta[m] ~ dgamma(shape_theta, rate_theta)  # dt()からdnorm()に変更
-      }
-      shape_theta ~ dgamma(0.01, 0.01)
-      rate_theta ~ dgamma(0.01, 0.01)
+      theta_stay ~ dgamma(0.01, 0.01)
 
       if (nLevels_stay > 0) {
-        for(k in 1:nLevels_stay) {
-          u[k] ~ dnorm(0, sd = sigma_u)
+        for (k in 1:nLevels_stay) {
+          random_effect[k] ~ dnorm(0, sd = sigma_u)
         }
-        sigma_u ~ T(dnorm(0, sd = 2.5), 0, 5)  # 非負制約を追加
+        sigma_u ~ T(dnorm(0, sd = 2.5), 0, 5)
       }
-
-      for(m in 1:nSpecies) {
-        for(j in 1:nPreds_stay) {
-          v_stay[m, j] ~ dnorm(0, sd = sigma_v[j])
-        }
-      }
-      for(j in 1:nPreds_stay) {
-        sigma_v[j] ~ T(dnorm(0, sd = 2.5), 0, 5)  # 非負制約を追加
-      }
-
-
-      # 期待値の計算を修正
+      # Expected value calculation
       if (nPreds_stay == 1) {
-        for(m in 1:nSpecies) {
-          for(i in 1:N_station) {
-            if(family == "exponential") mean_stay[i, m] <- exp(beta_stay[1] + v_stay[m, 1])
 
-            if(family == "gamma") mean_stay[i, m] <- theta[m] * exp(beta_stay[1] + v_stay[m, 1])
-
-            if(family == "lognormal") mean_stay[i, m] <- exp(beta_stay[1] + v_stay[m, 1] + (theta[m] ^ 2) / 2)
-
-            if(family == "weibull") mean_stay[i, m] <- exp(lgamma(1 + 1 / theta[m]) )* exp(beta_stay[1] + v_stay[m, 1])
-          }
-        }
-      }
-
-      if (nPreds_stay > 1) {
-        for(m in 1:nSpecies) {
-          for(i in 1:N_station) {
+          if (nLevels_stay == 0) {
             if(family == "exponential") {
-              mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + v_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
+              mean_stay <- exp(beta_stay[1])
             }
             if(family == "gamma") {
-              mean_stay[i, m] <- theta[m] * exp(inprod(beta_stay[1:nPreds_stay] + v_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
+              mean_stay <- theta_stay * exp(beta_stay[1])
             }
             if(family == "lognormal") {
-              mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + v_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + theta[m] ^ 2 / 2)
+              mean_stay <- exp(beta_stay[1] + theta_stay ^ 2 / 2)
             }
             if(family == "weibull") {
-              mean_stay[i, m] <- exp(lgamma(1 + 1 / theta[m])) * exp(inprod(beta_stay[1:nPreds_stay] + v_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
+              mean_stay <-  lgamma(1 + 1 / theta_stay) + exp(beta_stay[1])
+            }
+          }
+          if (nLevels_stay > 0) {
+            if(family == "exponential") {
+              mean_stay <- exp(beta_stay[1])
+              # for(i in 1:N_station) {
+              #   mean_stay[i] <- exp(beta_stay[1] + random_effect[group[i]])
+              # }
+            }
+            if(family == "gamma") {
+              mean_stay <- theta_stay * exp(beta_stay[1])
+              # for(i in 1:N_station) {
+              #   mean_stay[i] <- theta_stay * exp(beta_stay[1] + random_effect[group[i]])
+              # }
+            }
+
+            if(family == "lognormal") {
+              mean_stay <- exp(beta_stay[1] + theta_stay ^ 2 / 2)
+              # for(i in 1:N_station) {
+              #   mean_stay[i] <- exp(beta_stay[1] + random_effect[group[i]] + theta_stay ^ 2 / 2)
+              # }
+            }
+            if(family == "weibull") {
+              mean_stay <-  lgamma(1 + 1 / theta_stay) + exp(beta_stay[1])
+              # for(i in 1:N_station) {
+              #   mean_stay[i] <-  lgamma(1 + 1 / theta_stay) + exp(beta_stay[1] + random_effect[group[i]])
+              # }
+            }
+          }
+      }
+      if (nPreds_stay > 1) {
+        if (nLevels_stay == 0) {
+          if(family == "exponential") {
+            for(i in 1:N_station){
+              mean_stay[i] <- exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
+            }
+          }
+          if(family == "gamma") {
+            for(i in 1:N_station){
+              mean_stay[i] <- theta_stay * exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
+            }
+          }
+          if(family == "lognormal") {
+            for(i in 1:N_station){
+              mean_stay[i] <- exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + theta_stay ^ 2 / 2)
+            }
+          }
+          if(family == "weibull") {
+            for(i in 1:N_station){
+              mean_stay[i] <- lgamma(1 + 1 / theta_stay) + exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
             }
           }
         }
-      }
-
-      # Posterior predictive check
-      for (i in 1:N_stay) {
-        pred_t[i] ~ dlnorm(meanlog = log_scale[i], sdlog = theta[species_stay[i]])
-
-        # 観測データの適合度統計量：対数尤度を使用
-        loglike_obs[i] <- (1 - step(censored[i] - 0.5)) *
-          dlnorm(t[i], meanlog = log_scale[i], sdlog = theta[species_stay[i]], log = TRUE) +
-          step(censored[i] - 0.5) *
-          plnorm(c_time[i], meanlog = log_scale[i], sdlog = theta[species_stay[i]], lower.tail = TRUE, log.p = TRUE)
-
-        # 予測データの適合度統計量：対数尤度を使用
-        loglike_pred[i] <- dlnorm(pred_t[i], meanlog = log_scale[i], sdlog = theta[species_stay[i]], log = TRUE)
+        if (nLevels_stay > 0) {
+          if(family == "exponential") {
+            for(i in 1:N_station){
+              mean_stay[i] <- exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
+            }
+          }
+          if(family == "gamma") {
+            for(i in 1:N_station){
+              # mean_stay[i] <- theta_stay * exp(inprod(beta_stay[1:nPreds_stay] + random_effect[group[i]], X_stay[i, 1:nPreds_stay]))
+              mean_stay[i] <- theta_stay * exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
+            }
+          }
+          if(family == "lognormal") {
+            for(i in 1:N_station){
+              mean_stay[i] <- exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + theta_stay ^ 2 / 2)
+            }
+          }
+          if(family == "weibull") {
+            for(i in 1:N_station){
+              mean_stay[i] <- lgamma(1 + 1 / theta_stay) + exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
+            }
+          }
+        }
       }
 
       sum_loglike_obs <- sum(loglike_obs[1:N_stay])
       sum_loglike_pred <- sum(loglike_pred[1:N_stay])
 
+      # Deviance Calculation
+      deviance_obs <- -2 * sum_loglike_obs
+      deviance_pred <- -2 * sum_loglike_pred
     })
+
 
     cat("Compiling the model. This may take a moment...\n")
 
-    this_cluster <- makeCluster(nc)
+    this_cluster <- makeCluster(chains)
+    # on.exit(stopCluster(this_cluster), add = TRUE)
 
-    run_MCMC_pre <- function(info, data, constants, code, params, ni, nt, nb) {
+    run_MCMC_pre <- function(info, data, constants, code, params, iter, thin, warmup) {
       myModel <- nimbleModel(code = code,
                              data = data,
                              constants = constants,
@@ -330,9 +400,9 @@ bayes_stay_selection <- function(
       CmyMCMC <- compileNimble(myMCMC)
       results <- runMCMC(
         CmyMCMC,
-        niter = ni,
-        nburnin = nb,
-        thin = nt,
+        niter = iter,
+        nburnin = warmup,
+        thin = thin,
         nchains = 1,
         setSeed = info$seed,
         samplesAsCodaMCMC = TRUE
@@ -342,18 +412,17 @@ bayes_stay_selection <- function(
 
     inits_f <- function() {
       common_inits <- list(
-        beta_stay = runif(nPreds_stay, -1, 1),
+        beta_stay = runif(nPreds_stay, -0.1, 0.1),
         t = ifelse(censored == 0, NA, c_time + runif(N_stay, 0.1, 1.0)),
-        theta = runif(nSpecies, 0.5, 4.0),
-        log_scale = runif(N_stay, 0.5, 4.0),
-        v_stay = matrix(runif(nSpecies * nPreds_stay, -1, 1), nrow = nSpecies, ncol = nPreds_stay)
+        theta_stay = runif(1, 0.2, 2.0),
+        scale = runif(N_stay, 0.2, 2.0)
       )
 
       if (!is.null(random_effect)) {
         c(
           common_inits,
           list(
-            u = runif(nLevels_stay, -1, 1),
+            random_effect = runif(nLevels_stay, -1, 1),
             sigma_u = runif(1, 0.5, 2.5)
           )
         )
@@ -365,13 +434,18 @@ bayes_stay_selection <- function(
       }
     }
 
-    per_chain_info <- lapply(1:nc, function(i) {
+    per_chain_info <- lapply(1:chains, function(i) {
       list(
         seed = sample(1:9999, 1),
         inits = inits_f()
       )
     })
-    params <- c("beta_stay", "log_scale", "mean_stay", "theta", "sum_loglike_obs", "sum_loglike_pred")
+    if(family == "exponential") prms <- c("scale", "mean_stay")
+    if(family == "gamma" | family == "weibull") prms <- c("scale", "shape", "mean_stay")
+    if(family == "lognormal") prms <- c("meanlog", "sdlog", "mean_stay")
+    if(family == "exponential") prms <- c("scale", "shape", "mean_stay")
+
+    params <- c(prms, "beta_stay", "sum_loglike_obs", "sum_loglike_pred", "deviance_obs", "deviance_pred", "loglike_obs")
 
     cat("Running MCMC sampling. Please wait...\n")
 
@@ -387,11 +461,19 @@ bayes_stay_selection <- function(
                               fun = run_MCMC_pre,
                               data = data_stay, code = code,
                               constants = cons_stay, params = params,
-                              ni = ni, nt = nt, nb = nb
+                              iter = iter, thin = thin, warmup = warmup
     )
     stopCluster(this_cluster)
+    cat("Estimation is finished!\n")
 
-    tidy_samples[[k]] <- MCMCvis::MCMCchains(chain_output) %>%
+    # Summarize results -------------------------------------------------------
+
+    mcmc_samples[[k]] <- MCMCvis::MCMCchains(chain_output,
+                                             mcmc.list = TRUE,
+                                             params = prms)
+
+    samples <- MCMCvis::MCMCchains(chain_output)
+    tidy_samples[[k]] <- samples %>%
       as_tibble() %>%
       pivot_longer(cols = everything(),
                    names_to = "parameter",
@@ -400,153 +482,58 @@ bayes_stay_selection <- function(
       mutate(iteration = row_number()) %>%
       ungroup()
 
-    pattern_scale <- paste0("log_scale\\[", 1:N_stay, "\\]")
-    pattern_theta <- paste0("theta\\[", 1:nSpecies, "\\]")
+    # Bayesian p-value
+    chi2_obs_total_samples <- samples[ , grep("sum_loglike_obs", colnames(mcmc_samples))]
+    chi2_pred_total_samples <- samples[ , grep("sum_loglike_pred", colnames(mcmc_samples))]
+    deviance_obs_samples <- samples[, "deviance_obs"]
+    deviance_pred_samples <- samples[, "deviance_pred"]
 
+    p_value[k] <- mean(deviance_pred_samples > deviance_obs_samples)
 
+    # WAIC --------------------------------------------------------------------
 
-    log_scale.samp <- tidy_samples[[k]] %>%
-      filter(str_detect(parameter, "log_scale"))
-
-    log_scale.samp <- matrix(log_scale.samp$value, nrow = nmcmc, byrow = TRUE)
-    # library(bayesplot)
-    #
-    # # トレースプロット（全チェーン比較）
-    # mcmc_trace(chain_output, pars = c("mean_stay[1, 1]"))
-
-    # ベイズP値
-    chi2_obs_total_samples <- tidy_samples[[k]] %>%
-      filter(str_detect(parameter, "sum_loglike_obs"))
-
-    chi2_pred_total_samples <- tidy_samples[[k]] %>%
-      filter(str_detect(parameter, "sum_loglike_pred"))
-
-    p_value <- mean(chi2_pred_total_samples > chi2_obs_total_samples, na.rm = TRUE)
-
-    if(family != "exponential") tau.samp <- chain_output %>%
-      map(~ .[, grep(paste(pattern_theta, collapse = "|"), colnames(.))]) %>%
-      do.call(rbind, .)
-
-
-    loglfstay <- matrix(NA, nrow(log_scale.samp), N_stay)
-
-    if(family == "exponential") {
-      for(j in 1:N_stay){
-        if(is.na(t[j])){
-          loglfstay[, j] <- log(1 - pexp(c_time[j], rate = 1 /exp(log_scale.samp[ , j])))
-        } else {
-          loglfstay[, j] <- dexp(t[j], rate = 1 / exp(log_scale.samp[ , j]), log = T)
-        }
-      }
-    }
-    if(family == "gamma") {
-      for(j in 1:N_stay){
-        if(is.na(t[j])){
-          loglfstay[, j] <- log(1 - pgamma(c_time[j], shape = tau.samp[ , j],  scale = exp(log_scale.samp[ , j])))
-        } else{
-          loglfstay[, j] <- dgamma(t[j], shape = tau.samp[ , j], scale = exp(log_scale.samp[ , j]), log = T)
-        }
-      }
-    }
-    if(family == "lognormal" | family == "log-normal") {
-      for(j in 1:N_stay){
-        if(is.na(t[j])){
-          loglfstay[, j] <- log(1 - plnorm(c_time[j], log_scale.samp[ , j], tau.samp[ , j]))
-        } else{
-          loglfstay[, j] <- dlnorm(t[j], log_scale.samp[ , j], tau.samp[ , j], log = T)
-        }
-      }
-    }
-    if(family == "weibull") {
-      for(j in 1:N_stay){
-        if(is.na(t[j])){
-          loglfstay[, j] <- log(1 - pweibull(c_time[j], shape = tau.samp[ , j], scale = exp(log_scale.samp[ , j])))
-        } else{
-          loglfstay[, j] <- dweibull(t[j], shape = tau.samp[ ,j], scale = exp(log_scale.samp[ , j]), log = T)
-        }
-      }
-    }
+    loglfstay <- MCMCvis::MCMCchains(chain_output,
+                                     mcmc.list = FALSE,
+                                     params = c("loglike_obs"))
 
     lppd <- sum(log(colMeans(exp(loglfstay))))
     p.waic <- sum(apply(loglfstay, 2, var))
-    # waic_mat <- loo::waic(loglfstay)waic_mat$estimates[3, 1] #
     waic[k] <- (- 2) * lppd + 2 * p.waic
 
-
-    raw_samples[[k]] <- chain_output
+    nPreds[k] <- nPreds_stay
   }
 
-  WAIC <- data.frame(Model = as.character(unlist(formula_stay_all)), WAIC = waic) %>%
+  if(is.null(random_effect)) random_effect <- "NULL"
+  WAIC <- data.frame(Model = as.character(unlist(formula_stay_all)), Family = rep(family, k),
+                     Random_effect = random_effect, WAIC = waic) %>%
     arrange(WAIC)
 
-  tidy_samples  <- tidy_samples[[which(WAIC[1, 1]  == unlist(formula_stay_all))]]
+  best.model <- which(WAIC[1, 1]  == unlist(formula_stay_all))
 
-  best_stay_tidy_samples <- tidy_samples %>%
-    filter(str_detect(parameter, "mean_stay")) %>%
-    mutate(Species = rep(rep(target_species, each = N_station), nmcmc)) %>%
-    mutate(Station = rep(station_data %>% pull(Station), nmcmc * nSpecies))
+  mcmc_samples <- mcmc_samples[[best.model]]
+  tidy_samples_best  <- tidy_samples[[best.model]]
+  p_value <- p_value[best.model]
 
+  mcmc_samples_mean <- MCMCvis::MCMCchains(chain_output, mcmc.list = TRUE, params = c("mean_stay"))
+  summary_mean_temp <- MCMCsummary(mcmc_samples_mean, round = 2) %>%
+    tibble::rownames_to_column(., var = "Variable") %>%
+    tibble(.) %>%
+    rename(lower = `2.5%`, median = `50%`, upper = `97.5%`)
 
   if(nPreds_stay > 1) {
-    mean_stay_data <- best_stay_tidy_samples %>%
-      group_by(Station, Species) %>%
-      summarise(
-        median = median(value),
-        mean = mean(value),
-        sd = sd(value),
-        cv = sd(value) / mean(value),
-        lower = quantile(value, 0.025),
-        upper = quantile(value, 0.975),
-        .groups = "drop"
-      ) %>%
-      arrange(Species, Station)
+    summary_mean <- tibble(Station = station.id) %>%
+      mutate(summary_mean_temp)
+  } else {
+    summary_mean <- mutate(summary_mean_temp)
   }
-  if(nPreds_stay == 1) {
-    mean_stay_data <- best_stay_tidy_samples %>%
-      group_by(Species) %>%
-      summarise(
-        median = median(value),
-        mean = mean(value),
-        sd = sd(value),
-        cv = sd(value) / mean(value),
-        lower = quantile(value, 0.025),
-        upper = quantile(value, 0.975),
-        .groups = "drop"
-      ) %>%
-      arrange(Species, Station)
-  }
-
-  if (plot == TRUE) {
-    if(nPreds_stay > 1) {
-      g <- ggplot(mean_stay_data, aes(x = Station, y = median)) +
-        geom_pointrange(aes(x = Station, y = median,
-                            ymin = lower, ymax = upper)) +
-        labs(
-          title = paste("formula =", formula_stay, "(Median and 95% Credible Interval for mean staying time)"),
-          x = "Station",
-          y = "MeanStayingTime"
-        ) +
-        facet_wrap(~Species,  nrow = 4) +
-        ylim(0, NA)
-      print(g)
-    }
-    if(nPreds_stay == 1) {
-      g <- ggplot(mean_stay_data, aes(x = Species, y = median)) +
-        geom_pointrange(aes(x = Species, y = median,
-                            ymin = lower, ymax = upper)) +
-        labs(
-          title = paste("formula =", formula_stay, "(Median and 95% Credible Interval for mean staying time)"),
-          x = "Station",
-          y = "MeanStayingTime"
-        ) +
-        ylim(0, NA)
-      print(g)
-    }
-  }
-  return(list(
+  stay_result <- list(
     WAIC = WAIC,
-    g = g,
-    bayes_p_value = p_value,
-    tidy_samples = tidy_samples))
+    Bayesian_p_value = p_value,
+    summary_result = summary_mean,
+    samples = mcmc_samples
+  )
+  class(stay_result) <- "ResultStay"
+
+  stay_result
 }
 

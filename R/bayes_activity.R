@@ -1,20 +1,18 @@
-#' Activity level estimation by von Misex mixture distribution using stick-breaking prior
+#' Activity level estimation by von Mises mixture distribution using stick-breaking prior
 #'
-#' @param activity_data A vector of detection times transformed into radians
-#' @param C ""
-#' @param plot If TRUE, plots the expected values of residence times.
-#' @param iter The number of iterations. The default value is 2000.
-#' @param cores The number of cores used for calculations.
-#' @param warmup The number of warmup iterations. The default value is NULL (half of the iterations will be used for warmup).
-#' @param chains The number of chains. The default value is 2.
-#' @param thin The thinning interval. The default value is 1.
-#' @param all_comb If TRUE, models with all combinations of covariates are compared. If FALSE, only the designated model in model_formula is run.
-#' @param target_species Species name of interest.
-#' @return Activity level
+#' @param activity_data A data frame containing a "time" column, representing detection times transformed into radians. Typically, this is the output of the format_activity function.
+#' @param C The maximum number of components in the von Mises mixture distribution. Defaults to 10.
+#' @param cores The number of CPU cores to use for parallel computation. Default is 3.
+#' @param iter The total number of MCMC iterations per chain. Default is 5000
+#' @param warmup The number of warm-up (burn-in) iterations per chain. Default is 1000.
+#' @param chains The number of MCMC chains. Default is 2.
+#' @param target_species The species name of interest.  Only one species can be specified.
+#' @return the estimated proportion of activity time and A figure showing the temporal variation in activity level.
 #' @import dplyr ggplot2 nimble
 #' @importFrom tidyr unite extract
 #' @importFrom purrr map
 #' @importFrom stringr str_extract
+#' @importFrom stats rbeta rgamma
 #' @importFrom stats median model.response quantile
 #' @export
 #' @examples
@@ -26,36 +24,33 @@
 #'   target_species = "SP01",
 #'   indep_time = 30
 #' )
-#' library(nimble)
 #' bayes_activity(
 #'   activity_data = activity_data,
 #'   C = 10,
-#'   plot = TRUE,
+#'   cores = 3,
 #'   iter = 2000,
 #'   warmup = 1000,
-#'   chains = 2,
-#'   thin = 1,
-#'   all_comb = FALSE,
+#'   chains = 3,
+#'   thin = 2,
 #'   target_species = "SP01")
 
 bayes_activity <- function(
-    activity_data = activity_data,
+    activity_data,
     C = 10,
-    plot = TRUE,
     cores = 3,
-    iter = 3000,
+    iter = 5000,
     warmup = 1000,
     chains = 3,
-    thin = 5,
+    thin = 2,
     target_species = NULL
 ) {
-  ni <- iter
-  nt <- thin
-  nc <- chains
-  nb <- warmup
 
   dens.x <- seq(0, 2 * pi, 0.02)
   ndens <- length(dens.x)
+
+  if (is.null(target_species)) {
+    stop("target_species must be specified.")
+  }
 
   activity_data <- activity_data %>%
     filter(Species == target_species)
@@ -72,27 +67,25 @@ bayes_activity <- function(
     alpha ~ dgamma(1, 1)
     w[1:C] <- stick_breaking(v[1:(C-1)])
     for(k in 1:C) {
-      mu_mix[k] ~ dunif(0, 2 * 3.141592654)  # von Misesの平均
-      kappa_mix[k] ~ dgamma(1, 0.01)  # von Misesの集中度パラメータ
+      mu_mix[k] ~ dunif(0, 2 * 3.141592654)
+      kappa_mix[k] ~ dgamma(1, 0.01)
     }
     for(n in 1:N) {
       group[n] ~ dcat(w[1:C])
       time[n] ~ dvonMises(mu_mix[group[n]], kappa_mix[group[n]])
     }
-    # 確率密度の計算
     for (j in 1:ndens) {
       for (i in 1:C) {
         dens.cpt[i, j] <- w[i] * dvonMises(dens.x[j] , mu_mix[i], kappa_mix[i], log = 0)
       }
       activity_dens[j] <- sum(dens.cpt[1:C, j])
     }
-    # 活動時間割合
-    actv <- 1.0 / (2 * 3.141592654 * max(activity_dens[1:ndens]));
+    activity_proportion <- 1.0 / (2 * 3.141592654 * max(activity_dens[1:ndens]));
   })
 
   inits_f <- function() {
     list(
-      mu_mix = runif(constants$C, 0, 2*pi),
+      mu_mix = runif(constants$C, 0, 2 * pi),
       kappa_mix = rgamma(constants$C, 1, 0.01),
       group = sample(1:constants$C, size = constants$N, replace = TRUE),
       v = rbeta(constants$C-1, 1, 1),
@@ -133,15 +126,15 @@ bayes_activity <- function(
     }
   )
 
-  registerDistributions(list(
+  suppressMessages(registerDistributions(list(
     dvonMises = list(
       BUGSdist = "dvonMises(kappa, mu)",
       types = c('value = double(0)', 'kappa = double(0)', 'mu = double(0)'),
       pqAvail = FALSE
     )
-  ))
+  )))
 
-  run_MCMC_vonMises <- function(info, data, constants, code, params, ni, nt, nb) {
+  run_MCMC_vonMises <- function(info, data, constants, code, params, iter, thin, warmup) {
     myModel <- nimbleModel(code = code,
                            data = data,
                            constants = constants,
@@ -150,92 +143,84 @@ bayes_activity <- function(
     CmyModel <- compileNimble(myModel)
 
     configModel <- configureMCMC(myModel, monitors = params)
-    myMCMC <- buildMCMC(configModel, monitors = params) # configModelを入れる
+    myMCMC <- buildMCMC(configModel, monitors = params)
     CmyMCMC <- compileNimble(myMCMC)
 
-    results <- runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt, nchains = 1, setSeed = info$seed, samplesAsCodaMCMC = TRUE)
+    results <- runMCMC(CmyMCMC, niter = iter, nburnin = warmup, thin = thin, nchains = 1, setSeed = info$seed, samplesAsCodaMCMC = TRUE)
   }
 
-  per_chain_info <- lapply(1:nc, function(i) {
+  per_chain_info <- lapply(1:chains, function(i) {
     list(
       seed = sample(1:9999, 1),
       inits = inits_f()
     )
   })
 
-  params <- c("activity_dens", "actv", "mu_mix", "kappa_mix", "w")
+  params <- c("activity_dens", "activity_proportion", "mu_mix", "kappa_mix", "w")
   cat("Running MCMC sampling. Please wait...\n")
 
-  this_cluster <- makeCluster(nc)
+  this_cluster <- makeCluster(chains)
   clusterEvalQ(this_cluster, {
     library(nimble)
   })
-  # クラスターに必要な関数と変数をエクスポート
   clusterExport(this_cluster,
                 c("dvonMises", "rvonMises", "registerDistributions", "run_MCMC_vonMises"),
                 envir = environment())
-  # MCMCの設定
+
   actv_chain_output <- parLapply(cl = this_cluster, X = per_chain_info,
                             fun = run_MCMC_vonMises,
                             data = data, code = code,
                             constants = constants, params = params,
-                            ni = ni, nt = nt, nb = nb)
+                            iter = iter, thin = thin, warmup = warmup)
+  # on.exit(stopCluster(this_cluster), add = TRUE)
   stopCluster(this_cluster)
+  cat("Estimation is finished!\n")
 
-  # 結果の処理
-  out_vonMises <- coda::mcmc.list(actv_chain_output) %>% posterior::as_draws()
+  # Summarize results -------------------------------------------------
+  summary_activity <- MCMCvis::MCMCchains(actv_chain_output,
+                                          mcmc.list = TRUE,
+                                          params = "activity_proportion") %>%
+    MCMCsummary(., round = 2) %>%
+    tibble::rownames_to_column(., var = "Variable") %>%
+    tibble(.) %>%
+    rename(lower = `2.5%`, median = `50%`, upper = `97.5%`)
 
-  model_summary <- summary(out_vonMises)　%>%
-    mutate(cv = sd / mean) %>%
-    select(variable, mean, median, sd, cv, mad, q5, q95, rhat, ess_bulk, ess_tail) %>%
-    mutate(Species = target_species)
+  mcmc_samples <- MCMCvis::MCMCchains(actv_chain_output,
+                                      mcmc.list = TRUE,
+                                      params = "activity_dens")
 
-  activity_density_estimates <- model_summary %>%
-    dplyr::filter(str_starts(variable, "activity_dens")) %>%
-    dplyr::mutate(x = dens.x)
+  summary_dens <- MCMCsummary(mcmc_samples, round = 5) %>%
+    tibble::rownames_to_column(., var = "Variable") %>%
+    tibble(.) %>%
+    rename(lower = `2.5%`, median = `50%`, upper = `97.5%`) %>%
+    mutate(x = dens.x)
 
   model_act <- fitact(time, bw = 1.5 * bwcalc(time, K = 3), reps = 1)
   dens_est_rw <- data.frame(model_act@pdf)
 
-  tidy_samples <- MCMCvis::MCMCchains(actv_chain_output) %>%
-    as_tibble() %>%
-    pivot_longer(cols = everything(),
-                 names_to = "parameter",
-                 values_to = "value") %>%
-    group_by(parameter) %>%
-    mutate(iteration = row_number()) %>%
-    ungroup()
+  g <- ggplot() +
+  geom_histogram(data = data.frame(time = time),
+                 mapping = aes(x = time, y = after_stat(density)),
+                 bins = 30, fill = "gray") +
+  geom_line(data = summary_dens,
+            mapping = aes(x = x, y = mean, colour = "vonMises mixture"),
+            linewidth = 1) +
+  geom_line(data = dens_est_rw,
+            mapping = aes(x = x, y = y, colour = "Kernel density"),
+            linewidth = 1) +
+  geom_ribbon(data = summary_dens,
+              mapping = aes(x = x, ymin = lower, ymax = upper),
+              fill = "red", alpha = 0.3) +
+  scale_color_manual(name = "Density Estimations",
+                     values = c("vonMises mixture" = "red",
+                                "Kernel density" = "blue")) +
+  labs(x = "Radian time",
+       y = "Probability density")
 
-  if (plot == TRUE) {
-    g <- ggplot() +
-      geom_histogram(data = data.frame(time = time),
-                     mapping = aes(x = time, y = after_stat(density)),
-                     bins = 30, fill = "gray") +
-      geom_line(data = activity_density_estimates,
-                mapping = aes(x = x, y = mean, colour = "vonMises mixture"),
-                linewidth = 1) +
-      geom_line(data = dens_est_rw,
-                mapping = aes(x = x, y = y, colour = "Kernel density"),
-                linewidth = 1) +
-      geom_ribbon(data = activity_density_estimates,
-                  mapping = aes(x = x, ymin = q5, ymax = q95),
-                  fill = "red", alpha = 0.3) +
-      scale_color_manual(name = "Density Estimations",
-                         values = c("vonMises mixture" = "red",
-                                    "Kernel density" = "blue")) +
-      labs(x = "Radian time",
-           y = "Probability density")
-
-    print(g)
-  }
-  # actv_out_trace <- actv_chain_output %>%
-  #   map(~ .[, grep(paste("actv", collapse = "|"), colnames(.))])
-
-  return(list(model_summary = model_summary,
-              plot = g,
-              tidy_samples = tidy_samples,
-              # actv_out_trace = actv_out_trace,
-              actv_chain_output = actv_chain_output)
+  return(
+    list(summary_result = summary_activity,
+         plot = g
+    )
   )
 }
-
+v <- mu_mix <- kappa_mix <- variable <- cv <- mad <- q5 <- q95 <- rhat <- ess_bulk <- ess_tail <- density <- x <- NULL

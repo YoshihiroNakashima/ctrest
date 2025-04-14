@@ -2,16 +2,14 @@
 % Please edit documentation in R/bayes_stay_selection.R
 \name{bayes_stay_selection}
 \alias{bayes_stay_selection}
-\title{Model selection for the residence time model based on WAIC for REST/REST-RAD models}
+\title{Model selection for staying time analysis using WAIC for REST/REST-RAD models based on MCMC samplings with nimble}
 \usage{
 bayes_stay_selection(
   formula_stay = Stay ~ 1,
   random_effect = NULL,
-  station_data = station_data,
   stay_data = stay_data,
   col_name_cens = "Cens",
   family = "lognormal",
-  plot = TRUE,
   cores = 1,
   iter = 3000,
   warmup = NULL,
@@ -22,39 +20,35 @@ bayes_stay_selection(
 )
 }
 \arguments{
-\item{formula_stay}{Model formula for the residence time within a focal area. e.g. Stay ~ 1 + x1}
+\item{formula_stay}{A model formula for staying time within a focal area. For example, \code{Stay ~ 1 + x1}.}
 
-\item{random_effect}{random_effect effect on the parameter of staying time model (as a character). e.g. random_effect = "Station"}
+\item{random_effect}{A character string specifying the random effect on the parameter of the staying time model. For example, \code{random_effect = "Station"}.}
 
-\item{station_data}{A data frame containing information for each camera station in each row}
+\item{stay_data}{A data frame returned by the \code{format_stay} function, containing the processed staying time data.}
 
-\item{stay_data}{A data frame containing the time spent within a focal area}
+\item{col_name_cens}{A string specifying the column name in \code{stay_data} that indicates whether the observation is censored (1) or not (0).}
 
-\item{col_name_cens}{Column name of stay_data containing information on censored (1) or not (0)}
+\item{family}{A character string specifying the probability distribution of staying time. Choose from \code{"exponential"}, \code{"gamma"}, \code{"weibull"}, or \code{"lognormal"}.}
 
-\item{family}{The probability distribution of the time spent. Specify the probability distribution selected by the bayes_stay_selection function.}
+\item{cores}{The number of CPU cores to use for parallel computation. Default is 3.}
 
-\item{plot}{If TRUE, plots the expected values of residence times.}
+\item{iter}{The total number of MCMC iterations per chain. Default is 5000}
 
-\item{cores}{The number of cores used for calculations.}
+\item{warmup}{The number of warm-up (burn-in) iterations per chain. Default is 1000.}
 
-\item{iter}{The number of iterations. The default value is 2000.}
+\item{chains}{The number of MCMC chains. Default is 3.}
 
-\item{warmup}{The number of warmup iterations. The default value is NULL (half of the iterations will be used for warmup).}
+\item{thin}{The thinning interval for MCMC sampling. Default is 4 (no thinning).}
 
-\item{chains}{The number of chains. The default value is 2.}
+\item{all_comb}{A logical value indicating whether to compare models with all possible combinations of covariates. If \code{FALSE}, only the specified model in \code{formula_stay} is evaluated.}
 
-\item{thin}{The thinning interval. The default value is 1.}
-
-\item{all_comb}{If TRUE, models with all combinations of covariates are compared. If FALSE, only the designated model in model_formula is run.}
-
-\item{target_species}{Species name of interest.}
+\item{target_species}{A character string specifying the species of interest. Only a single species can be specified.}
 }
 \value{
-WAIC values for each model
+A data frame containing the WAIC values for each model and a Bayesian P-value for the best predictive model. All MCMC samples are also available ($mcmc_samples)
 }
 \description{
-Model selection for the residence time model based on WAIC for REST/REST-RAD models
+Model selection for staying time analysis using WAIC for REST/REST-RAD models based on MCMC samplings with nimble
 }
 \examples{
 stay_data <- format_stay(
@@ -66,17 +60,14 @@ stay_data <- format_stay(
   col_name_cens = "Cens",
   target_species = "SP01"
 )
-library(nimble)
 bayes_stay_selection(formula_stay = Stay ~ 1 + x1,
-                    station_data = station_data,
                     stay_data = stay_data,
                     col_name_cens = "Cens",
                     family = "lognormal",
-                    plot = TRUE,
-                    iter = 2000,
+                    iter = 5000,
                     warmup = 1000,
-                    chains = 2,
-                    thin = 1,
+                    chains = 3,
+                    thin = 4,
                     all_comb = FALSE,
                     target_species = "SP01")
 }

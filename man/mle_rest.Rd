@@ -4,18 +4,50 @@
 \alias{mle_rest}
 \title{Maximum likelihood parameter estimation for the REST/RAD-REST model based on the implementation of Nelder and Mead (1965).}
 \usage{
-mle_rest(station_effort_data, stay_data, activity_data, focal_area, model)
+mle_rest(
+  station_effort_data,
+  stay_data,
+  activity_data,
+  focal_area,
+  model,
+  target_species
+)
 }
 \arguments{
-\item{station_effort_data}{The output of the add_effort function.}
+\item{station_effort_data}{A data frame containing information for each camera station. Typically, this is the output of the \code{add_effort} function. Alternatively, a manually prepared data frame may be provided, with the required columns as follows:
+\itemize{
+\item If \code{model = "REST"}, the data frame must contain:
+\itemize{
+\item \code{Station} (character): Camera station ID.
+\item \code{Effort} (numeric): Camera trapping effort (days) for each station.
+\item \code{Species} (character): Species name.
+\item \code{Y} (numeric): Total number of passes through the focal area for each station-species pair.
+}
+\item If \code{model = "RAD-REST"}, the data frame must contain:
+\itemize{
+\item \code{Station} (character): Camera station ID.
+\item \code{Effort} (numeric): Camera trapping effort (days) for each station.
+\item \code{Species} (character): Species name.
+\item \code{N} (numeric): Total number of detected videos for each station-species pair.
+\item \code{y_X} columns (\code{y_0}, \code{y_1}, ..., \code{y_max}): Number of videos classified by the number of passes observed.
+}
+}}
 
-\item{stay_data}{The output of the format_stay function.}
+\item{stay_data}{A data frame returned by the \code{format_stay} function, containing:
+\itemize{
+\item \code{Station} (character): Camera station ID.
+\item \code{Species} (character): Species name.
+\item \code{Stay} (numeric): Staying time (in seconds) within the focal area for each detected pass.
+\item \code{Censored} (binary): Whether the staying time was censored (1 = censored, 0 = observed).
+}}
 
-\item{activity_data}{The output of the format_activity function.}
+\item{activity_data}{A numeric vector of detection times (in radians), returned by the \code{format_activity} function.}
 
-\item{focal_area}{The area of the focal area.}
+\item{focal_area}{The area of the focal area, in square meters.}
 
 \item{model}{Specify the model to use. Choose either "REST" or "RAD-REST".}
+
+\item{target_species}{A character string specifying the species to be analyzed. Only a single species can be specified.}
 }
 \value{
 A data frame containing the estimated density, its standard deviation (SD), the 95\% lower and upper confidence limits, AIC, and delta AIC value for each model.
@@ -33,8 +65,7 @@ station_data_rest <- format_station_data(
   model = "REST",
   target_species = "SP01"
 )
-
-station_effort_data <- add_effort(
+station_effort_rest <- add_effort(
   detection_data = detection_data,
   station_data_formatted = station_data_rest,
   col_name_station = "Station",
@@ -63,10 +94,11 @@ activity_data <- format_activity(
   indep_time = 30
 )
 
-model <- mle_rest(station_effort_data,
-                  stay_data,
-                  activity_data,
+model <- mle_rest(station_effort_data = station_effort_rest,
+                  stay_data = stay_data,
+                  activity_data = activity_data,
                   focal_area = 1.56,
-                  model = "REST")
+                  model = "REST",
+                  target_species = "SP01")
 
 }

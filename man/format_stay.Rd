@@ -2,7 +2,7 @@
 % Please edit documentation in R/format_stay.R
 \name{format_stay}
 \alias{format_stay}
-\title{Pre}
+\title{Prepares data for analyzing animal staying time within the focal area}
 \usage{
 format_stay(
   detection_data,
@@ -15,25 +15,47 @@ format_stay(
 )
 }
 \arguments{
-\item{detection_data}{A data frame containing information for each camera station, with one row per station. It includes the station name (station), location coordinates, covariates, and so forth. Unlike the detection_data, it lists all the camera stations that have been set up.}
+\item{detection_data}{A data frame containing information for individual videos, with six columns:
+\itemize{
+\item Camera station ID (character)
+\item Capture datetime (character, not used in this function)
+\item Species name (character)
+\item Number of passes through the focal area (numeric, not used in this function)
+\item Staying time (seconds) within the focal area for each pass in a video (numeric)
+\item Whether the observation of the pass was censored (1 = censored, 0 = observed)
+}}
 
-\item{station_data}{""}
+\item{station_data}{A data frame containing information for each camera station, with one row per station.
+It must include at least the camera station IDs (character) and may contain additional columns such as
+location coordinates, covariates, and other relevant information. Unlike \code{detection_data}, this data frame
+lists all the camera stations that have been set up.}
 
-\item{col_name_station}{Column name containing station id info}
+\item{col_name_station}{A string specifying the column name containing station ID information.}
 
-\item{col_name_species}{Column name containing species name detected}
+\item{col_name_species}{A string specifying the column name containing detected species names.}
 
-\item{col_name_stay}{Column name containing staying time}
+\item{col_name_stay}{A string specifying the column name containing staying time.}
 
-\item{col_name_cens}{Column name containing infomation on censored (1) or not (0)}
+\item{col_name_cens}{A string specifying the column name indicating whether the observation is censored (1) or not (0).}
 
-\item{target_species}{The species name for which you want to estimate his density}
+\item{target_species}{A character vector specifying the species name(s) for which density estimation is desired.}
 }
 \value{
-Dataframe contaning staying time
+A data frame with staying time information for the specified species.
+The returned data frame contains the following columns:
+\itemize{
+\item \code{Station} (character): Camera station ID where the detection occurred.
+\item \code{Species} (character): Species name.
+\item \code{Stay} (numeric): Staying time (in seconds) within the focal area for each pass.
+\item \code{Cens} (numeric): Indicator of whether the observation was censored (1 = censored, 0 = observed).
+Additionally, all columns from \code{station_data} are included, matched by \code{Station}.
+If no matching \code{Station} is found in \code{station_data}, those values will be \code{NA}.
+If none of the \code{target_species} are found in \code{detection_data}, an empty data frame with
+the same column structure will be returned.
+}
 }
 \description{
-Pre
+Prepares data for analyzing animal staying time within the focal area
 }
 \examples{
 format_stay(

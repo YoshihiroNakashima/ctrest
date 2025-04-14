@@ -231,7 +231,7 @@ Staying time is recorded in the detection data (detection_data). For both REST a
 ```{r}
 stay_data <- format_stay(
   detection_data = detection_data,    # source data
-  station_data = station_data,
+  station_data = station_data,        # each row containing camera station info
   col_name_station = "Station",       # column name containing camera station ID
   col_name_species = "Species",       # column name containing species name
   col_name_stay = "Stay",             # column name containing staying time
@@ -259,50 +259,6 @@ activity_data <- format_activity(
 head(activity_data)
 ```
 
-## 最尤推定/Maximum Likelihood Estimation
-
-### RESTによる密度推定/Density Estimation using REST
-
-　mle_rest関数で行います．尤度関数をRのoptim関数で最適化してパラメータ推定しており，標準偏差や信頼区間はヘッセ行列から事後的に計算しています．後に紹介するMCMC法によるベイズ推定に比べて圧倒的に速いです．調査地の平均的な密度をさっと出したいときに使ってください．活動時間割合については，固定カーネル法（Rowcliffe et al. 2014）による推定値を定数として入れています．
-
-Density estimation is performed using the mle_rest function. It optimizes the likelihood function using R's optim function for parameter estimation, and calculates standard deviations and confidence intervals from the Hessian matrix afterwards. This is dramatically faster than the Bayesian estimation using MCMC method that we'll introduce later. Use this when you want to quickly calculate the average density of a study area. For activity time proportions, it uses fixed kernel method estimates (Rowcliffe et al. 2014) as a constant.
-
-```{r}
-model <- mle_rest(
-  station_effort_REST,         # return value from add_effort function for REST
-  stay_data,                   # return value from format_stay function
-  activity_data,               # return value from activity_data function
-  focal_area = 2.0,            # effective detection area
-  model = "REST"               # model name for density estimation ("REST" or "RAD-REST")
-)
-model
-```
-
-　この関数では，撮影枚数についてはポアソン分布または負の二項分布，滞在時間については４つの確率分布（指数分布，ガンマ分布，対数正規分布，ワイブル分布）を想定して，全通りの組み合わせ（2×4 = 8通り）で密度推定します．密度の点推定値だけでなく，標準偏差や95%信頼区間，AIC値などを見ることができます．結果の表は，AIC値の小さい順にソートされます．
-
-This function assumes either a Poisson distribution or negative binomial distribution for the number of recordings, and four probability distributions (exponential, gamma, log-normal, and Weibull distributions) for staying time, estimating density for all possible combinations (2 × 4 = 8 combinations). You can see not only point estimates of density but also standard deviations, 95% confidence intervals, and AIC values. The results table is sorted by AIC values in ascending order.
-
-### RAD-RESTによる密度推定/Density Estimation using RAD-REST
-
-　RAD-RESTに関しても，model = "RAD-REST"とするだけです．
-
-For RAD-REST, you just need to set model = "RAD-REST".
-
-```{r}
-model <- mle_rest(
-  station_effort_RAD,    # return value from add_effort function for RAD-REST
-  stay_data,             # return value from format_stay function
-  activity_data,         # return value from format_activity function
-  focal_area = 2.0,      # effective detection area
-  model = "RAD-REST"     # model name for density estimation
-)
-model
-```
-
-ベストモデルの密度推定値は，少しRAD-RESTモデルの方が高く出ていますが許容範囲内でしょう．
-
-The density estimate from the best model is slightly higher with the RAD-REST model, but this is within acceptable range.
-
 ## ベイズ推定/Bayesian Estimation
 
 ### 滞在時間のモデル選択/Staying Time Model Selection
@@ -319,10 +275,6 @@ Since MCMC density estimation takes considerable time, it's good to perform stay
 | **formula_stay** | Stay \~ 1   | 滞在時間のモデル式                                                                                     |
 |                  |             |                                                                                                        |
 |                  |             | Model formula for staying time                                                                         |
-+------------------+-------------+--------------------------------------------------------------------------------------------------------+
-| station_data     |             | 各行に各カメラについての情報（例えばカメラIDや共変量）をもつデータフレーム                             |
-|                  |             |                                                                                                        |
-|                  |             | Data frame containing information for each camera (e.g., camera ID and covariates)                     |
 +------------------+-------------+--------------------------------------------------------------------------------------------------------+
 | stay_data        |             | 滞在時間・打ち切りの有無をもつデータフレーム                                                           |
 |                  |             |                                                                                                        |
@@ -360,6 +312,10 @@ Since MCMC density estimation takes considerable time, it's good to perform stay
 |                  |             |                                                                                                        |
 |                  |             | Whether to evaluate all possible models (TRUE) or not (FALSE)                                          |
 +------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| target_species   |             | 推定対象種（1種のみ指定可能）                                                                          |
+|                  |             |                                                                                                        |
+|                  |             | Species that targeted for staying time estimation (Only a single species can be specified.)            |
++------------------+-------------+--------------------------------------------------------------------------------------------------------+
 
 : **bayes_stay_selection関数の引数一覧．太字の引数については以下で説明．\*の意味については，一般的なMCMC法によるベイズ推定に関する書籍やサイトを参考にしてください/**List of arguments for bayes_stay_selection function. Bold arguments are explained below. For the meaning of arguments with , please refer to general books or websites about Bayesian estimation using MCMC methods.
 
@@ -390,10 +346,8 @@ When set to TRUE, it uses the model specified in formula_stay as the full model 
 Let's try including camera station ID as a random effect and x1 as a fixed effect:
 
 ```{r}
-library(nimble)
 model_selection <- bayes_stay_selection(
   formula_stay = Stay ~ 1 + x1,     # staying time model formula
-  station_data = station_data,      # source data
   stay_data = stay_data,            # return value from format_stay function
   family = "lognormal",             # staying time distribution
   plot = TRUE,                      # whether to visualize expected staying time
@@ -438,6 +392,10 @@ The function for Bayesian density estimation is **bayes_rest**. Density can be e
 | stay_data             |             | format_stay関数の返り値                                                                                |
 |                       |             |                                                                                                        |
 |                       |             | Return value from format_stay function                                                                 |
++-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
+| randome_effect        |             | 滞在時間のランダム効果                                                                                 |
+|                       |             |                                                                                                        |
+|                       |             | A character string specifying a random effect on mean staying time.                                    |
 +-----------------------+-------------+--------------------------------------------------------------------------------------------------------+
 | activity_data         |             | format_activity関数の返り値                                                                            |
 |                       |             |                                                                                                        |
@@ -499,8 +457,8 @@ mdl <- bayes_rest(
   formula_density = ~ 1 + x1,     # Formula for density (no left-hand side)
   station_effort_data = station_effort_REST,  # Return value from add_effort function
   stay_data = stay_data,          # Return value from format_stay function
-  col_name_cens = "Cens",         # Column name containing censoring status
   activity_data = activity_data,  # Return value from format_activity function
+  activity_estimation = "kernel", # A Method for activity estimation
   bw_adj = 1.5,                   # Bandwidth for kernel density estimation
   stay_family = "lognormal",      # Distribution assumed for staying times
   focal_area = 1.96,              # Effective detection area
@@ -510,13 +468,17 @@ mdl <- bayes_rest(
   chains = 2,
   thin = 2,
   model = "REST",                 # REST/RAD-REST
-  all_comb = FALSE                # See above
+  all_comb = FALSE,               # See above
+  target_species = "SP01"
 )
+```
+
+```{r}
 mdl$WAIC
-mdl$density
-library(bayesplot)
-# Estimated density at Station01
-bayesplot::mcmc_trace(mdl$all_samples, pars = "density[1]")
+mdl$summary_result
+MCMCvis::MCMCtrace(object = mdl$samples,
+                   params = c("density"),
+                   pdf = FALSE)
 ```
 
 ### RAD-RESTによる密度推定
@@ -530,7 +492,6 @@ mdl <- bayes_rest(
   formula_density = ~ 1 + x1,   # Model formula for density (no left-hand side)
   station_effort_data = station_effort_RAD,  # Return value from add_effort function
   stay_data = stay_data,        # Return value from format_stay function
-  col_name_cens = "Cens",       # Column name containing censoring status
   activity_data = activity_data,# Return value from format_activity function
   bw_adj = 1.5,                 # Bandwidth for kernel density estimation
   stay_family = "lognormal",    # Distribution assumed for staying times
@@ -541,14 +502,19 @@ mdl <- bayes_rest(
   chains = 2,
   thin = 2,
   model = "RAD-REST",           # REST/RAD-REST
-  all_comb = FALSE              # See the explanation for bayes_stay_selection
+  all_comb = FALSE,             # See the explanation for bayes_stay_selection
+  target_species = "SP01"
 )
-mdl$WAIC
-mdl$density
-library(bayesplot)
-mcmc_trace(mdl$all_samples, pars = "density[1]")
 ```
 
-　
+```{r}
+mdl$WAIC
+mdl$summary_result
+MCMCvis::MCMCtrace(object = mdl$samples,
+                   params = c("density"),
+                   pdf = FALSE)
+```
 
-　
+### multispecies RAD-RESTによる密度推定
+
+

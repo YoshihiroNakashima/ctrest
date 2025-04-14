@@ -2,7 +2,7 @@
 % Please edit documentation in R/add_effort.R
 \name{add_effort}
 \alias{add_effort}
-\title{Caluculating camera trapping efforts from the detection data}
+\title{Calculate Camera Trapping Effort (Days) from Detection Data}
 \usage{
 add_effort(
   detection_data,
@@ -15,28 +15,34 @@ add_effort(
 )
 }
 \arguments{
-\item{detection_data}{A data frame containing information for individual videos, with six columns: camera station name (station), capture datetime (datetime), species name (species), number of passes through the focal area (nfocal), duration of stay within the focal area for each pass in a video (stay), and whether the observation of the pass was censored (cens).}
+\item{detection_data}{A data frame containing information on individual video records, with six columns:
+\itemize{
+\item Camera station ID (character)
+\item Capture datetime (character)
+\item Species name (character; not used in this function)
+\item Number of passes through the focal area (numeric; not used in this function)
+\item Staying time (in seconds) within the focal area per pass in each video (numeric; not used in this function)
+\item Whether the observation of the pass was censored (1 = censored, 0 = observed; not used in this function)
+}}
 
-\item{station_data_formatted}{""}
+\item{station_data_formatted}{A data frame returned by the \code{format_station_data()} function. This will be updated with camera effort information.}
 
-\item{col_name_station}{Column name containing station id info}
+\item{col_name_station}{A string specifying the column name containing camera station IDs.}
 
-\item{col_name_datetime}{Column name containing datetime info}
+\item{col_name_datetime}{A string specifying the column name containing datetime information. Ensure all timestamps are correct.}
 
-\item{col_name_term}{Column name containing datetime info}
+\item{col_name_term}{(Optional) A string specifying the column name indicating different survey periods if cameras were checked during the study period. Set to NULL if only deployment and retrieval dates are available.}
 
-\item{plot}{Column name containing datetime info}
+\item{plot}{Logical. If TRUE, a plot showing the camera operation periods will be displayed. This is useful for identifying timestamp inconsistencies in \code{detection_data}.}
 
-\item{font_size}{Column name containing datetime info}
+\item{font_size}{Font size for the station labels in the plot when \code{plot = TRUE}. Default is 8.}
 }
 \value{
-data frame containing camera trapping effort (days) for each station
+A data frame with the same structure as \code{station_data_formatted}, with an additional column \code{Effort} representing the camera trapping effort (in days) for each station. Stations with \code{Effort == 0} are removed from the final output.
 }
 \description{
-Caluculating camera trapping efforts from the detection data
-}
-\details{
-'Start' and 'End' represent the dates when the camera trap first and last captured an image, respectively.
+Computes the total camera trapping effort (in days) for each station based on detection data.
+If monitoring periods (terms) are specified, effort is calculated separately for each term and then aggregated.
 }
 \examples{
 station_data_rest <- format_station_data(
@@ -48,14 +54,12 @@ station_data_rest <- format_station_data(
   model = "REST",
   target_species = "SP01"
 )
-
-station_data_complete <- add_effort(
+station_effort_rest <- add_effort(
   detection_data = detection_data,
   station_data_formatted = station_data_rest,
   col_name_station = "Station",
   col_name_term = "Term",
   col_name_datetime = "DateTime",
-  plot = TRUE,
-  font_size = 5
+  plot = TRUE
 )
 }

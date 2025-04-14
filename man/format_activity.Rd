@@ -2,7 +2,7 @@
 % Please edit documentation in R/format_activity.R
 \name{format_activity}
 \alias{format_activity}
-\title{Prepare data for estimating the proportion of time animal being active}
+\title{Prepare data for estimating the proportion of time an animal is active}
 \usage{
 format_activity(
   detection_data,
@@ -14,30 +14,46 @@ format_activity(
 )
 }
 \arguments{
-\item{detection_data}{A data frame containing information for individual videos, with six columns: camera station name (station), capture datetime (datetime), species name (species), number of passes through the focal area (nfocal), duration of stay within the focal area for each pass in a video (stay), and whether the observation of the pass was censored (cens).}
+\item{detection_data}{A data frame containing information for individual videos, including:
+\itemize{
+\item Camera station ID (character)
+\item Capture datetime (character)
+\item Species name (character)
+\item Other columns (e.g., number of passes, staying time, censoring flag) are ignored by this function.
+}}
 
-\item{col_name_station}{Column name containing station id info}
+\item{col_name_station}{A string specifying the column name that contains camera station IDs.}
 
-\item{col_name_species}{Column name containing species name detected}
+\item{col_name_species}{A string specifying the column name that contains species names.}
 
-\item{col_name_datetime}{Column name containing datetime info}
+\item{col_name_datetime}{A string specifying the column name that contains datetime information (character).
+If time is missing (e.g., only "2022/03/01"), "00:00" is assumed.}
 
-\item{target_species}{The species names for which you want to estimate their activity proportion}
+\item{target_species}{A character vector specifying the species name(s) for which the activity proportion is to be estimated.}
 
-\item{indep_time}{The interval (in seconds) to consider detection as independent}
+\item{indep_time}{A numeric value specifying the minimum time interval (in minutes) to consider two detections as independent. Default is 30.}
 }
 \value{
-A data frame containing information about the times of an animal detection
+A data frame with three columns:
+\itemize{
+\item \code{Species} (character): Species name.
+\item \code{Station} (character): Camera station ID.
+\item \code{time} (numeric): Time of detection, scaled from 0 to 2π (radians) for circular activity analysis.
+Only independent detections are included.
+}
 }
 \description{
-Prepare data for estimating the proportion of time animal being active
+This function filters detection data to retain only independent detections
+of the specified species and transforms detection time into a circular format
+for use in activity modeling.
 }
 \examples{
 format_activity(
-detection_data = detection_data,
-col_name_station = "Station",
-col_name_species = "Species",
-col_name_datetime = "DateTime",
-target_species = "SP01",
-indep_time = 30)
+  detection_data = detection_data,
+  col_name_station = "Station",
+  col_name_species = "Species",
+  col_name_datetime = "DateTime",
+  target_species = "SP01",
+  indep_time = 30
+)
 }

@@ -2,46 +2,39 @@
 % Please edit documentation in R/bayes_activity.R
 \name{bayes_activity}
 \alias{bayes_activity}
-\title{Activity level estimation by von Misex mixture distribution using stick-breaking prior}
+\title{Activity level estimation by von Mises mixture distribution using stick-breaking prior}
 \usage{
 bayes_activity(
-  activity_data = activity_data,
+  activity_data,
   C = 10,
-  plot = TRUE,
   cores = 3,
-  iter = 3000,
+  iter = 5000,
   warmup = 1000,
   chains = 3,
-  thin = 5,
+  thin = 2,
   target_species = NULL
 )
 }
 \arguments{
-\item{activity_data}{A vector of detection times transformed into radians}
+\item{activity_data}{A data frame containing a "time" column, representing detection times transformed into radians. Typically, this is the output of the format_activity function.}
 
-\item{C}{""}
+\item{C}{The maximum number of components in the von Mises mixture distribution. Defaults to 10.}
 
-\item{plot}{If TRUE, plots the expected values of residence times.}
+\item{cores}{The number of CPU cores to use for parallel computation. Default is 3.}
 
-\item{cores}{The number of cores used for calculations.}
+\item{iter}{The total number of MCMC iterations per chain. Default is 5000}
 
-\item{iter}{The number of iterations. The default value is 2000.}
+\item{warmup}{The number of warm-up (burn-in) iterations per chain. Default is 1000.}
 
-\item{warmup}{The number of warmup iterations. The default value is NULL (half of the iterations will be used for warmup).}
+\item{chains}{The number of MCMC chains. Default is 2.}
 
-\item{chains}{The number of chains. The default value is 2.}
-
-\item{thin}{The thinning interval. The default value is 1.}
-
-\item{target_species}{Species name of interest.}
-
-\item{all_comb}{If TRUE, models with all combinations of covariates are compared. If FALSE, only the designated model in model_formula is run.}
+\item{target_species}{The species name of interest.  Only one species can be specified.}
 }
 \value{
-Activity level
+the estimated proportion of activity time and A figure showing the temporal variation in activity level.
 }
 \description{
-Activity level estimation by von Misex mixture distribution using stick-breaking prior
+Activity level estimation by von Mises mixture distribution using stick-breaking prior
 }
 \examples{
 activity_data <- format_activity(
@@ -52,15 +45,13 @@ activity_data <- format_activity(
   target_species = "SP01",
   indep_time = 30
 )
-library(nimble)
 bayes_activity(
   activity_data = activity_data,
   C = 10,
-  plot = TRUE,
+  cores = 3,
   iter = 2000,
   warmup = 1000,
-  chains = 2,
-  thin = 1,
-  all_comb = FALSE,
+  chains = 3,
+  thin = 2,
   target_species = "SP01")
 }

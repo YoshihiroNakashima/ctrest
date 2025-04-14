@@ -2,90 +2,104 @@
 % Please edit documentation in R/bayes_rest_multi.R
 \name{bayes_rest_multi}
 \alias{bayes_rest_multi}
-\title{Bayesian parameter estimation of multispecies RAD-REST model based on MCMC samplings with Rstan}
+\title{Bayesian Parameter Estimation of a Multispecies RAD-REST Model Based on MCMC Sampling with RStan}
 \usage{
 bayes_rest_multi(
   formula_stay,
   formula_density,
   station_effort_data,
   stay_data,
-  col_name_cens = "Cens",
-  col_name_species = "Species",
   random_effect = NULL,
   activity_data,
   activity_estimation = "kernel",
-  add_prior = out_trace,
-  bw_adj = 1.5,
+  bw_adj = 1,
   C = 10,
   stay_family = "lognormal",
   focal_area,
-  cores = 2,
-  iter = 3000,
-  warmup = NULL,
-  chains = 2,
-  thin = 1,
+  cores = 3,
+  iter = 5000,
+  warmup = 1000,
+  chains = 3,
+  thin = 2,
   target_species,
-  all_comb = F
+  all_comb = FALSE
 )
 }
 \arguments{
-\item{formula_stay}{Model formula for the staying time within a focal area. Grammar follows lme4::glmer function. e.g. Stay ~ 1 + (1|Group)}
+\item{formula_stay}{A model formula for staying times within the focal area (e.g., Stay ~ 1 + x1). Random effects should be specified separately using the random_effect argument.}
 
-\item{formula_density}{Model formula for animal density. e.g. ~ 1 + x1}
+\item{formula_density}{A model formula for animal density (e.g., ~ 1 + x1). Note that the formula must not have a left-hand side.}
 
-\item{station_effort_data}{A data frame containing information for each camera station (with sampling days) in each row}
+\item{station_effort_data}{A data frame containing information for each camera station. Typically, this is the output of the add_effort function. Alternatively, a manually prepared data frame may be provided with the following required columns:
+\itemize{
+\item For model = "REST":
+\item Station (character): Camera station ID.
+\item Effort (numeric): Camera trapping effort (in days) at each station.
+\item Species (character): Species name.
+\item Y (numeric): Total number of passes through the focal area for each station-species pair.
+\item For model = "RAD-REST":
+\item Station (character): Camera station ID.
+\item Effort (numeric): Camera trapping effort (in days) at each station.
+\item Species (character): Species name.
+\item N (numeric): Total number of detected videos for each station-species pair.
+\item y_X columns (y_0, y_1, ..., y_max): Number of videos categorized by the number of observed passes.
+}}
 
-\item{stay_data}{A data frame containing the time spent within a focal area}
+\item{stay_data}{A data frame returned by the format_stay function, containing:
+\itemize{
+\item Station (character): Camera station ID.
+\item Species (character): Species name.
+\item Stay (numeric): Staying time (in seconds) within the focal area for each detected pass.
+\item Censored (binary): Whether the staying time was censored (1 = censored, 0 = observed).
+}}
 
-\item{col_name_species}{Column name of stay_data containing information on species name}
+\item{random_effect}{A character string specifying a random effect on mean staying time. (Note: Species-level random effects are automatically included and do not need to be specified.)}
 
-\item{random_effect}{A random effect on mean staying time#'}
+\item{activity_data}{A data frame containing a "time" column, representing detection times transformed into radians. Typically, this is the output of the format_activity function.}
 
-\item{activity_data}{A vector of detection times transformed into radians}
+\item{activity_estimation}{The method used to estimate activity patterns. Choose "kernel" for fixed kernel density estimation (Rowcliffe et al. 2014), or "mixture" for nonparametric Bayesian estimation using von Mises mixture models (Nakashima et al. 2025).}
 
-\item{activity_estimation}{"kernel" or "mixture"}
+\item{bw_adj}{Bandwidth adjustment parameter for kernel density estimation. The default is 1.0. See Rowcliffe et al. (2014) for details.}
 
-\item{add_prior}{"""}
+\item{C}{The maximum number of von Mises components to use in the mixture model. Required only if activity_estimation = "mixture".}
 
-\item{bw_adj}{Bandwidth adjustment of kernel density estimation. The default value is 1.5. See Rowcliffe et al. () for details.}
+\item{stay_family}{The probability distribution used to model staying times. This should be selected based on the output of the bayes_stay_selection function.}
 
-\item{stay_family}{The probability distribution of staying times. Specify the probability distribution selected by the bayes_stay_selection function.}
+\item{focal_area}{The size of the focal area, in square meters.}
 
-\item{focal_area}{The area of a focal area}
+\item{cores}{The number of CPU cores to use for parallel computation. Default is 3.}
 
-\item{cores}{The number of cores to use for parallel computation. The default value is 1.}
+\item{iter}{The total number of MCMC iterations per chain. Default is 5,000.}
 
-\item{iter}{The length of iterations. The default value is 2000.}
+\item{warmup}{The number of warm-up (burn-in) iterations per chain. Default is 1,000.}
 
-\item{warmup}{The length of warmup. The default value is NULL (half of the iterations will be used for warmup).}
+\item{chains}{The number of MCMC chains. Default is 3.}
 
-\item{chains}{The number of chains. The default value is 2.}
+\item{thin}{The thinning interval for MCMC sampling. Default is 2 (no thinning).}
 
-\item{thin}{The thinning interval. The default value is 1.}
+\item{target_species}{A vector specifying the species to be analyzed. Multiple species must be specified.}
 
-\item{all_comb}{If TRUE, models with all combinations of covariates are compared. If FALSE, only the designated model in model_formula is run.}
-
-\item{model}{Specify the model to use. Choose either "REST" or "RAD-REST".}
+\item{all_comb}{Logical. If TRUE, all combinations of covariates in the density model will be evaluated and compared. If FALSE, only the model specified in formula_density will be run.}
 }
 \value{
-XXXX
+A list containing:
 }
 \description{
-Bayesian parameter estimation of multispecies RAD-REST model based on MCMC samplings with Rstan
+Bayesian Parameter Estimation of a Multispecies RAD-REST Model Based on MCMC Sampling with RStan
 }
 \examples{
-station_data_rest <- format_station_data(
+station_data_RAD <- format_station_data(
   detection_data = detection_data,
   station_data = station_data,
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_y = "y",
-  model = "REST",
-  target_species = "SP01"
+  model = "RAD-REST",
+  target_species = c("SP01", "SP02", "SP03", "SP04", "SP05")
 )
-station_effort_REST <- add_effort(
+station_effort_RAD <- add_effort(
   detection_data = detection_data,
-  station_data_formatted = station_data_rest,
+  station_data_formatted = station_data_RAD,
   col_name_station = "Station",
   col_name_term = "Term",
   col_name_datetime = "DateTime",
@@ -99,32 +113,30 @@ stay_data <- format_stay(
   col_name_species = "Species",
   col_name_stay = "Stay",
   col_name_cens = "Cens",
-  target_species = "SP01"
+  target_species = c("SP01", "SP02", "SP03", "SP04", "SP05")
 )
 activity_data <- format_activity(
   detection_data = detection_data,
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_datetime = "DateTime",
-  target_species = "SP01",
+  target_species = c("SP01", "SP02", "SP03", "SP04", "SP05"),
   indep_time = 30
 )
-library(nimble)
-rest_model <- bayes_rest(
-  formula_stay = Stay ~ 1 + x1,
+rest_model <- bayes_rest_multi(
+  formula_stay = Stay ~ 1,
   formula_density = ~ 1,
-  station_effort_data = station_effort_REST,
+  station_effort_data = station_effort_RAD,
   stay_data = stay_data,
   activity_data = activity_data,
-  bw_adj = 1.5,
   stay_family = "lognormal",
   focal_area = 1.96,
   cores = 2,
-  iter = 3000,
+  iter = 5000,
   warmup = 1000,
   chains = 2,
   thin = 1,
-  model = "REST",
+  target_species = c("SP01", "SP02", "SP03", "SP04", "SP05"),
   all_comb = FALSE
 )
 

@@ -14,7 +14,30 @@
     "u",
     "upper",
     "value",
-    "returnType"
+    "returnType",
+    "2.5%",
+    "50%",
+    "97.5%",
+    "Indep",
+    "N_detection_rep",
+    "Variable",
+    "act_data_pred",
+    "alpha_Dirichlet",
+    "beta_dens",
+    "beta_density",
+    "beta_stay",
+    "censored",
+    "group_stay",
+    "loglact",
+    "n.eff",
+    "pred_t",
+    "pred_y",
+    "random_effect_stay",
+    "size",
+    "species_effect_density",
+    "species_effect_stay",
+    "theta_stay",
+    "y_rep"
   ))
 }
 
@@ -49,4 +72,3 @@ rdirchmulti <- nimbleFunction(
     return(rmulti(1, size = size, prob = p))
   }
 )
-
