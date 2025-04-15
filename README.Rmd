@@ -30,7 +30,7 @@ Vignette（使い方の説明）を見るには、、以下のコードを走ら
 
 To view the vignettes (package documentation and tutorials), run the following code:
 
-```{r}
+```{r, eval = FALSE}
 library(ctrest)
 vignette("ctrest")
 ```

@@ -42,5 +42,3 @@ following code:
 library(ctrest)
 vignette("ctrest")
 ```
-
-    ## Warning: vignette 'ctrest' not found
