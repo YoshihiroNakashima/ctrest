@@ -1,5 +1,5 @@
 Package: ctrest
-Title: Estimating animal density using the Random Encounter and Staying Time (REST) model based on camera traps
+Title: Estimating animal density using the Random Encounter and Staying Time (REST) model based on camera trapping data
 Version: 0.0.0.9000
 Authors@R: 
     person("Yoshihiro", "Nakashima", email = "yosshi1215jp@yahoo.co.jp", role = c("aut", "cre"))
