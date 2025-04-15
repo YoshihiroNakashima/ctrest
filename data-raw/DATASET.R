@@ -1,28 +1,28 @@
 library(tidyverse)
-# 動物の密度は対数正規分布に従う
+# Animal density follows a log-normal distribution
 rlnorm2 <- function(n, mean=1, sd=1) {
   sdlog <- sqrt(log((sd/mean)^2 + 1))
   meanlog <- log(mean) - (sdlog^2) / 2
   rlnorm(n, meanlog = meanlog, sdlog = sdlog)
 }
-# ラジアンから ymd_hms に変換する関数（ベクトル対応）
+# Function to convert radians to ymd_hms (vector compatible)
 radian_to_time <- function(rad_vec, date = "1970-01-01") {
-  # ラジアンを0〜1の割合に変換（1日は2π）
+  # Convert radians to fraction of day (1 day = 2π)
   frac_day <- (rad_vec %% (2 * pi)) / (2 * pi)
 
-  # 秒に変換（1日 = 86400秒）
+  # Convert to seconds (1 day = 86400 seconds)
   seconds <- frac_day * 86400
 
-  # 基準日をPOSIXct形式で作成
+  # Create base date in POSIXct format
   base_time <- ymd_hms(paste(date, "00:00:00"), tz = "UTC")
 
-  # 各ラジアンに対応する時刻を生成
+  # Generate time corresponding to each radian
   result_times <- base_time + seconds
 
   return(result_times)
 }
 
-# 先に大量の撮影タイミングデータを作成
+# Create a large amount of photo timing data first
 library("circular")
 rv1 <- rvonmises(n = 10000, circular(pi /2), 8, control.circular=list(units="radian"))
 rv2 <- rvonmises(n = 8000, circular(3 * pi) / 2, 8,  control.circular=list(units="radian"))
@@ -38,10 +38,10 @@ activity
 N_station <- 100
 station <- paste0("ST", formatC(1:N_station, flag = "0", width = 3))
 
-start_date_1 <- ymd_hms("2024-05-07 09:00:00") + minutes(round(runif(N_station, 0, 180))) # 1回目の調査開始
+start_date_1 <- ymd_hms("2024-05-07 09:00:00") + minutes(round(runif(N_station, 0, 180))) # First survey start
 end_date_1 <- start_date_1 +  minutes(24 * 60 * 30) - sample(0:1, N_station, prob = c(3/4, 1/4), rep = T) * minutes(round(runif(N_station, 24 * 60 * 5, 24 * 60 * 20)))
 
-start_date_2 <- start_date_1 + minutes(24 * 60 * 30) # 2回目の調査開始 (1回目の1か月後)
+start_date_2 <- start_date_1 + minutes(24 * 60 * 30) # Second survey start (1 month after the first)
 end_date_2 <- start_date_2 + minutes(24 * 60 * 30) - sample(0:1, N_station, prob = c(3/4, 1/4), rep = T) * minutes(round(runif(N_station, 24 * 60 * 5, 24 * 60 * 20)))
 
 d.surveyor <- tibble(Station = rep(station, 4),
@@ -83,10 +83,10 @@ sd <- 3
 sp <- list(0)
 for(k in 1:N_species) {
 
-  # 撮影枚数の期待値
+  # Expected number of detections
   mu <- density[k] * focal * 24 * 60 * 60 * effort %>% pull(Effort) / mean / 1000000 * activity / e_y
   library(MASS)
-  N_detection  <- rnegbin(n = N_station * 2, mu, theta = 1.0) # 動画枚数
+  N_detection  <- rnegbin(n = N_station * 2, mu, theta = 1.0) # Number of videos
 
   # E_y
   prob <- MCMCpack::rdirichlet(n = N_station, alpha = probability * 20)
@@ -98,24 +98,24 @@ for(k in 1:N_species) {
   }
   y <- rep(rep(0:(ncol(prob) - 1), N_station * 2), as.vector(t(y_temp)))
 
-  # 検出時刻の作成
+  # Create detection time
   time <- hms::as_hms(radian_to_time(t.temp))[1:sum(N_detection)]
 
   start_time <- effort %>% pull(Start)
   end_time <- effort %>% pull(End)
 
-  # 乱数で日時を生成（数値として秒単位で間の値をランダムに取得）
+  # Generate random datetime (randomly select second values between as numeric)
   random_times_list <- list(0)
   for(i in 1:nrow(effort)) {
     random_times_list[[i]] <- as_datetime(runif(N_detection[i], as.numeric(start_time[i]) + 24 * 60 * 60, as.numeric(end_time[i]) - 24 * 60 * 60))
   }
 
-  # 時刻情報を切り落とす（日付だけを取得）
+  # Remove time information (get date only)
   random_dates <- as_date(as_datetime(unlist(random_times_list)))
 
   detection_time <- as_datetime(random_dates) + time
 
-  # 滞在時間の生成
+  # Generate stay time
   stay <- round(rlnorm2(sum(N_detection), mean, sd), 1)
   hist(stay)
   stay[stay == 0] <- 0.1
@@ -123,7 +123,7 @@ for(k in 1:N_species) {
   cens[stay > 20] <- 1
   stay[stay > 20] <- 20
 
-  # 動物の観測データ
+  # Animal observation data
   temp1 <- tibble(
     Station = rep(effort$Station, N_detection),
     DateTime = detection_time,
@@ -132,8 +132,8 @@ for(k in 1:N_species) {
     y = y
   ) %>%
     mutate(Stay = stay, Cens = cens) %>%
-    group_by(Station, Term) %>%                # StationとTermごとにグループ化
-    ungroup()  # グループ化解除
+    group_by(Station, Term) %>%                # Group by Station and Term
+    ungroup()  # Ungroup
 
   sp[[k]] <- temp1
 }
@@ -156,4 +156,3 @@ usethis::use_data(station_data, overwrite = TRUE)
 
 devtools::document()
 load_all()
-
