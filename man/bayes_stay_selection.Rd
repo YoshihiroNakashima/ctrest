@@ -10,12 +10,12 @@ bayes_stay_selection(
   stay_data = stay_data,
   col_name_cens = "Cens",
   family = "lognormal",
-  cores = 1,
-  iter = 3000,
-  warmup = NULL,
+  cores = 3,
+  iter = 5000,
+  warmup = 1000,
   chains = 3,
-  thin = 1,
-  all_comb = TRUE,
+  thin = 4,
+  all_comb = FALSE,
   target_species = NULL
 )
 }
@@ -40,12 +40,20 @@ bayes_stay_selection(
 
 \item{thin}{The thinning interval for MCMC sampling. Default is 4 (no thinning).}
 
-\item{all_comb}{A logical value indicating whether to compare models with all possible combinations of covariates. If \code{FALSE}, only the specified model in \code{formula_stay} is evaluated.}
+\item{all_comb}{A logical value indicating whether to compare models with all possible combinations of covariates. If \code{FALSE}, only the specified model in \code{formula_stay} is evaluated. Default is FALSE.}
 
 \item{target_species}{A character string specifying the species of interest. Only a single species can be specified.}
 }
 \value{
-A data frame containing the WAIC values for each model and a Bayesian P-value for the best predictive model. All MCMC samples are also available ($mcmc_samples)
+A list of class \code{"ResultStay"}, which includes the following components:
+\describe{
+\item{\code{WAIC}}{An object containing WAIC (Widely Applicable Information Criterion) results for model comparison.}
+\item{\code{Bayesian_p_value}}{Bayesian p-value for the best model, used to assess model fit.}
+\item{\code{summary_result}}{A data frame summarizing posterior estimates of the mean staying time.}
+\item{\code{samples}}{A \code{coda::mcmc.list} object containing MCMC samples for all parameters.}
+}
+The returned object has a custom print method that displays WAIC, Bayesian p-value, and summary of staying time estimates.
+You can access full MCMC samples via \code{$samples}, and analyze convergence using the \code{MCMCvis} package.
 }
 \description{
 Model selection for staying time analysis using WAIC for REST/REST-RAD models based on MCMC samplings with nimble
@@ -57,16 +65,16 @@ stay_data <- format_stay(
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_stay = "Stay",
-  col_name_cens = "Cens",
-  target_species = "SP01"
+  col_name_cens = "Cens"
 )
 bayes_stay_selection(formula_stay = Stay ~ 1 + x1,
                     stay_data = stay_data,
                     col_name_cens = "Cens",
                     family = "lognormal",
+                    cores = 2,
                     iter = 5000,
                     warmup = 1000,
-                    chains = 3,
+                    chains = 2,
                     thin = 4,
                     all_comb = FALSE,
                     target_species = "SP01")

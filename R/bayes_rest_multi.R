@@ -29,7 +29,7 @@
 #' @param iter The total number of MCMC iterations per chain. Default is 5,000.
 #' @param warmup The number of warm-up (burn-in) iterations per chain. Default is 1,000.
 #' @param chains The number of MCMC chains. Default is 3.
-#' @param thin The thinning interval for MCMC sampling. Default is 2 (no thinning).
+#' @param thin The thinning interval for MCMC sampling. Default is 4 (no thinning).
 #' @param all_comb Logical. If TRUE, all combinations of covariates in the density model will be evaluated and compared. If FALSE, only the model specified in formula_density will be run.
 #' @param target_species A vector specifying the species to be analyzed. Multiple species must be specified.
 #' @return A list of class \code{"ResultDensity"}, which includes the following components:
@@ -43,7 +43,7 @@
 
 #' @export
 #' @import nimble activity parallel MCMCvis tibble
-#' @importFrom stats as.formula formula model.frame model.matrix sd var runif median quantile model.response
+#' @importFrom stats as.formula formula model.frame model.matrix sd var runif median quantile model.response rexp rnorm step dexp pexp dgamma pgamma dlnorm plnorm dweibull pweibull dnbinom
 #' @importFrom dplyr select
 #' @importFrom extraDistr ddirmnom
 #' @examples
@@ -53,8 +53,7 @@
 #'   col_name_station = "Station",
 #'   col_name_species = "Species",
 #'   col_name_y = "y",
-#'   model = "RAD-REST",
-#'   target_species = c("SP01", "SP02", "SP03", "SP04", "SP05")
+#'   model = "RAD-REST"
 #' )
 #' station_effort_RAD <- add_effort(
 #'   detection_data = detection_data,
@@ -62,8 +61,7 @@
 #'   col_name_station = "Station",
 #'   col_name_term = "Term",
 #'   col_name_datetime = "DateTime",
-#'   plot = TRUE,
-#'   font_size = 5
+#'   plot = TRUE
 #' )
 #' stay_data <- format_stay(
 #'   detection_data = detection_data,
@@ -71,15 +69,13 @@
 #'   col_name_station = "Station",
 #'   col_name_species = "Species",
 #'   col_name_stay = "Stay",
-#'   col_name_cens = "Cens",
-#'   target_species = c("SP01", "SP02", "SP03", "SP04", "SP05")
+#'   col_name_cens = "Cens"
 #' )
 #' activity_data <- format_activity(
 #'   detection_data = detection_data,
 #'   col_name_station = "Station",
 #'   col_name_species = "Species",
 #'   col_name_datetime = "DateTime",
-#'   target_species = c("SP01", "SP02", "SP03", "SP04", "SP05"),
 #'   indep_time = 30
 #' )
 #' rest_model <- bayes_rest_multi(
@@ -114,7 +110,7 @@ bayes_rest_multi <- function(formula_stay,
                              iter = 5000,
                              warmup = 1000,
                              chains = 3,
-                             thin = 2,
+                             thin = 4,
                              target_species,
                              all_comb = FALSE) {
 
@@ -893,7 +889,7 @@ bayes_rest_multi <- function(formula_stay,
     if(stay_family == "lognormal") prms <- c("meanlog", "sdlog", "mean_stay")
     if(stay_family == "exponential") prms <- c("scale", "shape", "mean_stay")
 
-    prms <- c(prms, "density", "mean_stay", "mean_pass", "mu", "alpha_Dirichlet", "p", "size", "beta_stay", "beta_dens")
+    prms <- c(prms, "density", "mean_stay", "mean_pass") #, "mu", "alpha_Dirichlet", "p", "size", "beta_stay", "beta_dens")
 
     params <- c(prms, "loglike_obs_stay", "loglike_obs_y", "loglike_obs_detection", "loglike_pred_detection", "loglike_pred_stay", "loglike_pred_y")
 
@@ -966,7 +962,11 @@ bayes_rest_multi <- function(formula_stay,
     sample_activity <- MCMCvis::MCMCchains(actv_chain_output,
                                            mcmc.list = TRUE,
                                            params = "activity_proportion")
-    mcmc_samples <- map2(mcmc_samples, sample_activity, ~ cbind(.x, .y))
+    mcmc_samples <- lapply(seq_along(mcmc_samples), function(i) {
+      cbind(mcmc_samples[[i]], sample_activity[[i]])
+    })
+
+    # mcmc_samples <- purrr::map2(mcmc_samples, sample_activity, ~ cbind(.x, .y))
   }
 
   mcmc_samples_mean <- MCMCvis::MCMCchains(chain_output, mcmc.list = TRUE, params = c("density"))
@@ -1028,4 +1028,4 @@ bayes_rest_multi <- function(formula_stay,
 
   density_result
 }
-
+time <- Stay <- NULL

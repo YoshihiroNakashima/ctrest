@@ -10,7 +10,7 @@
 #' @param warmup The number of warm-up (burn-in) iterations per chain. Default is 1000.
 #' @param thin The thinning interval for MCMC sampling. Default is 4 (no thinning).
 #' @param chains The number of MCMC chains. Default is 3.
-#' @param all_comb A logical value indicating whether to compare models with all possible combinations of covariates. If `FALSE`, only the specified model in `formula_stay` is evaluated.
+#' @param all_comb A logical value indicating whether to compare models with all possible combinations of covariates. If `FALSE`, only the specified model in `formula_stay` is evaluated. Default is FALSE.
 #' @param target_species A character string specifying the species of interest. Only a single species can be specified.
 #' @return A list of class \code{"ResultStay"}, which includes the following components:
 #' \describe{
@@ -27,7 +27,7 @@
 #' @importFrom tidyr unite extract
 #' @importFrom purrr map
 #' @importFrom stringr str_extract str_detect
-#' @importFrom stats median model.response quantile
+#' @importFrom stats as.formula formula model.frame model.matrix sd var runif median quantile model.response rexp rnorm step dexp pexp dgamma pgamma dlnorm plnorm dweibull pweibull dnbinom
 #' @export
 #' @examples
 #' stay_data <- format_stay(
@@ -36,16 +36,16 @@
 #'   col_name_station = "Station",
 #'   col_name_species = "Species",
 #'   col_name_stay = "Stay",
-#'   col_name_cens = "Cens",
-#'   target_species = "SP01"
+#'   col_name_cens = "Cens"
 #' )
 #' bayes_stay_selection(formula_stay = Stay ~ 1 + x1,
 #'                     stay_data = stay_data,
 #'                     col_name_cens = "Cens",
 #'                     family = "lognormal",
+#'                     cores = 2,
 #'                     iter = 5000,
 #'                     warmup = 1000,
-#'                     chains = 3,
+#'                     chains = 2,
 #'                     thin = 4,
 #'                     all_comb = FALSE,
 #'                     target_species = "SP01")
@@ -56,12 +56,12 @@ bayes_stay_selection <- function(
     stay_data = stay_data,
     col_name_cens = "Cens",
     family = "lognormal",
-    cores = 1,
-    iter = 3000,
-    warmup = NULL,
+    cores = 3,
+    iter = 5000,
+    warmup = 1000,
     chains = 3,
-    thin = 1,
-    all_comb = TRUE,
+    thin = 4,
+    all_comb = FALSE,
     target_species = NULL
 ) {
 

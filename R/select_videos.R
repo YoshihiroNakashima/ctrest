@@ -9,6 +9,7 @@
 #'   - Whether the observation of the pass was censored (1 = censored, 0 = observed)
 #' @param col_name_species A string specifying the column name in `stay_data` that indicates the species name.
 #' @param col_name_station A string specifying the column name containing camera station IDs.
+#' @param col_name_datetime A string specifying the column name that contains datetime information.
 #' @param N_sampled The total number of videos to be selected.
 #' @param Indep_criteria A numeric value representing the interval (in minutes) used to determine whether detections are independent. The default is 30 minutes.
 #' @param seed An integer value for setting the random seed.

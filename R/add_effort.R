@@ -14,7 +14,6 @@
 #' @param col_name_datetime A string specifying the column name containing datetime information. Ensure all timestamps are correct.
 #' @param col_name_term (Optional) A string specifying the column name indicating different survey periods if cameras were checked during the study period. Set to NULL if only deployment and retrieval dates are available.
 #' @param plot Logical. If TRUE, a plot showing the camera operation periods will be displayed. This is useful for identifying timestamp inconsistencies in `detection_data`.
-#' @param font_size Font size for the station labels in the plot when `plot = TRUE`. Default is 8.
 #' @return A data frame with the same structure as `station_data_formatted`, with an additional column `Effort` representing the camera trapping effort (in days) for each station. Stations with `Effort == 0` are removed from the final output.
 #' @export
 #' @import dplyr ggplot2 lubridate
@@ -25,8 +24,7 @@
 #'   col_name_station = "Station",
 #'   col_name_species = "Species",
 #'   col_name_y = "y",
-#'   model = "REST",
-#'   target_species = "SP01"
+#'   model = "REST"
 #' )
 #' station_effort_rest <- add_effort(
 #'   detection_data = detection_data,
@@ -41,8 +39,7 @@ add_effort <- function(detection_data,
                        col_name_station,
                        col_name_datetime,
                        col_name_term = NULL,
-                       plot = FALSE,
-                       font_size = 8) {
+                       plot = FALSE) {
   # Check if required columns exist
   required_cols <- c(col_name_station, col_name_datetime)
   if (!all(required_cols %in% colnames(detection_data))) {
@@ -105,7 +102,7 @@ add_effort <- function(detection_data,
                    alpha = 0.3,
                    linewidth = 2.5) +
       geom_point(aes(x = Start, y = Station), shape = 4, col = "red", alpha = 0.8) +
-      theme(axis.text.y = element_text(size = nrow(effort_temp2) /25)) +
+      theme(axis.text.y = element_text(size = nrow(effort_temp) /25)) +
       xlab("Survey Period")
     print(g)
   }
@@ -113,4 +110,4 @@ add_effort <- function(detection_data,
   return(effort_temp2)
 }
 
-Start <- End <- effort <- Effort <- Station <- DateTime <- Term <- Species <- NULL
+Start <- End <- effort <- Effort <- Station <- DateTime <- Term <- Species <- DateTime_clean <- NULL

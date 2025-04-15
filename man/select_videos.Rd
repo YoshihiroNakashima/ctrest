@@ -30,6 +30,8 @@ select_videos(
 
 \item{col_name_station}{A string specifying the column name containing camera station IDs.}
 
+\item{col_name_datetime}{A string specifying the column name that contains datetime information.}
+
 \item{N_sampled}{The total number of videos to be selected.}
 
 \item{Indep_criteria}{A numeric value representing the interval (in minutes) used to determine whether detections are independent. The default is 30 minutes.}

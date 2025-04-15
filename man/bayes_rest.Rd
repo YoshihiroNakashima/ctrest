@@ -89,7 +89,14 @@ bayes_rest(
 \item{target_species}{A character string specifying the species to be analyzed. Only a single species can be specified.}
 }
 \value{
-A list containing:
+A list of class \code{"ResultDensity"}, which includes the following components:
+\describe{
+\item{\code{WAIC}}{An object containing WAIC (Widely Applicable Information Criterion) results.}
+\item{\code{summary_result}}{A data frame summarizing the posterior estimates of the mean staying time.}
+\item{\code{samples}}{A \code{coda::mcmc.list} object containing MCMC samples for all model parameters.}
+}
+The returned object has a custom print method that displays the WAIC and summary of staying time estimates.
+You can access full MCMC samples via \code{$samples}, and analyze convergence using the \code{MCMCvis} package.
 }
 \description{
 Bayesian parameter estimation for the REST/RAD-REST model via MCMC sampling using \code{nimble}.
@@ -101,8 +108,7 @@ station_data_rest <- format_station_data(
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_y = "y",
-  model = "REST",
-  target_species = "SP01"
+  model = "REST"
 )
 station_effort_REST <- add_effort(
   detection_data = detection_data,
@@ -110,8 +116,7 @@ station_effort_REST <- add_effort(
   col_name_station = "Station",
   col_name_term = "Term",
   col_name_datetime = "DateTime",
-  plot = TRUE,
-  font_size = 5
+  plot = TRUE
 )
 stay_data <- format_stay(
   detection_data = detection_data,
@@ -119,15 +124,13 @@ stay_data <- format_stay(
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_stay = "Stay",
-  col_name_cens = "Cens",
-  target_species = "SP01"
+  col_name_cens = "Cens"
 )
 activity_data <- format_activity(
   detection_data = detection_data,
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_datetime = "DateTime",
-  target_species = "SP01",
   indep_time = 30
 )
 rest_model <- bayes_rest(

@@ -16,7 +16,6 @@
 #' @param col_name_y A string specifying the column name containing the number of animal passes within a focal area.
 #'   - If `model = "REST"`, this column must have values for all detections. Any `NA` values will be replaced with `1`.
 #'   - If `model = "RAD-REST"`, only measured detections have count values, and unmeasured ones should be `NA`.
-#' @param target_species A character vector specifying the species name(s) for which density estimation is desired.
 #' @param model A string specifying the model type, either `"REST"` or `"RAD-REST"`.
 #' @return A data frame with aggregated detection counts. The structure varies depending on the model:
 #'   - If `model = "REST"`, the data frame contains:
@@ -40,8 +39,7 @@
 #'   col_name_station = "Station",
 #'   col_name_species = "Species",
 #'   col_name_y = "y",
-#'   model = "REST",
-#'   target_species = "SP01"
+#'   model = "REST"
 #' )
 
 format_station_data <- function(detection_data,
@@ -49,7 +47,6 @@ format_station_data <- function(detection_data,
                                 col_name_station,
                                 col_name_species,
                                 col_name_y,
-                                target_species,
                                 model) {
 
   # Check model name
@@ -64,12 +61,6 @@ format_station_data <- function(detection_data,
     stop(paste("The following columns are missing from 'detection_data':", paste(missing_cols, collapse = ", ")), call. = FALSE)
   }
 
-  # Check if target species exist in detection_data
-  if (!any(detection_data[[col_name_species]] %in% target_species)) {
-    warning("None of the target species are present in 'detection_data'. Returning an empty data frame.", call. = FALSE)
-    return(data.frame())
-  }
-
   # Check NA proportion in col_name_y for "REST"
   if (model == "REST") {
     na_ratio <- sum(is.na(detection_data[[col_name_y]])) / nrow(detection_data)
@@ -80,14 +71,13 @@ format_station_data <- function(detection_data,
 
   if (model == "REST") {
     detection_temp_0 <- crossing(
-      Species = target_species,
+      Species = unique(detection_data[[col_name_species]]),
       Station = station_data[[col_name_station]]
     )
 
     detection_temp <- detection_data %>%
       rename(Station = !!sym(col_name_station), Species = !!sym(col_name_species), y = !!sym(col_name_y)) %>%
       mutate(y = ifelse(is.na(y), 1, y)) %>%
-      filter(Species %in% target_species) %>%
       group_by(Station, Species) %>%
       summarize(Y = sum(y), .groups = 'drop') %>%
       select(- Species) %>%
@@ -98,14 +88,13 @@ format_station_data <- function(detection_data,
 
   } else if (model == "RAD-REST") {
     detection_temp_0 <- crossing(
-      Species = target_species,
+      Species = unique(detection_data[[col_name_species]]),
       Station = station_data[[col_name_station]]
     )
 
     detection_temp_1 <- detection_data %>%
       rename(Station = !!sym(col_name_station), Species = !!sym(col_name_species), y = !!sym(col_name_y)) %>%
       filter(!is.na(y)) %>%
-      filter(Species %in% target_species) %>%
       group_by(Station, y, Species) %>%
       summarise(n = n(), .groups = 'drop') %>%
       tidyr::complete(y, fill = list(n = 0)) %>%
@@ -136,7 +125,6 @@ format_station_data <- function(detection_data,
 
     detection_temp <- detection_data %>%
       rename(Station = !!sym(col_name_station), Species = !!sym(col_name_species), y = !!sym(col_name_y)) %>%
-      filter(Species %in% target_species) %>%
       group_by(Station, Species) %>%
       summarise(N = n(), .groups = 'drop') %>%
       left_join(detection_temp_1, by = c("Station", "Species")) %>%

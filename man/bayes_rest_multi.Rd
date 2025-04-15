@@ -20,7 +20,7 @@ bayes_rest_multi(
   iter = 5000,
   warmup = 1000,
   chains = 3,
-  thin = 2,
+  thin = 4,
   target_species,
   all_comb = FALSE
 )
@@ -75,14 +75,21 @@ bayes_rest_multi(
 
 \item{chains}{The number of MCMC chains. Default is 3.}
 
-\item{thin}{The thinning interval for MCMC sampling. Default is 2 (no thinning).}
+\item{thin}{The thinning interval for MCMC sampling. Default is 4 (no thinning).}
 
 \item{target_species}{A vector specifying the species to be analyzed. Multiple species must be specified.}
 
 \item{all_comb}{Logical. If TRUE, all combinations of covariates in the density model will be evaluated and compared. If FALSE, only the model specified in formula_density will be run.}
 }
 \value{
-A list containing:
+A list of class \code{"ResultDensity"}, which includes the following components:
+\describe{
+\item{\code{WAIC}}{An object containing WAIC (Widely Applicable Information Criterion) results.}
+\item{\code{summary_result}}{A data frame summarizing the posterior estimates of the mean staying time.}
+\item{\code{samples}}{A \code{coda::mcmc.list} object containing MCMC samples for all model parameters.}
+}
+The returned object has a custom print method that displays the WAIC and summary of staying time estimates.
+You can access full MCMC samples via \code{$samples}, and analyze convergence using the \code{MCMCvis} package.
 }
 \description{
 Bayesian Parameter Estimation of a Multispecies RAD-REST Model Based on MCMC Sampling with RStan
@@ -94,8 +101,7 @@ station_data_RAD <- format_station_data(
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_y = "y",
-  model = "RAD-REST",
-  target_species = c("SP01", "SP02", "SP03", "SP04", "SP05")
+  model = "RAD-REST"
 )
 station_effort_RAD <- add_effort(
   detection_data = detection_data,
@@ -103,8 +109,7 @@ station_effort_RAD <- add_effort(
   col_name_station = "Station",
   col_name_term = "Term",
   col_name_datetime = "DateTime",
-  plot = TRUE,
-  font_size = 5
+  plot = TRUE
 )
 stay_data <- format_stay(
   detection_data = detection_data,
@@ -112,15 +117,13 @@ stay_data <- format_stay(
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_stay = "Stay",
-  col_name_cens = "Cens",
-  target_species = c("SP01", "SP02", "SP03", "SP04", "SP05")
+  col_name_cens = "Cens"
 )
 activity_data <- format_activity(
   detection_data = detection_data,
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_datetime = "DateTime",
-  target_species = c("SP01", "SP02", "SP03", "SP04", "SP05"),
   indep_time = 30
 )
 rest_model <- bayes_rest_multi(

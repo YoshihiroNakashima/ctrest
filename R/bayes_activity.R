@@ -6,8 +6,13 @@
 #' @param iter The total number of MCMC iterations per chain. Default is 5000
 #' @param warmup The number of warm-up (burn-in) iterations per chain. Default is 1000.
 #' @param chains The number of MCMC chains. Default is 2.
+#' @param thin The thinning interval for MCMC sampling. Default is 4 (no thinning).
 #' @param target_species The species name of interest.  Only one species can be specified.
-#' @return the estimated proportion of activity time and A figure showing the temporal variation in activity level.
+#' @return A list containing:
+#' \describe{
+#'   \item{summary_result}{A data frame summarizing the estimated activity proportion.}
+#'   \item{plot}{A ggplot2 object showing the temporal variation in activity level.}
+#' }
 #' @import dplyr ggplot2 nimble
 #' @importFrom tidyr unite extract
 #' @importFrom purrr map
@@ -21,17 +26,16 @@
 #'   col_name_station = "Station",
 #'   col_name_species = "Species",
 #'   col_name_datetime = "DateTime",
-#'   target_species = "SP01",
 #'   indep_time = 30
 #' )
 #' bayes_activity(
 #'   activity_data = activity_data,
 #'   C = 10,
-#'   cores = 3,
-#'   iter = 2000,
+#'   cores = 1,
+#'   iter = 5000,
 #'   warmup = 1000,
-#'   chains = 3,
-#'   thin = 2,
+#'   chains = 1,
+#'   thin = 4,
 #'   target_species = "SP01")
 
 bayes_activity <- function(
@@ -42,7 +46,7 @@ bayes_activity <- function(
     warmup = 1000,
     chains = 3,
     thin = 2,
-    target_species = NULL
+    target_species
 ) {
 
   dens.x <- seq(0, 2 * pi, 0.02)
@@ -60,38 +64,6 @@ bayes_activity <- function(
   constants <- list(N = N, C = C, dens.x = dens.x, ndens = ndens)
   data <- list(time = time)
 
-  code <- nimbleCode({
-    for(k in 1:(C-1)) {
-      v[k] ~ dbeta(1, alpha)
-    }
-    alpha ~ dgamma(1, 1)
-    w[1:C] <- stick_breaking(v[1:(C-1)])
-    for(k in 1:C) {
-      mu_mix[k] ~ dunif(0, 2 * 3.141592654)
-      kappa_mix[k] ~ dgamma(1, 0.01)
-    }
-    for(n in 1:N) {
-      group[n] ~ dcat(w[1:C])
-      time[n] ~ dvonMises(mu_mix[group[n]], kappa_mix[group[n]])
-    }
-    for (j in 1:ndens) {
-      for (i in 1:C) {
-        dens.cpt[i, j] <- w[i] * dvonMises(dens.x[j] , mu_mix[i], kappa_mix[i], log = 0)
-      }
-      activity_dens[j] <- sum(dens.cpt[1:C, j])
-    }
-    activity_proportion <- 1.0 / (2 * 3.141592654 * max(activity_dens[1:ndens]));
-  })
-
-  inits_f <- function() {
-    list(
-      mu_mix = runif(constants$C, 0, 2 * pi),
-      kappa_mix = rgamma(constants$C, 1, 0.01),
-      group = sample(1:constants$C, size = constants$N, replace = TRUE),
-      v = rbeta(constants$C-1, 1, 1),
-      alpha = 1
-    )
-  }
 
   # Define the von Mises distribution function using nimbleFunction
   dvonMises <- nimbleFunction(
@@ -134,6 +106,39 @@ bayes_activity <- function(
     )
   )))
 
+  code <- nimbleCode({
+    for(k in 1:(C-1)) {
+      v[k] ~ dbeta(1, alpha)
+    }
+    alpha ~ dgamma(1, 1)
+    w[1:C] <- stick_breaking(v[1:(C-1)])
+    for(k in 1:C) {
+      mu_mix[k] ~ dunif(0, 2 * 3.141592654)
+      kappa_mix[k] ~ dgamma(1, 0.01)
+    }
+    for(n in 1:N) {
+      group[n] ~ dcat(w[1:C])
+      time[n] ~ dvonMises(mu_mix[group[n]], kappa_mix[group[n]])
+    }
+    for (j in 1:ndens) {
+      for (i in 1:C) {
+        dens.cpt[i, j] <- w[i] * dvonMises(dens.x[j] , mu_mix[i], kappa_mix[i], log = 0)
+      }
+      activity_dens[j] <- sum(dens.cpt[1:C, j])
+    }
+    activity_proportion <- 1.0 / (2 * 3.141592654 * max(activity_dens[1:ndens]));
+  })
+
+  inits_f <- function() {
+    list(
+      mu_mix = runif(constants$C, 0, 2 * pi),
+      kappa_mix = rgamma(constants$C, 1, 0.01),
+      group = sample(1:constants$C, size = constants$N, replace = TRUE),
+      v = rbeta(constants$C-1, 1, 1),
+      alpha = 1
+    )
+  }
+
   run_MCMC_vonMises <- function(info, data, constants, code, params, iter, thin, warmup) {
     myModel <- nimbleModel(code = code,
                            data = data,
@@ -172,8 +177,8 @@ bayes_activity <- function(
                             data = data, code = code,
                             constants = constants, params = params,
                             iter = iter, thin = thin, warmup = warmup)
-  # on.exit(stopCluster(this_cluster), add = TRUE)
-  stopCluster(this_cluster)
+  on.exit(stopCluster(this_cluster), add = TRUE)
+  # stopCluster(this_cluster)
   cat("Estimation is finished!\n")
 
   # Summarize results -------------------------------------------------

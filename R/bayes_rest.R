@@ -45,7 +45,7 @@
 
 #' @export
 #' @import nimble activity parallel MCMCvis
-#' @importFrom stats as.formula formula model.frame model.matrix sd var runif median quantile model.response rexp rnorm step
+#' @importFrom stats as.formula formula model.frame model.matrix sd var runif median quantile model.response rexp rnorm step dexp pexp dgamma pgamma dlnorm plnorm dweibull pweibull dnbinom
 #' @importFrom dplyr select
 #' @importFrom extraDistr ddirmnom
 #' @examples
@@ -55,8 +55,7 @@
 #'   col_name_station = "Station",
 #'   col_name_species = "Species",
 #'   col_name_y = "y",
-#'   model = "REST",
-#'   target_species = "SP01"
+#'   model = "REST"
 #' )
 #' station_effort_REST <- add_effort(
 #'   detection_data = detection_data,
@@ -64,8 +63,7 @@
 #'   col_name_station = "Station",
 #'   col_name_term = "Term",
 #'   col_name_datetime = "DateTime",
-#'   plot = TRUE,
-#'   font_size = 5
+#'   plot = TRUE
 #' )
 #' stay_data <- format_stay(
 #'   detection_data = detection_data,
@@ -73,15 +71,13 @@
 #'   col_name_station = "Station",
 #'   col_name_species = "Species",
 #'   col_name_stay = "Stay",
-#'   col_name_cens = "Cens",
-#'   target_species = "SP01"
+#'   col_name_cens = "Cens"
 #' )
 #' activity_data <- format_activity(
 #'   detection_data = detection_data,
 #'   col_name_station = "Station",
 #'   col_name_species = "Species",
 #'   col_name_datetime = "DateTime",
-#'   target_species = "SP01",
 #'   indep_time = 30
 #' )
 #' rest_model <- bayes_rest(
@@ -1386,7 +1382,11 @@ bayes_rest <- function(formula_stay,
     sample_activity <- MCMCvis::MCMCchains(actv_chain_output,
                                            mcmc.list = TRUE,
                                            params = "activity_proportion")
-    mcmc_samples <- map2(mcmc_samples, sample_activity, ~ cbind(.x, .y))
+    mcmc_samples <- lapply(seq_along(mcmc_samples), function(i) {
+      cbind(mcmc_samples[[i]], sample_activity[[i]])
+    })
+
+    # mcmc_samples <- purrr::map2(mcmc_samples, sample_activity, ~ cbind(.x, .y))
   }
   mcmc_samples_mean <- MCMCvis::MCMCchains(chain_output, mcmc.list = TRUE, params = c("density"))
   summary_mean_temp <- MCMCsummary(mcmc_samples_mean, round = 2) %>%
@@ -1410,3 +1410,4 @@ bayes_rest <- function(formula_stay,
 
   density_result
 }
+time <- Stay <- Cens <- NULL

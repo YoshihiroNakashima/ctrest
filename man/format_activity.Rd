@@ -9,7 +9,6 @@ format_activity(
   col_name_station,
   col_name_species,
   col_name_datetime,
-  target_species,
   indep_time = 30
 )
 }
@@ -26,10 +25,8 @@ format_activity(
 
 \item{col_name_species}{A string specifying the column name that contains species names.}
 
-\item{col_name_datetime}{A string specifying the column name that contains datetime information (character).
+\item{col_name_datetime}{A string specifying the column name that contains datetime information.
 If time is missing (e.g., only "2022/03/01"), "00:00" is assumed.}
-
-\item{target_species}{A character vector specifying the species name(s) for which the activity proportion is to be estimated.}
 
 \item{indep_time}{A numeric value specifying the minimum time interval (in minutes) to consider two detections as independent. Default is 30.}
 }
@@ -53,7 +50,6 @@ format_activity(
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_datetime = "DateTime",
-  target_species = "SP01",
   indep_time = 30
 )
 }

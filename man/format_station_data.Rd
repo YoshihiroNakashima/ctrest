@@ -10,7 +10,6 @@ format_station_data(
   col_name_station,
   col_name_species,
   col_name_y,
-  target_species,
   model
 )
 }
@@ -39,8 +38,6 @@ lists all the camera stations that have been set up.}
 \item If \code{model = "REST"}, this column must have values for all detections. Any \code{NA} values will be replaced with \code{1}.
 \item If \code{model = "RAD-REST"}, only measured detections have count values, and unmeasured ones should be \code{NA}.
 }}
-
-\item{target_species}{A character vector specifying the species name(s) for which density estimation is desired.}
 
 \item{model}{A string specifying the model type, either \code{"REST"} or \code{"RAD-REST"}.}
 }
@@ -75,7 +72,6 @@ format_station_data(
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_y = "y",
-  model = "REST",
-  target_species = "SP01"
+  model = "REST"
 )
 }

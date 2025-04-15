@@ -15,7 +15,6 @@
 #' @param col_name_species A string specifying the column name containing detected species names.
 #' @param col_name_stay A string specifying the column name containing staying time.
 #' @param col_name_cens A string specifying the column name indicating whether the observation is censored (1) or not (0).
-#' @param target_species A character vector specifying the species name(s) for which density estimation is desired.
 #'
 #' @return A data frame with staying time information for the specified species.
 #'   The returned data frame contains the following columns:
@@ -25,8 +24,6 @@
 #'   - `Cens` (numeric): Indicator of whether the observation was censored (1 = censored, 0 = observed).
 #'   Additionally, all columns from `station_data` are included, matched by `Station`.
 #'   If no matching `Station` is found in `station_data`, those values will be `NA`.
-#'   If none of the `target_species` are found in `detection_data`, an empty data frame with
-#'   the same column structure will be returned.
 #'
 #' @import dplyr
 #' @importFrom stats reformulate na.omit
@@ -39,15 +36,13 @@
 #'  col_name_station = "Station",
 #'  col_name_species = "Species",
 #'  col_name_stay = "Stay",
-#'  col_name_cens = "Cens",
-#'  target_species = "SP01")
+#'  col_name_cens = "Cens")
 format_stay <- function(detection_data,
                         station_data,
                         col_name_station = "Station",
                         col_name_species = "Species",
                         col_name_stay = "Stay",
-                        col_name_cens = "Cens",
-                        target_species = "A") {
+                        col_name_cens = "Cens") {
 
   if (!is.data.frame(detection_data)) {
     stop("detection_data must be a data frame.", call. = FALSE)
@@ -71,14 +66,6 @@ format_stay <- function(detection_data,
     stop(paste("Column", col_name_cens, "must be numeric and contain only 0 (observed) and 1 (censored)."), call. = FALSE)
   }
 
-  if (!is.character(target_species)) {
-    stop("target_species must be a character vector.", call. = FALSE)
-  }
-
-  if (!any(detection_data[[col_name_species]] %in% target_species)) {
-    warning("None of the specified target_species were found in detection_data.", call. = FALSE)
-  }
-
   censored_ratio <- sum(detection_data[[col_name_cens]], na.rm = TRUE) / nrow(detection_data)
   if (censored_ratio > 0.5) {
     warning("Too many censored data! Check that 1 indicates censored (unobserved) data!", call. = FALSE)
@@ -87,13 +74,14 @@ format_stay <- function(detection_data,
   stay_data <- detection_data %>%
     rename(Stay = !!sym(col_name_stay),
            Cens = !!sym(col_name_cens),
-           Species = !!sym(col_name_species)) %>%
-    filter(!is.na(Stay) & !is.na(Cens) & Species %in% target_species) %>%
-    dplyr::select(Station = !!sym(col_name_station), Species, Stay, Cens) %>%
+           Species = !!sym(col_name_species),
+           Station = !!sym(col_name_station)) %>%
+    filter(!is.na(Stay) & !is.na(Cens)) %>%
+    dplyr::select(Station, Species, Stay, Cens) %>%
     arrange(Species) %>%
-    left_join(station_data, by = c("Station" = col_name_station))
+    left_join(station_data, by = c("Station"))
 
   return(stay_data)
 }
 
-Species <- NULL
+Species <- Stay <- Cens <- NULL

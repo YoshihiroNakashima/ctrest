@@ -10,8 +10,7 @@ format_stay(
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_stay = "Stay",
-  col_name_cens = "Cens",
-  target_species = "A"
+  col_name_cens = "Cens"
 )
 }
 \arguments{
@@ -37,8 +36,6 @@ lists all the camera stations that have been set up.}
 \item{col_name_stay}{A string specifying the column name containing staying time.}
 
 \item{col_name_cens}{A string specifying the column name indicating whether the observation is censored (1) or not (0).}
-
-\item{target_species}{A character vector specifying the species name(s) for which density estimation is desired.}
 }
 \value{
 A data frame with staying time information for the specified species.
@@ -50,8 +47,6 @@ The returned data frame contains the following columns:
 \item \code{Cens} (numeric): Indicator of whether the observation was censored (1 = censored, 0 = observed).
 Additionally, all columns from \code{station_data} are included, matched by \code{Station}.
 If no matching \code{Station} is found in \code{station_data}, those values will be \code{NA}.
-If none of the \code{target_species} are found in \code{detection_data}, an empty data frame with
-the same column structure will be returned.
 }
 }
 \description{
@@ -64,6 +59,5 @@ format_stay(
  col_name_station = "Station",
  col_name_species = "Species",
  col_name_stay = "Stay",
- col_name_cens = "Cens",
- target_species = "SP01")
+ col_name_cens = "Cens")
 }

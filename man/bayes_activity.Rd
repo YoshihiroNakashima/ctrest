@@ -12,7 +12,7 @@ bayes_activity(
   warmup = 1000,
   chains = 3,
   thin = 2,
-  target_species = NULL
+  target_species
 )
 }
 \arguments{
@@ -28,10 +28,16 @@ bayes_activity(
 
 \item{chains}{The number of MCMC chains. Default is 2.}
 
+\item{thin}{The thinning interval for MCMC sampling. Default is 4 (no thinning).}
+
 \item{target_species}{The species name of interest.  Only one species can be specified.}
 }
 \value{
-the estimated proportion of activity time and A figure showing the temporal variation in activity level.
+A list containing:
+\describe{
+\item{summary_result}{A data frame summarizing the estimated activity proportion.}
+\item{plot}{A ggplot2 object showing the temporal variation in activity level.}
+}
 }
 \description{
 Activity level estimation by von Mises mixture distribution using stick-breaking prior
@@ -42,16 +48,15 @@ activity_data <- format_activity(
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_datetime = "DateTime",
-  target_species = "SP01",
   indep_time = 30
 )
 bayes_activity(
   activity_data = activity_data,
   C = 10,
-  cores = 3,
-  iter = 2000,
+  cores = 1,
+  iter = 5000,
   warmup = 1000,
-  chains = 3,
-  thin = 2,
+  chains = 1,
+  thin = 4,
   target_species = "SP01")
 }

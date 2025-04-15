@@ -10,8 +10,7 @@ add_effort(
   col_name_station,
   col_name_datetime,
   col_name_term = NULL,
-  plot = FALSE,
-  font_size = 8
+  plot = FALSE
 )
 }
 \arguments{
@@ -34,8 +33,6 @@ add_effort(
 \item{col_name_term}{(Optional) A string specifying the column name indicating different survey periods if cameras were checked during the study period. Set to NULL if only deployment and retrieval dates are available.}
 
 \item{plot}{Logical. If TRUE, a plot showing the camera operation periods will be displayed. This is useful for identifying timestamp inconsistencies in \code{detection_data}.}
-
-\item{font_size}{Font size for the station labels in the plot when \code{plot = TRUE}. Default is 8.}
 }
 \value{
 A data frame with the same structure as \code{station_data_formatted}, with an additional column \code{Effort} representing the camera trapping effort (in days) for each station. Stations with \code{Effort == 0} are removed from the final output.
@@ -51,8 +48,7 @@ station_data_rest <- format_station_data(
   col_name_station = "Station",
   col_name_species = "Species",
   col_name_y = "y",
-  model = "REST",
-  target_species = "SP01"
+  model = "REST"
 )
 station_effort_rest <- add_effort(
   detection_data = detection_data,
