@@ -37,8 +37,7 @@
 #'   col_name_station = "Station",
 #'   col_name_species = "Species",
 #'   col_name_y = "y",
-#'   model = "REST",
-#'   target_species = "SP01"
+#'   model = "REST"
 #' )
 #' station_effort_rest <- add_effort(
 #'   detection_data = detection_data,
@@ -46,8 +45,7 @@
 #'   col_name_station = "Station",
 #'   col_name_term = "Term",
 #'   col_name_datetime = "DateTime",
-#'   plot = TRUE,
-#'   font_size = 5
+#'   plot = TRUE
 #' )
 #'
 #' stay_data <- format_stay(
@@ -56,8 +54,7 @@
 #'   col_name_station = "Station",
 #'   col_name_species = "Species",
 #'   col_name_stay = "Stay",
-#'   col_name_cens = "Cens",
-#'   target_species = "SP01"
+#'   col_name_cens = "Cens"
 #' )
 #'
 #' activity_data <- format_activity(
@@ -65,7 +62,6 @@
 #'   col_name_station = "Station",
 #'   col_name_species = "Species",
 #'   col_name_datetime = "DateTime",
-#'   target_species = "SP01",
 #'   indep_time = 30
 #' )
 #'

@@ -1307,7 +1307,9 @@ bayes_rest <- function(formula_stay,
       if(stay_family == "exponential") prms <- c("scale", "shape", "mean_stay")
 
       prms <- c(prms, "density", "mean_stay", "mean_pass", "mu", "alpha_Dirichlet", "p", "size", "beta_stay", "beta_density")
-
+      if(activity_estimation == "mixture") {
+        prms <- c(prms, "activity_proportion")
+      }
       params <- c(prms, "loglike_obs_stay", "loglike_obs_y", "loglike_obs_detection", "loglike_pred_detection", "loglike_pred_stay", "loglike_pred_y")
 
       cat("Running MCMC sampling. Please wait...\n")
@@ -1381,24 +1383,29 @@ bayes_rest <- function(formula_stay,
   if(activity_estimation == "mixture") {
     sample_activity <- MCMCvis::MCMCchains(actv_chain_output,
                                            mcmc.list = TRUE,
-                                           params = "activity_proportion")
+                                           params = c("activity_proportion"))
     mcmc_samples <- lapply(seq_along(mcmc_samples), function(i) {
       cbind(mcmc_samples[[i]], sample_activity[[i]])
     })
 
     # mcmc_samples <- purrr::map2(mcmc_samples, sample_activity, ~ cbind(.x, .y))
   }
-  mcmc_samples_mean <- MCMCvis::MCMCchains(chain_output, mcmc.list = TRUE, params = c("density"))
+  prms <- c("density", "mean_stay")
+  if(model == "RAD-REST") prms <- c(prms, "mean_pass")
+  if(activity_estimation == "mixture") prms <- c(prms, "activity_proportion")
+
+  mcmc_samples_mean <- MCMCvis::MCMCchains(chain_output, mcmc.list = TRUE, params = prms)
   summary_mean_temp <- MCMCsummary(mcmc_samples_mean, round = 2) %>%
     tibble::rownames_to_column(., var = "Variable") %>%
     tibble(.) %>%
-    rename(lower = `2.5%`, median = `50%`, upper = `97.5%`)
+    rename(lower = `2.5%`, median = `50%`, upper = `97.5%`) %>%
+    mutate(cv = sd / mean)
 
   if(nPreds_density > 1) {
-    summary_mean <- tibble(Station = station.id) %>%
+    summary_mean <- tibble(Species = target_species, Station = station.id) %>%
       mutate(summary_mean_temp)
   } else {
-    summary_mean <- mutate(summary_mean_temp)
+    summary_mean <- tibble(Species = target_species, summary_mean_temp)
   }
 
   density_result <- list(
@@ -1406,6 +1413,9 @@ bayes_rest <- function(formula_stay,
     summary_result = summary_mean,
     samples = mcmc_samples
   )
+  if(activity_estimation == "mixture") {
+    density_result$activity_curve <- activity_density_estimates
+  }
   class(density_result) <- "ResultDensity"
 
   density_result

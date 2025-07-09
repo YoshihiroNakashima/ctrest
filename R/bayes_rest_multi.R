@@ -115,7 +115,7 @@ bayes_rest_multi <- function(formula_stay,
                              all_comb = FALSE) {
 
   # Define functions --------------------------------------------------------
-
+  cat("Running MCMC sampling. Please wait...\n")
   bit.test <- function(number, n) {
     (number %/% (2^n)) %% 2
   }
@@ -334,7 +334,7 @@ bayes_rest_multi <- function(formula_stay,
       })
 
       params <- c("activity_density", "activity_proportion", "mu_mix", "kappa_mix", "w", "loglike_obs_act")
-      cat("Running MCMC sampling. Please wait...\n")
+
 
       this_cluster <- makeCluster(nc)
       clusterEvalQ(this_cluster, {
@@ -351,12 +351,12 @@ bayes_rest_multi <- function(formula_stay,
                                      ni = ni, nt = nt, nb = nb)
       stopCluster(this_cluster)
 
-      out_trace_0[[m]] <- chain_output %>%
+      out_trace_0[[m]] <- actv_chain_output %>%
         map(~ .[, grep(paste("activity_proportion", collapse = "|"), colnames(.))])
 
     }
 
-    for (j in 1:length(chain_output)) {
+    for (j in 1:length(actv_chain_output)) {
       actv_list <- lapply(out_trace_0, function(species_results) {
         as.vector(species_results[[j]])
       })
@@ -847,7 +847,7 @@ bayes_rest_multi <- function(formula_stay,
         configModel$removeSampler(c("activity_proportion")) # (add_remove)
         configModel$addSampler(
           target = c("activity_proportion"), # add_remove,
-          type = 'mixture',
+          type = 'prior_samples',
           samples = info$actv_samples
         )
 
@@ -903,7 +903,7 @@ bayes_rest_multi <- function(formula_stay,
     clusterExport(this_cluster,
                   c("ddirchmulti", "rdirchmulti", "registerDistributions", "run_MCMC_RAD"),
                   envir = environment())
-    cat("Running MCMC sampling. Please wait...\n")
+    # cat("Running MCMC sampling. Please wait...\n")
     chain_output <- parLapply(
       cl = this_cluster,
       X = per_chain_info,
@@ -924,7 +924,7 @@ bayes_rest_multi <- function(formula_stay,
     loglfstay <- MCMCchains(chain_output, params = c("loglike_obs_stay"))
     loglfN <- MCMCchains(chain_output, params = c("loglike_obs_detection"))
 
-    if(activity_estimation == "mixture") loglfall <- cbind(loglfstay, loglfy, loglfN, loglact)
+    if(activity_estimation == "mixture") loglfall <- cbind(loglfstay, loglfy, loglfN)
     if(activity_estimation == "kernel") loglfall <- cbind(loglfstay, loglfy, loglfN)
 
     lppd <- sum(log(colMeans(exp(loglfall))))
@@ -1017,7 +1017,8 @@ bayes_rest_multi <- function(formula_stay,
   }
 
   summary_mean <- summary_mean %>%
-    bind_rows(summary_mean_temp)
+    bind_rows(summary_mean_temp) %>%
+    mutate(cv = sd / mean)
 
   density_result <- list(
     WAIC = WAIC,

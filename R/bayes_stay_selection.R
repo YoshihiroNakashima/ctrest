@@ -221,15 +221,24 @@ bayes_stay_selection <- function(
           pred_t[i] ~ dexp(rate = 1/scale[i])
           loglike_obs[i] <- (1 - step(censored[i] - 0.5)) * dexp(t[i], rate = 1/scale[i], log = 1) +
           step(censored[i] - 0.5) * log(1 - pexp(c_time[i], rate = 1/scale[i]))
-          loglike_pred[i] <- dexp(pred_t[i], rate = 1/scale[i], log = 1)
+          # loglike_pred[i] <- dexp(pred_t[i], rate = 1/scale[i], log = 1)
+          loglike_pred[i] <- (1 - step(censored[i] - 0.5)) *
+            dexp(pred_t[i], rate = 1/scale[i], log = 1) +
+            step(censored[i] - 0.5) *
+            log(1 - pexp(c_time[i], rate = 1/scale[i]))
         }
 
         if (family == "gamma") {
-          t[i] ~ dgamma(shape = theta_stay, rate = exp(-log(scale[i])))
-          pred_t[i] ~ dgamma(shape = theta_stay, rate = exp(-log(scale[i])))
-          loglike_obs[i] <- (1 - step(censored[i] - 0.5)) * dgamma(t[i], shape = theta_stay, rate = exp(-log(scale[i])), log = 1) +
-            step(censored[i] - 0.5) * log(1 - pgamma(c_time[i], shape = theta_stay, rate = exp(-log(scale[i]))))
-          loglike_pred[i] <- dgamma(pred_t[i], shape = theta_stay, rate = exp(-log(scale[i])), log = 1)
+          t[i] ~ dgamma(shape = theta_stay, rate = 1 / scale[i])
+          pred_t[i] ~ dgamma(shape = theta_stay, rate = 1 / scale[i])
+          loglike_obs[i] <- (1 - step(censored[i] - 0.5)) * dgamma(t[i], shape = theta_stay, rate = 1 / scale[i], log = 1) +
+            step(censored[i] - 0.5) * log(1 - pgamma(c_time[i], shape = theta_stay, rate = 1 / scale[i]))
+          # loglike_pred[i] <- dgamma(pred_t[i], shape = theta_stay, rate = exp(-log(scale[i])), log = 1)
+
+          loglike_pred[i] <- (1 - step(censored[i] - 0.5)) *
+            dgamma(pred_t[i], shape = theta_stay, rate = 1/scale[i], log = 1) +
+            step(censored[i] - 0.5) *
+            log(1 - pgamma(c_time[i], shape = theta_stay, rate = 1/scale[i]))
         }
 
         if (family == "lognormal") {
@@ -237,7 +246,14 @@ bayes_stay_selection <- function(
           pred_t[i] ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay)
           loglike_obs[i] <- (1 - step(censored[i] - 0.5)) * dlnorm(t[i], meanlog = log(scale[i]), sdlog = theta_stay, log = 1) +
             step(censored[i] - 0.5) * log(1 - plnorm(c_time[i], meanlog = log(scale[i]), sdlog = theta_stay))
-          loglike_pred[i] <- dlnorm(pred_t[i], meanlog = log(scale[i]), sdlog = theta_stay, log = 1)
+          # loglike_pred[i] <- dlnorm(pred_t[i], meanlog = log(scale[i]), sdlog = theta_stay, log = 1)
+
+          # log-likelihood for replicated data with same censoring pattern
+          loglike_pred[i] <- (1 - step(censored[i] - 0.5)) *
+            dlnorm(pred_t[i], meanlog = log(scale[i]), sdlog = theta_stay, log = 1) +
+            step(censored[i] - 0.5) *
+            log(1 - plnorm(c_time[i], meanlog = log(scale[i]), sdlog = theta_stay))
+
           meanlog[i] <- log(scale[i])
         }
 
@@ -246,7 +262,12 @@ bayes_stay_selection <- function(
           pred_t[i] ~ dweibull(shape = theta_stay, scale = scale[i])
           loglike_obs[i] <- (1 - step(censored[i] - 0.5)) * dweibull(t[i], shape = theta_stay, scale = scale[i], log = 1) +
             step(censored[i] - 0.5) * log(1 - pweibull(c_time[i], shape = theta_stay, scale = scale[i]))
-          loglike_pred[i] <- dweibull(pred_t[i], shape = theta_stay, scale = scale[i], log = 1)
+          # loglike_pred[i] <- dweibull(pred_t[i], shape = theta_stay, scale = scale[i], log = 1)
+
+          loglike_pred[i] <- (1 - step(censored[i] - 0.5)) *
+            dweibull(pred_t[i], shape = theta_stay, scale = scale[i], log = 1) +
+            step(censored[i] - 0.5) *
+            log(1 - pweibull(c_time[i], shape = theta_stay, scale = scale[i]))
         }
 
         # Calculate log(scale[i])
