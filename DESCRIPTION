@@ -2,7 +2,7 @@ Package: ctrest
 Title: Estimating animal density using the Random Encounter and Staying Time (REST) model based on camera trapping data
 Version: 0.0.0.9000
 Authors@R: 
-    person("Yoshihiro", "Nakashima", email = "yosshi1215jp@yahoo.co.jp", role = c("aut", "cre"))
+    person("Anonymous", email = "Anonymous@xxxx.xx.xx", role = c("aut", "cre"))
 Description: What the package does (one paragraph).
 License: MIT + file LICENSE
 Imports: 
