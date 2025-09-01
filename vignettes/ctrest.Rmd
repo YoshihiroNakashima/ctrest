@@ -9,7 +9,7 @@ vignette: >
 
 ## Package Overview
 
-"ctrest" is an R package designed to facilitate the use of REST models or REST-RAD models. REST/REST-RAD models are statistical models for estimating the density of ground-dwelling mammals and birds based on video data obtained from camera traps. For details on the REST model, please refer to [Nakashima et al. (2018)](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2664.13059), and for the REST-RAD model, please refer to XXXXXX. For the data preparation process, please refer to [Nakashima et al. (2021)](https://www.biorxiv.org/content/10.1101/2021.05.18.444583v2). The package includes the following functions:
+"ctrest" is an R package designed to facilitate the use of REST models or REST-RAD models. REST/REST-RAD models are statistical models for estimating the density of ground-dwelling mammals and birds based on video data obtained from camera traps. The package includes the following functions:
 
 -   **Data preprocessing**: Performs necessary data preprocessing. The density estimation functions that will be used later are designed assuming that preprocessing has been done using these functions (or that the data has the same column names) to minimize the number of argument specifications.
 
@@ -30,7 +30,6 @@ Please install the ctrest package from GitHub using "devtools" package.
 ```{r}
 # install.packages("devtools")
 # library(devtools)
-# install_github("YoshihiroNakashima/ctrest")
 ```
 
 ## Data Preparation
