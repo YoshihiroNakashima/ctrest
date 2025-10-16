@@ -84,4 +84,3 @@ following code:
 library(ctrest)
 vignette("ctrest")
 ```
->>>>>>> origin/main
