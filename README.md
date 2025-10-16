@@ -42,9 +42,6 @@ following code:
 library(ctrest)
 vignette("ctrest")
 ```
-=======
-ctrest
-================
 
 ## パッケージの概要/Package Overview
 
