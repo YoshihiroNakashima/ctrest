@@ -1,0 +1,320 @@
+---
+title: "ctrest"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{ctrest}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+## Package Overview
+
+"ctrest" is an R package designed to facilitate the use of REST models or REST-RAD models. REST/REST-RAD models are statistical models for estimating the density of ground-dwelling mammals and birds based on video data obtained from camera traps. For details on the REST model, please refer to [Nakashima et al. (2018)](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2664.13059), and for the REST-RAD model, please refer to XXXXXX. For the data preparation process, please refer to [Nakashima et al. (2021)](https://www.biorxiv.org/content/10.1101/2021.05.18.444583v2). The package includes the following functions:
+
+-   **Data preprocessing**: Performs necessary data preprocessing. The density estimation functions that will be used later are designed assuming that preprocessing has been done using these functions (or that the data has the same column names) to minimize the number of argument specifications.
+
+-   **Density estimation**: Different functions are defined based on the estimation method.
+
+    -   **Maximum likelihood**: The mle_rest function performs parameter estimation based on maximum likelihood. This function only supports estimating the average density across all sites (covariates and random effects cannot be included in staying time or density parameters).
+
+    -   **Bayesian method**: The bayes_rest function performs parameter estimation based on Bayesian methods. It is suitable for more advanced analyses. It uses MCMC methods implemented in Nimble.
+
+## Setup
+
+Please install R, Rstudio, and RTools (for Windows; xcode for Mac) on your computer (installation can be done by simply double-clicking the .exe file). However, please ensure that RTools corresponds to your R version.
+
+## Package Installation
+
+Please install the ctrest package from GitHub using "devtools" package.
+
+```{r}
+# install.packages("devtools")
+# library(devtools)
+# install_github("YoshihiroNakashima/ctrest")
+```
+
+## Data Preparation
+
+Before starting the analysis, you need to prepare two CSV files (refer to the example data below).
+
+-   **Detection data (detection_data)**: A data sheet where each row contains information from one video. If there are 1000 recordings in total, it will be a table with 1000 rows (1001 rows including variable names). The minimum required information includes the camera station ID, date and time of detection, species name, number of passes through the effective detection area (or "focal area") in each video, staying time measurement, and whether the staying time measurement was censored or not (Censored = 1). Enter NA for missing values. If you visited the cameras multiple times for maintenance, include a survey round ID column. You can use the function explained below for calculating camera operation time.
+
+-   **Camera station data (station_data)**: A data sheet where each row contains information about each camera station. If cameras were installed at 100 locations, it will be a table with 100 rows (101 rows including variable names). The minimum requirement is the station ID. Depending on the situation, you may also include station coordinates, camera operation start time (installation time), end time (collection date/last recording time), and environmental covariates for each location.
+
+The REST model requires counting how many times the target species passed through the effective detection area for **all videos**. In contrast, the REST-RAD model can estimate density by making this determination for only a subset of videos. Since this is the only difference between the two models, it is possible to apply the REST-RAD model to data prepared for REST (but not vice versa).
+
+The following explanation uses the example data included in the package.
+
+```{r setup, cache=FALSE}
+library(ctrest)  # Enable use of functions in ctrest package
+```
+
+```{r}
+detection_data # Detection data
+```
+
+The data includes StationID (station ID), DateTime ( date and time of detection), Term (survey round), Species (recorded animal species), y (number of times entering the effective area), Stay (staying time within the effective area), and Cens (staying time censoring: 1 = yes, 0 = no).
+
+```{r}
+station_data # Camera station data
+```
+
+The camera station data contains StationID (station ID) and two covariates (x1 and x2).
+
+Below, we will explain how to prepare the necessary data for density estimation functions using REST data.
+
+## Data Processing
+
+### Data Processing Functions
+
+| Function Name       | Description                                   |
+|---------------------|-----------------------------------------------|
+| format_station_data | Summarize number of passes per camera station |
+| add_effort          | Calculate camera operation days               |
+| format_stay         | Summarize staying time and censoring status   |
+| format_activity     | Convert recording times to radians            |
+
+: List of preprocessing functions
+
+### Organizing the number of passes
+
+Based on these two source datasets, we will prepare the data needed for REST/REST-RAD.
+
+The first function we'll use is the **format_station_data function**, which summarizes the number of recordings by station. Let's try it with the example data.
+
+```{r}
+# Creating data for REST
+station_data_rest <- format_station_data(
+  detection_data = detection_data,    # source data
+  station_data = station_data,        # source data
+  col_name_station = "Station",       # column name containing camera station ID
+  col_name_species = "Species",       # column name containing species name
+  col_name_y = "y",                   # column name containing number of passes
+  model = "REST"                      # model name to use for estimation ("REST" or "RAD-REST")
+)
+head(station_data_rest)
+```
+
+This function integrates the two source datasets by station and prepares the necessary data. As shown above, when model = "REST", the Y column shows the total number of passes through the effective detection area summarized by station.
+
+Now, let's try setting model = "RAD-REST".
+
+```{r}
+station_data_rad <- format_station_data(
+  detection_data = detection_data,    # source data
+  station_data = station_data,        # source data
+  col_name_station = "Station",       # column name containing camera station ID
+  col_name_species = "Species",       # column name containing species name
+  col_name_y = "y",                   # column name containing number of passes
+  model = "RAD-REST"                  # model name to use for estimation ("REST" or "RAD-REST")
+)
+head(station_data_rad)
+```
+
+N contains the "total number of videos recorded at each camera", and y_0 to y_3 contain "the number of videos where the number of passes at a camera station was n times (where n is the number after y\_)". For example, at station ST001 in the first row, there were 0 videos with no passes through the effective detection area, 2 videos with one pass, and 0 videos with two passes. Note that when applying the RAD-REST model, it's not necessary to measure the number of passes for all videos (i.e., y_0 + y_1 + y_2 doesn't necessarily need to equal N). They match here only because we're using source data prepared for REST (data where all videos were measured).
+
+### Add a column containing sampling efforts (days)
+
+The station_data2 we created earlier doesn't contain information about how many days each camera was operational. Using the **add_effort function**, we can calculate and add the operation days based on the recording information in detection_data. The function assumes the first recording time as the survey start and the last recording time as the survey end. In REST, since we're recording the effective detection area, the first recording time should often match the start of operation. For survey end times, you can manually record the time for cameras with remaining battery power. For cameras that stopped working during the survey period, the last recording date is considered as the final operation day. If the survey spans multiple rounds, you can calculate the total operation days by specifying the column containing survey round IDs in the col_name_term argument.
+
+By setting the plot argument to TRUE in the add_effort function, you can visualize the camera operation patterns. Since camera date/time settings often get misaligned, it's good to verify this visually. When there are many cameras, the station names may overlap and become illegible. In such cases, use a smaller value for the font_size argument.
+
+```{r}
+# Add trapping efforts for REST data
+station_effort_REST <- add_effort(
+  detection_data = detection_data, # source data
+  station_data_formatted = station_data_rest,# return value from format_station_data function
+  col_name_station = "Station",   # column name containing camera station ID
+  col_name_term = "Term",         # survey round ID
+  col_name_datetime = "DateTime", # date/time data
+  plot = TRUE                     # whether to visualize survey effort
+)
+head(station_effort_REST)
+```
+
+```{r}
+# Add data for RAD-REST (argument specifications are the same as above)
+station_effort_RAD <- add_effort(
+  detection_data = detection_data,
+  station_data_formatted = station_data_rad,
+  col_name_station = "Station",
+  col_name_term = "Term",
+  col_name_datetime = "DateTime",
+  plot = FALSE
+)
+head(station_effort_RAD)
+```
+
+The newly created Effort column shows the camera operation time (in days). **If there are any entries with 0 operation days, please check again for possible errors in date/time entries (density estimation is impossible with 0 days)**.
+
+### Obtaining Staying Time Data
+
+Staying time is recorded in the detection data (detection_data). For both REST and RAD-REST, it's not necessary to measure staying time for all videos. As mentioned above, for videos where measurements weren't taken, be sure to enter NA in the corresponding fields of detection_data. The format_stay function will exclude NA data. It also checks whether any staying times are entered as 0 (most time distributions only accept positive integers as probability variables).
+
+```{r}
+stay_data <- format_stay(
+  detection_data = detection_data,    # source data
+  station_data = station_data,        # each row containing camera station info
+  col_name_station = "Station",       # column name containing camera station ID
+  col_name_species = "Species",       # column name containing species name
+  col_name_stay = "Stay",             # column name containing staying time
+  col_name_cens = "Cens"              # column name containing censoring status
+)
+head(stay_data)
+```
+
+### Convert Recording Times
+
+Finally, let's convert the recording times to radians for estimating activity time proportions (unlike other preprocessing functions that return data frames in tbl format, this function returns a vector).
+
+```{r}
+activity_data <- format_activity(
+  detection_data = detection_data,     # Original data
+  col_name_station = "Station",        # Column name containing camera station IDs
+  col_name_species = "Species",        # Column name containing species names
+  col_name_datetime = "DateTime",      # Column name containing detection timestamps
+  indep_time = 30                      # Time interval for independent detections
+)
+head(activity_data)
+```
+### Model Selection For Staying Times Within A Focal Area
+
+Since MCMC density estimation takes considerable time, it's good to perform staying time model selection first. The **bayes_stay_selection function** is used for this purpose. Currently, four probability distributions are available: exponential, gamma, log-normal, and Weibull distributions, and the function returns WAIC values for evaluated models. You can also include fixed effects and random effects (currently limited to one) in the expected value of each probability distribution.
+
+Let's try including camera station ID as a random effect and x1 as a fixed effect:
+
+```{r, eval=FALSE}
+model_selection <- bayes_stay_selection(
+  formula_stay = Stay ~ 1 + x1,     # staying time model formula
+  stay_data = stay_data,            # return value from format_stay function
+  random_effect = "Station",        # a random effect
+  family = "lognormal",             # staying time distribution
+  target_species = "SP01"           # target species
+)
+model_selection
+```
+
+Comparing WAIC values shows little difference. In such cases, it's best to choose the simpler model. If you want to try other probability distributions, specify them in the family argument.
+
+
+### Density Estimation Using Single-species Model
+
+Wildlife density estimation using REST and RAD-REST models is performed with the bayes_rest function[^1]. For the REST model, proceed as follows.
+
+[^1]: Estimating activity time proportion using von Mises mixture distributions (activity_estimation = "mixture") takes a very long time. If you want to test it, you can use activity_estimation = "kernel" (however, in this case, the activity time proportion will be a constant point estimate).
+
+```{r, eval=FALSE}
+rest <- bayes_rest(
+  formula_stay = Stay ~ 1,             # Staying time model
+  formula_density = ~ 1,               # Density model
+  station_effort_data = station_effort_REST, # Output from add_effort function
+  stay_data = stay_data,               # Output from format_stay function
+  activity_data = activity_data,       # Output from format_activity function
+  activity_estimation = "mixture",     # Activity time proportion estimation model
+  stay_family = "lognormal",           # staying time distribution
+  focal_area = 1.56,                   # Effective area size
+  model = "REST",                      # Density estimation model
+  target_species = "SP01"              # Target species
+)
+rest
+```
+
+To visually check parameter convergence, you can use the MCMCvis package as follows:
+
+```{r, eval=FALSE}
+library(MCMCvis)
+MCMCtrace(
+  object = rest$samples,
+  params = c(
+    "density",              # Density
+    "mean_stay",            # Mean staying time
+    "activity_proportion"   # Activity time proportion
+  ),
+  ISB = FALSE,
+  pdf = FALSE
+)
+
+# To plot trace plots for all stations
+# MCMCtrace(
+#   object = badger_rest$samples,
+#   params = c("density"),
+#   pdf = FALSE
+# )
+```
+
+For the RAD-REST model, proceed as follows.
+
+```{r, eval=FALSE}
+rad <- bayes_rest(
+  formula_stay = Stay ~ 1,             # Staying time model
+  formula_density = ~ 1,               # Density model
+  station_effort_data = station_effort_REST, # Output from add_effort function
+  stay_data = stay_data,               # Output from format_stay function
+  activity_data = activity_data,       # Output from format_activity function
+  activity_estimation = "mixture",     # Activity time proportion estimation model
+  stay_family = "lognormal",           # staying time distribution
+  focal_area = 1.56,                   # Effective area size
+  model = "REST",                      # Density estimation model
+  target_species = "SP01"              # Target species
+)
+rad
+```
+
+To visually check parameter convergence, you can use the MCMCvis package as follows:
+
+```{r, eval=FALSE}
+library(MCMCvis)
+MCMCtrace(
+  object = rad$samples,
+  params = c(
+    "density",              # Density
+    "mean_stay",            # Mean staying time
+    "mean_pass",            # Number of entries into effective area
+    "activity_proportion"   # Activity time proportion
+  ),
+  ISB = FALSE,
+  pdf = FALSE
+)
+
+# To plot trace plots for all stations
+# MCMCtrace(
+#   object = badger_rest$samples,
+#   params = c("density"),
+#   pdf = FALSE
+# )
+```
+
+#### Density Estimation Using multispecies Model
+
+To perform density estimation with a multispecies model, use the bayes_rest_multi function (the example below uses "kernel" for activity_estimation since "mixture" would take more time):
+
+```{r, eval=FALSE}
+multi <- bayes_rest_multi(
+  formula_stay = Stay ~ 1,              # staying time model
+  formula_density = ~ 1,                # Density model
+  station_effort_data = station_effort_RAD, # Output from add_effort
+  stay_data = stay_data,                # Output from format_stay function
+  activity_data = activity_data,        # Output from format_activity function
+  activity_estimation = "kernel",       # Activity time proportion estimation model
+  stay_family = "lognormal",            # staying time distribution
+  focal_area = 1.56,                    # Focal area (m2)
+  target_species = c("SP01", "SP02", "SP03", "SP04") # Target species
+)
+multi
+```
+
+Similarly, you can create trace plots for this function:
+
+```{r, eval=FALSE}
+library(MCMCvis)
+MCMCtrace(
+  object = multi$samples,
+  params = c(
+    "density",        # Density
+    "mean_stay",      # Mean staying time
+    "mean_pass"       # Number of entries into effective area
+  ),
+  ISB = TRUE,
+  pdf = FALSE
+)
+```
