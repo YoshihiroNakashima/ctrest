@@ -10,10 +10,6 @@ export(bayes_stay_selection)
 export(format_activity)
 export(format_station_data)
 export(format_stay)
-<<<<<<< HEAD
-=======
-export(mle_rest)
->>>>>>> origin/main
 export(select_videos)
 import(MCMCvis)
 import(activity)
@@ -36,10 +32,6 @@ importFrom(stats,dexp)
 importFrom(stats,dgamma)
 importFrom(stats,dlnorm)
 importFrom(stats,dnbinom)
-<<<<<<< HEAD
-=======
-importFrom(stats,dpois)
->>>>>>> origin/main
 importFrom(stats,dweibull)
 importFrom(stats,formula)
 importFrom(stats,median)
@@ -47,10 +39,6 @@ importFrom(stats,model.frame)
 importFrom(stats,model.matrix)
 importFrom(stats,model.response)
 importFrom(stats,na.omit)
-<<<<<<< HEAD
-=======
-importFrom(stats,optim)
->>>>>>> origin/main
 importFrom(stats,pexp)
 importFrom(stats,pgamma)
 importFrom(stats,plnorm)
@@ -64,10 +52,6 @@ importFrom(stats,rnorm)
 importFrom(stats,runif)
 importFrom(stats,sd)
 importFrom(stats,step)
-<<<<<<< HEAD
-=======
-importFrom(stats,time)
->>>>>>> origin/main
 importFrom(stats,var)
 importFrom(stringr,str_detect)
 importFrom(stringr,str_extract)
