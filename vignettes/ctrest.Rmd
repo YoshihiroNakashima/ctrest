@@ -211,7 +211,7 @@ rest <- bayes_rest(
   stay_data = stay_data,               # Output from format_stay function
   activity_data = activity_data,       # Output from format_activity function
   activity_estimation = "mixture",     # Activity time proportion estimation model
-  stay_family = "lognormal",           # staying time distribution
+  stay_family = "weibull",           # staying time distribution
   focal_area = 1.56,                   # Effective area size
   model = "REST",                      # Density estimation model
   target_species = "SP01"              # Target species

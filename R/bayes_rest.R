@@ -641,7 +641,7 @@ bayes_rest <- function(formula_stay,
               }
             }
           }
-          shape <- theta_stay
+          # shape <- theta_stay
 
           # Posterior predictive check
           for (i in 1:N_station) {
