@@ -576,7 +576,7 @@ bayes_rest_multi <- function(formula_stay,
       }
 
       for(j in 1:nPreds_stay) {
-        beta_stay[j] ~ dnorm(0, 100)
+        beta_stay[j] ~ dnorm(0, sd = 100)
       }
 
       if (nLevels_stay > 0) {
