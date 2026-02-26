@@ -1,113 +1,113 @@
 #' Calculate Camera Trapping Effort (Days) from Detection Data
 #'
 #' @description Computes the total camera trapping effort (in days) for each station based on detection data.
-#' If monitoring periods (terms) are specified, effort is calculated separately for each term and then aggregated.
-#' @param detection_data A data frame containing information on individual video records, with six columns:
-#'   - Camera station ID (character)
-#'   - Capture datetime (character)
-#'   - Species name (character; not used in this function)
-#'   - Number of passes through the focal area (numeric; not used in this function)
-#'   - Staying time (in seconds) within the focal area per pass in each video (numeric; not used in this function)
-#'   - Whether the observation of the pass was censored (1 = censored, 0 = observed; not used in this function)
-#' @param station_data_formatted A data frame returned by the `format_station_data()` function. This will be updated with camera effort information.
+#' @param detection_data A data frame containing information on individual video records.
+#' @param station_data_formatted A data frame returned by the `format_station_data()` function.
 #' @param col_name_station A string specifying the column name containing camera station IDs.
-#' @param col_name_datetime A string specifying the column name containing datetime information. Ensure all timestamps are correct.
-#' @param col_name_term (Optional) A string specifying the column name indicating different survey periods if cameras were checked during the study period. Set to NULL if only deployment and retrieval dates are available.
-#' @param plot Logical. If TRUE, a plot showing the camera operation periods will be displayed. This is useful for identifying timestamp inconsistencies in `detection_data`.
-#' @return A data frame with the same structure as `station_data_formatted`, with an additional column `Effort` representing the camera trapping effort (in days) for each station. Stations with `Effort == 0` are removed from the final output.
+#' @param col_name_datetime A string specifying the column name containing datetime information.
+#' @param col_name_term (Optional) A string specifying the column name indicating different survey periods.
+#' @param plot Logical. If TRUE, a plot showing the camera operation periods will be displayed.
+#' @return A data frame with an additional column `Effort`. Stations with `Effort == 0` or no detections are removed.
 #' @export
-#' @import dplyr ggplot2 lubridate
-#' @examples
-#' station_data_rest <- format_station_data(
-#'   detection_data = detection_data,
-#'   station_data = station_data,
-#'   col_name_station = "Station",
-#'   col_name_species = "Species",
-#'   col_name_y = "y",
-#'   model = "REST"
-#' )
-#' station_effort_rest <- add_effort(
-#'   detection_data = detection_data,
-#'   station_data_formatted = station_data_rest,
-#'   col_name_station = "Station",
-#'   col_name_term = "Term",
-#'   col_name_datetime = "DateTime",
-#'   plot = TRUE
-#' )
+#' @import dplyr ggplot2 lubridate stringr rlang
 add_effort <- function(detection_data,
                        station_data_formatted,
                        col_name_station,
                        col_name_datetime,
                        col_name_term = NULL,
                        plot = FALSE) {
-  # Check if required columns exist
-  required_cols <- c(col_name_station, col_name_datetime)
-  if (!all(required_cols %in% colnames(detection_data))) {
-    stop("Error: One or more specified column names do not exist in detection_data.")
-  }
-  detection_data <- detection_data %>%
-    rename(Station = !!sym(col_name_station), DateTime = !!sym(col_name_datetime))
-  if(!is.null(col_name_term)) {
-    detection_data <- detection_data %>%
-      rename(Term = !!sym(col_name_term))
+
+  if (!is.data.frame(detection_data)) stop("'detection_data' must be a data frame.", call. = FALSE)
+  if (!is.data.frame(station_data_formatted)) stop("'station_data_formatted' must be a data frame.", call. = FALSE)
+
+  req_cols <- c(col_name_station, col_name_datetime)
+  if (!is.null(col_name_term)) req_cols <- c(req_cols, col_name_term)
+
+  missing_cols <- setdiff(req_cols, colnames(detection_data))
+  if (length(missing_cols) > 0) {
+    stop(paste("Missing columns in detection_data:", paste(missing_cols, collapse = ", ")), call. = FALSE)
   }
 
-  # Convert datetime column to POSIXct format
-  if(is.character(detection_data$DateTime)){
-    detection_data <- detection_data %>%
-      mutate(
-        DateTime_clean = if_else(
-          str_detect(DateTime, ":"),
-          DateTime,
-          paste0(DateTime, " 00:00")
-        ),
-        DateTime = ymd_hm(DateTime_clean)
+  if (!"Station" %in% colnames(station_data_formatted)) {
+    stop("'station_data_formatted' must contain a 'Station' column. Did you run format_station_data() first?", call. = FALSE)
+  }
+
+  det_clean <- detection_data %>%
+    dplyr::select(
+      Station  = !!rlang::sym(col_name_station),
+      DateTime = !!rlang::sym(col_name_datetime),
+      dplyr::any_of(if (!is.null(col_name_term)) c(Term = col_name_term) else character())
+    ) %>%
+    dplyr::mutate(Station = as.character(.data$Station))
+
+  if (!inherits(det_clean$DateTime, "POSIXt")) {
+    det_clean <- det_clean %>%
+      dplyr::mutate(
+        DateTime = lubridate::parse_date_time(as.character(.data$DateTime), orders = c("Ymd HMS", "Ymd HM", "Ymd", "Ymd H"))
       )
   }
 
-  if (any(is.na(detection_data[[col_name_datetime]]))) {
-    stop("Error: Failed to convert datetime column. Ensure the format is YYYY-MM-DD HH:MM:SS. NA is not allowed.")
+  if (any(is.na(det_clean$DateTime))) {
+    stop("Error: Failed to parse some datetimes. Ensure the format is YYYY-MM-DD HH:MM:SS or similar.", call. = FALSE)
   }
 
-  # Calculate effort per station (or per term if applicable)
   if (is.null(col_name_term)) {
-    effort_temp <- detection_data %>%
-      group_by(Station) %>%
-      summarize(Start = min(DateTime, na.rm = TRUE), End = max(DateTime, na.rm = TRUE), .groups = 'drop') %>%
-      mutate(effort = as.numeric(difftime(End, Start, units = "days")))
+    effort_temp <- det_clean %>% dplyr::group_by(.data$Station)
   } else {
-    effort_temp <- detection_data %>%
-      group_by(Station, Term) %>%
-      summarize(Start = min(DateTime, na.rm = TRUE), End = max(DateTime, na.rm = TRUE), .groups = 'drop') %>%
-      mutate(effort = as.numeric(difftime(End, Start, units = "days"))) %>%
-      ungroup()
+    effort_temp <- det_clean %>% dplyr::group_by(.data$Station, .data$Term)
   }
 
-  # Aggregate efforts per station and merge with station data
-  effort_temp2 <- effort_temp %>%
-    group_by(Station) %>%
-    summarize(Effort = sum(effort), .groups = 'drop') %>%
-    left_join(station_data_formatted, by = "Station") %>%
-    filter(Effort != 0)
+  effort_temp <- effort_temp %>%
+    dplyr::summarize(
+      Start = min(.data$DateTime, na.rm = TRUE),
+      End   = max(.data$DateTime, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    dplyr::mutate(effort = as.numeric(difftime(.data$End, .data$Start, units = "days")))
 
-  # Warning if any station had zero effort
-  if (any(effort_temp2$Effort == 0)) {
-    warning("Warning: Sampling effort for some stations was calculated as 0, possibly due to a single detection. These stations were removed from the output.")
+  effort_agg <- effort_temp %>%
+    dplyr::group_by(.data$Station) %>%
+    dplyr::summarize(Effort = sum(.data$effort, na.rm = TRUE), .groups = 'drop')
+
+  clean_station <- station_data_formatted
+  if ("Effort" %in% colnames(clean_station)) {
+    clean_station <- clean_station %>% dplyr::select(-.data$Effort)
   }
 
-  # Generate plot if requested
+  final_data <- clean_station %>%
+    dplyr::left_join(effort_agg, by = "Station")
+
+  invalid_stations <- final_data %>%
+    dplyr::filter(is.na(.data$Effort) | .data$Effort == 0) %>%
+    dplyr::pull(.data$Station) %>%
+    unique()
+
+  if (length(invalid_stations) > 0) {
+    warning(sprintf(
+      "Sampling effort for the following stations was calculated as 0 (or had no detections). They will be removed from the output: %s",
+      paste(invalid_stations, collapse = ", ")
+    ), call. = FALSE)
+  }
+
+  final_data <- final_data %>%
+    dplyr::filter(!is.na(.data$Effort), .data$Effort > 0)
+
   if (plot) {
-    g <- ggplot(data = effort_temp) +
-      geom_segment(aes(x = Start, xend = End, y = Station, yend = Station),
-                   alpha = 0.3,
-                   linewidth = 2.5) +
-      geom_point(aes(x = Start, y = Station), shape = 4, col = "red", alpha = 0.8) +
-      theme(axis.text.y = element_text(size = nrow(effort_temp) /25)) +
-      xlab("Survey Period")
+    g <- ggplot2::ggplot(data = effort_temp) +
+      ggplot2::geom_segment(
+        ggplot2::aes(x = .data$Start, xend = .data$End, y = .data$Station, yend = .data$Station),
+        alpha = 0.3, linewidth = 2.5
+      ) +
+      ggplot2::geom_point(ggplot2::aes(x = .data$Start, y = .data$Station), shape = 4, col = "red", alpha = 0.8) +
+      ggplot2::geom_point(ggplot2::aes(x = .data$End, y = .data$Station), shape = 4, col = "blue", alpha = 0.8) +
+      ggplot2::theme(axis.text.y = ggplot2::element_text(size = max(5, 12 - nrow(effort_temp)/10))) +
+      ggplot2::xlab("Survey Period") +
+      ggplot2::ylab("Station") +
+      ggplot2::ggtitle("Camera Trapping Operation Periods")
     print(g)
   }
 
-  return(effort_temp2)
+  return(final_data)
 }
 
-Start <- End <- effort <- Effort <- Station <- DateTime <- Term <- Species <- DateTime_clean <- NULL
+utils::globalVariables(c("Station", "DateTime", "Term", "Start", "End", "effort", "Effort"))

@@ -3,7 +3,6 @@
 #' @param x An object of class 'ResultDensity'
 #' @param ... Additional arguments passed to print
 #' @keywords internal
-#' @export
 #' @noRd
 print.ResultDensity <- function(x, ...) {
   cat("\n")
@@ -12,5 +11,6 @@ print.ResultDensity <- function(x, ...) {
   cat("===== Summary of the mean staying time estimates =====\n")
   print(x$summary_result)
   cat("\n(Note) MCMC samples for each parameter can be accessed via `$samples`.\n")
-  cat("You can calculate Rhat values and generate trace plots using the MCMCvis package.\n")
+  cat("\n(Note) You can see the full summary of the results via `$summary_result |> print(n = Inf)`.\n")
+  cat("Trace plots can be generated using the MCMCvis package.\n")
 }

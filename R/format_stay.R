@@ -1,42 +1,17 @@
 #' Prepares data for analyzing animal staying time within the focal area
 #'
-#' @param detection_data A data frame containing information for individual videos, with six columns:
-#'   - Camera station ID (character)
-#'   - Capture datetime (character, not used in this function)
-#'   - Species name (character)
-#'   - Number of passes through the focal area (numeric, not used in this function)
-#'   - Staying time (seconds) within the focal area for each pass in a video (numeric)
-#'   - Whether the observation of the pass was censored (1 = censored, 0 = observed)
-#' @param station_data A data frame containing information for each camera station, with one row per station.
-#'   It must include at least the camera station IDs (character) and may contain additional columns such as
-#'   location coordinates, covariates, and other relevant information. Unlike `detection_data`, this data frame
-#'   lists all the camera stations that have been set up.
-#' @param col_name_station A string specifying the column name containing station ID information.
-#' @param col_name_species A string specifying the column name containing detected species names.
-#' @param col_name_stay A string specifying the column name containing staying time.
-#' @param col_name_cens A string specifying the column name indicating whether the observation is censored (1) or not (0).
+#' @param detection_data A data frame containing information for individual videos.
+#' @param station_data A data frame containing information for each camera station.
+#' @param col_name_station String. Column name for station ID.
+#' @param col_name_species String. Column name for species names.
+#' @param col_name_stay String. Column name for staying time (numeric).
+#' @param col_name_cens String. Column name for censoring indicator (0 or 1).
 #'
-#' @return A data frame with staying time information for the specified species.
-#'   The returned data frame contains the following columns:
-#'   - `Station` (character): Camera station ID where the detection occurred.
-#'   - `Species` (character): Species name.
-#'   - `Stay` (numeric): Staying time (in seconds) within the focal area for each pass.
-#'   - `Cens` (numeric): Indicator of whether the observation was censored (1 = censored, 0 = observed).
-#'   Additionally, all columns from `station_data` are included, matched by `Station`.
-#'   If no matching `Station` is found in `station_data`, those values will be `NA`.
+#' @return A joined data frame (tibble).
 #'
 #' @import dplyr
-#' @importFrom stats reformulate na.omit
-#' @importFrom magrittr %>%
+#' @importFrom rlang sym !! .data
 #' @export
-#' @examples
-#' format_stay(
-#'  detection_data = detection_data,
-#'  station_data = station_data,
-#'  col_name_station = "Station",
-#'  col_name_species = "Species",
-#'  col_name_stay = "Stay",
-#'  col_name_cens = "Cens")
 format_stay <- function(detection_data,
                         station_data,
                         col_name_station = "Station",
@@ -44,44 +19,72 @@ format_stay <- function(detection_data,
                         col_name_stay = "Stay",
                         col_name_cens = "Cens") {
 
-  if (!is.data.frame(detection_data)) {
-    stop("detection_data must be a data frame.", call. = FALSE)
-  }
-  if (!is.data.frame(station_data)) {
-    stop("station_data must be a data frame.", call. = FALSE)
-  }
-
-  required_cols <- c(col_name_station, col_name_species, col_name_stay, col_name_cens)
-  missing_cols <- setdiff(required_cols, colnames(detection_data))
-  if (length(missing_cols) > 0) {
-    stop(paste("The following columns are missing from detection_data:", paste(missing_cols, collapse = ", ")), call. = FALSE)
-  }
+  # 1. 基本的な入力チェック
+  if (!is.data.frame(detection_data)) stop("'detection_data' must be a data frame.", call. = FALSE)
+  if (!is.data.frame(station_data))   stop("'station_data' must be a data frame.", call. = FALSE)
 
   if (!(col_name_station %in% colnames(station_data))) {
-    stop(paste("Column", col_name_station, "is missing from station_data."), call. = FALSE)
+    stop(sprintf("Column '%s' missing from 'station_data'.", col_name_station), call. = FALSE)
   }
 
-  cens_values <- unique(na.omit(detection_data[[col_name_cens]]))
-  if (!is.numeric(detection_data[[col_name_cens]]) || !all(cens_values %in% c(0, 1))) {
-    stop(paste("Column", col_name_cens, "must be numeric and contain only 0 (observed) and 1 (censored)."), call. = FALSE)
+  # 【重要】 station_data の重複チェック（デカルト積の防止）
+  if (any(duplicated(station_data[[col_name_station]]))) {
+    stop(sprintf("Error: 'station_data' must have exactly one row per station. Duplicate IDs detected in column '%s'.", col_name_station), call. = FALSE)
   }
 
-  censored_ratio <- sum(detection_data[[col_name_cens]], na.rm = TRUE) / nrow(detection_data)
-  if (censored_ratio > 0.5) {
-    warning("Too many censored data! Check that 1 indicates censored (unobserved) data!", call. = FALSE)
+  # 2. 列の存在確認
+  req_det <- c(col_name_station, col_name_species, col_name_stay, col_name_cens)
+  missing_det <- setdiff(req_det, colnames(detection_data))
+  if (length(missing_det) > 0) {
+    stop(paste("Missing columns in 'detection_data':", paste(missing_det, collapse = ", ")), call. = FALSE)
   }
 
-  stay_data <- detection_data %>%
-    rename(Stay = !!sym(col_name_stay),
-           Cens = !!sym(col_name_cens),
-           Species = !!sym(col_name_species),
-           Station = !!sym(col_name_station)) %>%
-    filter(!is.na(Stay) & !is.na(Cens)) %>%
-    dplyr::select(Station, Species, Stay, Cens) %>%
-    arrange(Species) %>%
-    left_join(station_data, by = c("Station"))
+  # 3. データ処理（メイン）
+  res <- detection_data %>%
+    dplyr::select(
+      Station = !!rlang::sym(col_name_station),
+      Species = !!rlang::sym(col_name_species),
+      Stay    = !!rlang::sym(col_name_stay),
+      Cens    = !!rlang::sym(col_name_cens)
+    ) %>%
+    dplyr::mutate(
+      Station = as.character(.data$Station),
+      Stay    = as.numeric(.data$Stay),
+      Cens    = as.integer(.data$Cens)
+    ) %>%
+    dplyr::filter(!is.na(.data$Stay), !is.na(.data$Cens))
 
-  return(stay_data)
+  # 4. Cens列のバリデーション
+  if (nrow(res) > 0) {
+    cens_values <- unique(res$Cens)
+    if (!all(cens_values %in% c(0, 1))) {
+      stop("Censoring column must contain only 0 and 1.", call. = FALSE)
+    }
+  }
+
+  # 5. station_data の整形
+  clean_station_data <- station_data
+  if (col_name_station != "Station" && "Station" %in% colnames(clean_station_data)) {
+    clean_station_data <- clean_station_data %>% dplyr::select(-.data$Station)
+  }
+
+  clean_station_data <- clean_station_data %>%
+    dplyr::rename(Station = !!rlang::sym(col_name_station)) %>%
+    dplyr::mutate(Station = as.character(.data$Station))
+
+  # 予約名がstation_dataにあれば除去して重複を防ぐ
+  reserved_names <- c("Species", "Stay", "Cens")
+  dup_cols <- intersect(colnames(clean_station_data), reserved_names)
+  if (length(dup_cols) > 0) {
+    clean_station_data <- clean_station_data %>% dplyr::select(-dplyr::all_of(dup_cols))
+  }
+
+  # 6. 最終的な結合
+  final_data <- res %>%
+    dplyr::left_join(clean_station_data, by = "Station") %>%
+    dplyr::arrange(.data$Species, .data$Station)
+
+  return(final_data)
 }
 
-Species <- Stay <- Cens <- NULL
+utils::globalVariables(c("Station", "Species", "Stay", "Cens"))

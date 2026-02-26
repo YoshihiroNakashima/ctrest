@@ -9,7 +9,6 @@
 #' @return A data frame with aggregated detection counts joined with station data.
 #' @export
 #' @import dplyr tidyr stringr rlang
-
 format_station_data <- function(detection_data,
                                 station_data,
                                 col_name_station,
@@ -17,131 +16,127 @@ format_station_data <- function(detection_data,
                                 col_name_y,
                                 model) {
 
-  # Check model name
+  # 1. 基本的な入力チェック
+  if (!is.data.frame(detection_data)) stop("'detection_data' must be a data frame.", call. = FALSE)
+  if (!is.data.frame(station_data))   stop("'station_data' must be a data frame.", call. = FALSE)
   if (!(model %in% c("REST", "RAD-REST"))) {
     stop("Invalid model name! 'model' must be either 'REST' or 'RAD-REST'.", call. = FALSE)
   }
 
-  # Check if required columns exist in detection_data
-  required_cols <- c(col_name_station, col_name_species, col_name_y)
-  missing_cols <- required_cols[!required_cols %in% colnames(detection_data)]
+  req_cols <- c(col_name_station, col_name_species, col_name_y)
+  missing_cols <- setdiff(req_cols, colnames(detection_data))
   if (length(missing_cols) > 0) {
-    stop(paste("The following columns are missing from 'detection_data':", paste(missing_cols, collapse = ", ")), call. = FALSE)
+    stop(paste("Missing columns in 'detection_data':", paste(missing_cols, collapse = ", ")), call. = FALSE)
   }
 
-  # Check if required column exists in station_data
   if (!col_name_station %in% colnames(station_data)) {
     stop(paste("The station ID column", col_name_station, "is missing from 'station_data'."), call. = FALSE)
   }
 
-  # Prepare a full grid of Station x Species
-  # Ensure we use the exact station list from station_data (to include stations with 0 detections)
-  all_stations <- unique(station_data[[col_name_station]])
-  all_species  <- unique(detection_data[[col_name_species]])
+  # 【重要】 station_data の重複チェック（デカルト積の防止）
+  if (any(duplicated(station_data[[col_name_station]]))) {
+    stop(sprintf("Error: 'station_data' must have exactly one row per station. Duplicate IDs detected in column '%s'. Did you accidentally pass an already merged dataset?", col_name_station), call. = FALSE)
+  }
 
-  detection_temp_0 <- tidyr::crossing(
+  # 2. データの分離と型定義
+  det_clean <- detection_data %>%
+    dplyr::select(
+      Station = !!rlang::sym(col_name_station),
+      Species = !!rlang::sym(col_name_species),
+      y       = !!rlang::sym(col_name_y)
+    ) %>%
+    dplyr::mutate(
+      Station = as.character(.data$Station),
+      Species = as.character(.data$Species),
+      y       = as.numeric(.data$y)
+    )
+
+  # 3. station_data の整形と衝突回避
+  clean_station <- station_data
+  if (col_name_station != "Station" && "Station" %in% colnames(clean_station)) {
+    clean_station <- clean_station %>% dplyr::select(-.data$Station)
+  }
+  clean_station <- clean_station %>%
+    dplyr::rename(Station = !!rlang::sym(col_name_station)) %>%
+    dplyr::mutate(Station = as.character(.data$Station))
+
+  reserved_regex <- "^(Species|Y|N|y|y_\\d+)$"
+  dup_cols <- grep(reserved_regex, colnames(clean_station), value = TRUE)
+  dup_cols <- setdiff(dup_cols, "Station")
+  if (length(dup_cols) > 0) {
+    clean_station <- clean_station %>% dplyr::select(-dplyr::all_of(dup_cols))
+  }
+
+  # 4. 全ステーション×種のグリッド作成
+  all_stations <- unique(clean_station$Station)
+  all_species  <- unique(stats::na.omit(det_clean$Species))
+
+  detection_grid <- tidyr::crossing(
     Station = all_stations,
     Species = all_species
   )
 
-  # --- REST Model Logic ---
+  # 5. モデル別の集計ロジック
   if (model == "REST") {
+    det_agg <- det_clean %>%
+      dplyr::filter(!is.na(.data$Species)) %>%
+      dplyr::mutate(y = ifelse(is.na(.data$y), 1, .data$y)) %>%
+      dplyr::group_by(.data$Station, .data$Species) %>%
+      dplyr::summarize(Y = sum(.data$y), .groups = 'drop')
 
-    # Check NA proportion
-    na_ratio <- sum(is.na(detection_data[[col_name_y]])) / nrow(detection_data)
-    if (na_ratio > 0.5) {
-      warning("More than 50% of 'col_name_y' values are NA in 'REST' model. These values will be replaced with 1.", call. = FALSE)
-    }
+    detection_final <- detection_grid %>%
+      dplyr::left_join(det_agg, by = c("Station", "Species")) %>%
+      dplyr::mutate(Y = tidyr::replace_na(.data$Y, 0))
 
-    detection_aggregated <- detection_data %>%
-      rename(Station = !!sym(col_name_station),
-             Species = !!sym(col_name_species),
-             y = !!sym(col_name_y)) %>%
-      mutate(y = ifelse(is.na(y), 1, y)) %>%
-      group_by(Station, Species) %>%
-      summarize(Y = sum(y), .groups = 'drop') # Calculate Sum per Station-Species
-
-    # Join with the full grid
-    detection_final <- detection_temp_0 %>%
-      left_join(detection_aggregated, by = c("Station", "Species")) %>%
-      mutate(Y = replace_na(Y, 0)) %>% # Fill 0 only for the count column
-      arrange(Station, Species)
-
-    # --- RAD-REST Model Logic ---
   } else if (model == "RAD-REST") {
+    det_N <- det_clean %>%
+      dplyr::filter(!is.na(.data$Species)) %>%
+      dplyr::group_by(.data$Station, .data$Species) %>%
+      dplyr::summarise(N = dplyr::n(), .groups = 'drop')
 
-    # 1. Calculate N (Total detections per Station-Species)
-    detection_counts_N <- detection_data %>%
-      rename(Station = !!sym(col_name_station),
-             Species = !!sym(col_name_species)) %>%
-      group_by(Station, Species) %>%
-      summarise(N = n(), .groups = 'drop')
-
-    # 2. Calculate y_X (Frequency of each pass count)
-    detection_counts_y <- detection_data %>%
-      rename(Station = !!sym(col_name_station),
-             Species = !!sym(col_name_species),
-             y = !!sym(col_name_y)) %>%
-      filter(!is.na(y)) %>%
-      group_by(Station, Species, y) %>%
-      summarise(n = n(), .groups = 'drop') %>%
-      # Use pivot_wider to create columns y_0, y_1, ...
-      pivot_wider(
-        names_from = y,
-        values_from = n,
+    det_y <- det_clean %>%
+      dplyr::filter(!is.na(.data$Species), !is.na(.data$y)) %>%
+      dplyr::group_by(.data$Station, .data$Species, .data$y) %>%
+      dplyr::summarise(n = dplyr::n(), .groups = 'drop') %>%
+      tidyr::pivot_wider(
+        names_from = .data$y,
+        values_from = .data$n,
         names_prefix = "y_",
-        values_fill = list(n = 0)
+        values_fill = 0
       )
 
-    # Join parts together
-    detection_final <- detection_temp_0 %>%
-      left_join(detection_counts_N, by = c("Station", "Species")) %>%
-      left_join(detection_counts_y, by = c("Station", "Species"))
+    detection_final <- detection_grid %>%
+      dplyr::left_join(det_N, by = c("Station", "Species")) %>%
+      dplyr::left_join(det_y, by = c("Station", "Species"))
 
-    # Fill NAs with 0 only for N and y_ columns
-    # Identify y_ columns dynamically
-    y_cols <- colnames(detection_final)[str_detect(colnames(detection_final), "^y_\\d+$")]
+    y_cols <- grep("^y_\\d+$", colnames(detection_final), value = TRUE)
     vars_to_fill <- c("N", y_cols)
-
     detection_final <- detection_final %>%
-      mutate(across(all_of(vars_to_fill), ~ replace_na(.x, 0)))
+      dplyr::mutate(dplyr::across(dplyr::any_of(vars_to_fill), ~ tidyr::replace_na(.x, 0)))
 
-    # Ensure all intermediate y columns exist (e.g., if we have y_0 and y_2, we need y_1)
-    # Extract numeric suffixes
-    if (length(y_cols) > 0) {
-      indices <- as.integer(str_extract(y_cols, "\\d+"))
-      max_idx <- max(indices, na.rm = TRUE)
-      full_indices <- 0:max_idx
+    indices <- if (length(y_cols) > 0) as.integer(stringr::str_extract(y_cols, "\\d+")) else numeric(0)
+    max_idx <- max(c(0, indices), na.rm = TRUE)
+    full_indices <- 0:max_idx
+    missing_indices <- setdiff(full_indices, indices)
 
-      # Identify missing columns
-      missing_y_cols <- paste0("y_", full_indices[!full_indices %in% indices])
-
-      # Add missing columns filled with 0
-      if (length(missing_y_cols) > 0) {
-        new_cols <- rep(0, length(missing_y_cols))
-        names(new_cols) <- missing_y_cols
-        detection_final <- detection_final %>%
-          tibble::add_column(!!!new_cols)
+    if (length(missing_indices) > 0) {
+      missing_cols <- paste0("y_", missing_indices)
+      for (col in missing_cols) {
+        detection_final[[col]] <- 0
       }
-
-      # Sort columns: Station, Species, N, then y_0, y_1 ...
-      # Use stringr::str_sort for natural sorting (y_2 before y_10)
-      sorted_y_cols <- str_sort(colnames(detection_final)[str_detect(colnames(detection_final), "^y_\\d+$")], numeric = TRUE)
-
-      detection_final <- detection_final %>%
-        select(Station, Species, N, all_of(sorted_y_cols))
     }
+
+    sorted_y_cols <- stringr::str_sort(grep("^y_\\d+$", colnames(detection_final), value = TRUE), numeric = TRUE)
+    detection_final <- detection_final %>%
+      dplyr::select(.data$Station, .data$Species, .data$N, dplyr::all_of(sorted_y_cols))
   }
 
-  # --- Final Merge with Station Data ---
-  # We renamed the ID column in detection_final to "Station".
-  # We join with station_data using the user-provided column name mapped to "Station".
+  # 6. station_data との最終結合
+  final_joined <- detection_final %>%
+    dplyr::left_join(clean_station, by = "Station") %>%
+    dplyr::arrange(.data$Species, .data$Station)
 
-  join_by_clause <- setNames(col_name_station, "Station")
-
-  detection_final <- detection_final %>%
-    left_join(station_data, by = join_by_clause) %>%
-    arrange(Station, Species)
-
-  return(detection_final)
+  return(final_joined)
 }
+
+utils::globalVariables(c("Station", "Species", "y", "Y", "N", "n"))

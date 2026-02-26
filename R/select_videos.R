@@ -1,121 +1,139 @@
-#' A function to randomly select N_sampled videos such that the number of selected videos per camera station is as evenly distributed as possible.
+#' Randomly select videos with even distribution across camera stations
 #'
-#' @param detection_data A data frame containing information for individual videos, with six columns:
-#'   - Camera station ID (character)
-#'   - Capture datetime (character, not used in this function)
-#'   - Species name (character)
-#'   - Number of passes through the focal area (numeric, not used in this function)
-#'   - Staying time (seconds) within the focal area for each pass in a video (numeric)
-#'   - Whether the observation of the pass was censored (1 = censored, 0 = observed)
-#' @param col_name_species A string specifying the column name in `stay_data` that indicates the species name.
-#' @param col_name_station A string specifying the column name containing camera station IDs.
-#' @param col_name_datetime A string specifying the column name that contains datetime information.
-#' @param N_sampled The total number of videos to be selected.
-#' @param Indep_criteria A numeric value representing the interval (in minutes) used to determine whether detections are independent. The default is 30 minutes.
-#' @param seed An integer value for setting the random seed.
-#' @param target_species A character string specifying the species of interest. Only a single species can be specified.
+#' This function selects `N_sampled` videos from a detection dataset. It filters for
+#' independent events based on a time interval and ensures that the selection is
+#' as evenly distributed across camera stations as possible.
+#'
+#' @param detection_data A data frame containing video information. Must include columns for:
+#'   \itemize{
+#'     \item Camera station ID
+#'     \item Capture datetime (Character or POSIXct; handles Excel-formatted strings)
+#'     \item Species name
+#'   }
+#' @param col_name_species String. The column name for species. Default is "Species".
+#' @param col_name_station String. The column name for station IDs. Default is "Station".
+#' @param col_name_datetime String. The column name for datetime. Default is "DateTimeCorrected".
+#' @param N_sampled Integer. The total number of videos to be selected.
+#' @param Indep_criteria Numeric. The time interval (in minutes) to define independent detections. Default is 30 minutes.
+#' @param seed Integer. Optional random seed for reproducibility. Default is NULL.
+#' @param target_species Character. A specific species to filter for. If NULL, all species are processed.
+#'
 #' @return A data frame containing the selected videos.
+#'         If the available independent data is less than `N_sampled`, all available data is returned.
+#'         Returns NULL if no valid data is found.
+#'
+#' @details
+#' \strong{1. Date Parsing:}
+#' Uses \code{lubridate::parse_date_time} to handle various date formats, including cases
+#' where Excel strips the time component from "00:00:00" entries (leaving only "YYYY-MM-DD").
+#'
+#' \strong{2. Independence Criteria:}
+#' Detections at the same station are considered independent if they occur at least
+#' `Indep_criteria` minutes after the previous detection.
+#'
+#' \strong{3. Sampling Strategy:}
+#' To prevent bias towards stations with high activity:
+#' \enumerate{
+#'   \item Assigns a random priority rank (1st, 2nd, 3rd...) to videos \emph{within} each station.
+#'   \item Collects all "1st choice" videos from all stations.
+#'   \item Then collects all "2nd choice" videos, and so on.
+#'   \item Slices the top `N_sampled` records from this interleaved list.
+#' }
+#'
 #' @export
 #' @import dplyr
-#' @importFrom lubridate ymd_hms
-#' @importFrom tibble tibble
+#' @importFrom lubridate parse_date_time
 #' @importFrom rlang sym
+#'
 #' @examples
-#' select_videos(detection_data = detection_data,
-#'               col_name_species = "Species",
-#'               col_name_station = "Station",
-#'               col_name_datetime = "DateTime",
-#'               N_sampled = 100,
-#'               Indep_criteria = 30,
-#'               target_species = "SP01")
-
-
+#' \dontrun{
+#' # Example usage:
+#' selected_df <- select_videos(
+#'   detection_data = my_camera_data,
+#'   N_sampled = 100,
+#'   Indep_criteria = 30,
+#'   target_species = "Cervus nippon",
+#'   seed = 123
+#' )
+#' }
 select_videos <- function(detection_data,
                           col_name_species = "Species",
                           col_name_station = "Station",
                           col_name_datetime = "DateTimeCorrected",
                           N_sampled,
-                          Indep_criteria,
+                          Indep_criteria = 30,
                           seed = NULL,
                           target_species = NULL) {
 
-  # Set random seed
+  # 1. Setup: Set seed and convert column names to symbols
   if (!is.null(seed)) set.seed(seed)
 
-  # Convert column names to symbols
-  species_sym <- sym(col_name_species)
-  station_sym <- sym(col_name_station)
-  datetime_sym <- sym(col_name_datetime)
+  species_sym <- rlang::sym(col_name_species)
+  station_sym <- rlang::sym(col_name_station)
+  datetime_sym <- rlang::sym(col_name_datetime)
 
-  # Filter by target_species if specified
+  # 2. Preprocessing: Parse datetime and filter species
+  # parse_date_time is used to handle mixed formats (e.g., "ymd HMS" vs "ymd" caused by Excel)
+  df_processed <- detection_data %>%
+    filter(!is.na(!!datetime_sym)) %>%
+    mutate(
+      parsed_dt = lubridate::parse_date_time(
+        !!datetime_sym,
+        orders = c("ymd HMS", "ymd HM", "ymd", "dmy HMS", "dmy", "ymd IMS p"),
+        quiet = TRUE
+      )
+    ) %>%
+    filter(!is.na(parsed_dt)) # Remove rows where date parsing failed
+
+  # Filter by target species if specified
   if (!is.null(target_species)) {
-    detection_data <- detection_data %>%
+    df_processed <- df_processed %>%
       filter(!!species_sym %in% target_species)
   }
 
-  # Process per species
-  detection_data %>%
-    group_by(!!species_sym) %>%
-    group_split() %>%
-    lapply(function(species_data) {
+  # Check if data exists after filtering
+  if (nrow(df_processed) == 0) {
+    message("No valid data found matching the criteria or date format.")
+    return(NULL)
+  }
 
-      # Process per station
-      species_data %>%
-        arrange(!!datetime_sym) %>%
-        group_by(!!station_sym) %>%
-        group_split() %>%
-        lapply(function(station_data) {
+  # 3. Identify Independent Events
+  # Calculate time difference from the previous row per station
+  independent_data <- df_processed %>%
+    arrange(!!species_sym, !!station_sym, parsed_dt) %>%
+    group_by(!!species_sym, !!station_sym) %>%
+    mutate(
+      # Calculate difference in minutes
+      diff_time = as.numeric(difftime(parsed_dt, lag(parsed_dt), units = "mins")),
+      # Mark as independent if it's the first record (NA) or exceeds the criteria
+      is_independent = if_else(is.na(diff_time) | diff_time >= Indep_criteria, TRUE, FALSE)
+    ) %>%
+    filter(is_independent) %>%
+    ungroup()
 
-          # Select videos that meet independence criteria
-          selected_indices <- c()
-          last_datetime <- ymd_hms("1900-01-01 00:00:00") # Initialize with an old datetime
+  # Return NULL if no independent events remain
+  if (nrow(independent_data) == 0) {
+    return(NULL)
+  }
 
-          for (i in 1:nrow(station_data)) {
-            current_datetime <- station_data[[col_name_datetime]][i]
-            if (difftime(current_datetime, last_datetime, units = "mins") >= Indep_criteria) {
-              selected_indices <- c(selected_indices, i)
-              last_datetime <- current_datetime
-            }
-          }
-          if (length(selected_indices) > 0){
-            station_data[selected_indices, ]
-          } else {
-            NULL
-          }
-        }) %>%
-        bind_rows() -> independent_data
+  # 4. Stratified Random Sampling
+  # Select videos evenly across stations
+  sampled_result <- independent_data %>%
+    group_by(!!species_sym, !!station_sym) %>%
+    mutate(
+      # Assign a random rank to each video within its station
+      # (e.g., if a station has 5 videos, they are randomly ranked 1 to 5)
+      pick_order = sample(row_number())
+    ) %>%
+    ungroup() %>%
+    # Sort the entire dataset:
+    # 1. By 'pick_order': Ensures we take the "1st" video from every station before taking any "2nd" videos.
+    # 2. By 'sample(row_number())': Randomly shuffles stations within the same rank level.
+    arrange(pick_order, sample(row_number())) %>%
+    # Select the top N videos
+    slice_head(n = N_sampled) %>%
+    # Remove temporary calculation columns
+    select(-parsed_dt, -diff_time, -is_independent, -pick_order)
 
-      if (nrow(independent_data) == 0) return(NULL) # If no independent data available
-
-      unique_stations <- unique(independent_data[[col_name_station]])
-      num_unique_stations <- length(unique_stations)
-
-      if (num_unique_stations >= N_sampled) {
-        # If the number of stations is greater than or equal to N_sampled
-        sampled_stations <- sample(unique_stations, N_sampled)
-        sampled_data <- independent_data %>%
-          filter(!!station_sym %in% sampled_stations) %>%
-          group_by(!!station_sym) %>%
-          slice_sample(n = 1) %>%
-          ungroup()
-        return(sampled_data)
-
-      } else {
-        # If the number of stations is less than N_sampled
-        sampled_data <- tibble()
-        available_data <- independent_data # Store available data for selection
-        while(nrow(sampled_data) < N_sampled && nrow(available_data) > 0){ # Add condition to stop when available_data is empty
-          temp_sampled <- available_data %>%
-            group_by(!!station_sym) %>%
-            slice_sample(n=1) %>%
-            ungroup()
-          sampled_data <- bind_rows(sampled_data, temp_sampled)
-          # Remove selected data from available_data
-          available_data <- anti_join(available_data, temp_sampled, by = c(col_name_station, col_name_datetime))
-        }
-        sampled_data <- sampled_data[1:N_sampled,] # Trim excess rows beyond N_sampled
-        return(sampled_data)
-      }
-    }) %>%
-    bind_rows()
+  return(sampled_result)
 }

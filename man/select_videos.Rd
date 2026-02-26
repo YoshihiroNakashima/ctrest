@@ -2,7 +2,7 @@
 % Please edit documentation in R/select_videos.R
 \name{select_videos}
 \alias{select_videos}
-\title{A function to randomly select N_sampled videos such that the number of selected videos per camera station is as evenly distributed as possible.}
+\title{Randomly select videos with even distribution across camera stations}
 \usage{
 select_videos(
   detection_data,
@@ -10,48 +10,70 @@ select_videos(
   col_name_station = "Station",
   col_name_datetime = "DateTimeCorrected",
   N_sampled,
-  Indep_criteria,
+  Indep_criteria = 30,
   seed = NULL,
   target_species = NULL
 )
 }
 \arguments{
-\item{detection_data}{A data frame containing information for individual videos, with six columns:
+\item{detection_data}{A data frame containing video information. Must include columns for:
 \itemize{
-\item Camera station ID (character)
-\item Capture datetime (character, not used in this function)
-\item Species name (character)
-\item Number of passes through the focal area (numeric, not used in this function)
-\item Staying time (seconds) within the focal area for each pass in a video (numeric)
-\item Whether the observation of the pass was censored (1 = censored, 0 = observed)
+\item Camera station ID
+\item Capture datetime (Character or POSIXct; handles Excel-formatted strings)
+\item Species name
 }}
 
-\item{col_name_species}{A string specifying the column name in \code{stay_data} that indicates the species name.}
+\item{col_name_species}{String. The column name for species. Default is "Species".}
 
-\item{col_name_station}{A string specifying the column name containing camera station IDs.}
+\item{col_name_station}{String. The column name for station IDs. Default is "Station".}
 
-\item{col_name_datetime}{A string specifying the column name that contains datetime information.}
+\item{col_name_datetime}{String. The column name for datetime. Default is "DateTimeCorrected".}
 
-\item{N_sampled}{The total number of videos to be selected.}
+\item{N_sampled}{Integer. The total number of videos to be selected.}
 
-\item{Indep_criteria}{A numeric value representing the interval (in minutes) used to determine whether detections are independent. The default is 30 minutes.}
+\item{Indep_criteria}{Numeric. The time interval (in minutes) to define independent detections. Default is 30 minutes.}
 
-\item{seed}{An integer value for setting the random seed.}
+\item{seed}{Integer. Optional random seed for reproducibility. Default is NULL.}
 
-\item{target_species}{A character string specifying the species of interest. Only a single species can be specified.}
+\item{target_species}{Character. A specific species to filter for. If NULL, all species are processed.}
 }
 \value{
 A data frame containing the selected videos.
+If the available independent data is less than \code{N_sampled}, all available data is returned.
+Returns NULL if no valid data is found.
 }
 \description{
-A function to randomly select N_sampled videos such that the number of selected videos per camera station is as evenly distributed as possible.
+This function selects \code{N_sampled} videos from a detection dataset. It filters for
+independent events based on a time interval and ensures that the selection is
+as evenly distributed across camera stations as possible.
+}
+\details{
+\strong{1. Date Parsing:}
+Uses \code{lubridate::parse_date_time} to handle various date formats, including cases
+where Excel strips the time component from "00:00:00" entries (leaving only "YYYY-MM-DD").
+
+\strong{2. Independence Criteria:}
+Detections at the same station are considered independent if they occur at least
+\code{Indep_criteria} minutes after the previous detection.
+
+\strong{3. Sampling Strategy:}
+To prevent bias towards stations with high activity:
+\enumerate{
+\item Assigns a random priority rank (1st, 2nd, 3rd...) to videos \emph{within} each station.
+\item Collects all "1st choice" videos from all stations.
+\item Then collects all "2nd choice" videos, and so on.
+\item Slices the top \code{N_sampled} records from this interleaved list.
+}
 }
 \examples{
-select_videos(detection_data = detection_data,
-              col_name_species = "Species",
-              col_name_station = "Station",
-              col_name_datetime = "DateTime",
-              N_sampled = 100,
-              Indep_criteria = 30,
-              target_species = "SP01")
+\dontrun{
+# Example usage:
+selected_df <- select_videos(
+  detection_data = my_camera_data,
+  N_sampled = 100,
+  Indep_criteria = 30,
+  target_species = "Cervus nippon",
+  seed = 123
+)
+}
 }
