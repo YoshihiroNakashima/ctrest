@@ -1248,6 +1248,25 @@ bayes_rest <- function(formula_stay,
 
   if(is.null(random_effect_stay)) random_effect_stay <- "NULL"
 
+  # --- 共変量やランダム効果がない（全体共通）かの判定 ---
+  check_no_cov <- function(f) {
+    if (is.null(f)) return(TRUE)
+    f <- as.formula(f)
+    if (length(f) == 3) f <- f[-2] # 左辺を削除して右辺のみにする
+    length(all.vars(f)) == 0       # 変数が0個（~1など）ならTRUE
+  }
+
+  is_density_global <- check_no_cov(formula_density)
+  is_stay_global    <- check_no_cov(formula_stay) && random_effect_stay == "NULL"
+  is_enter_global   <- if (exists("formula_enter")) check_no_cov(formula_enter) else TRUE
+
+  # mean_passが共通になる条件 (RESTならdensityとstayが共通、RAD-RESTならenterが共通)
+  is_pass_global <- if (exists("model") && model == "REST") {
+    is_density_global && is_stay_global
+  } else {
+    is_enter_global
+  }
+
   # WAIC表の作成 (formulaを安全に文字列化)
   WAIC <- data.frame(
     Model = sapply(formula_density_all, function(x) paste(deparse(x), collapse = " ")),
@@ -1261,7 +1280,6 @@ bayes_rest <- function(formula_stay,
 
   mcmc_samples_best <- mcmc_samples[[best.model]]
   tidy_samples_best  <- tidy_samples[[best.model]]
-  # p_value <- p_value[best.model]
 
   if(activity_estimation == "mixture") {
     sample_activity <- MCMCvis::MCMCchains(actv_chain_output,
@@ -1274,7 +1292,7 @@ bayes_rest <- function(formula_stay,
     mcmc_samples_best <- coda::as.mcmc.list(mcmc_samples_best)
   }
 
-  # 取得するパラメータを指定（モデル内で定義した mean_pass を使用）
+  # 取得するパラメータを指定
   prms <- c("density", "mean_stay")
   if(model == "RAD-REST") prms <- c(prms, "mean_pass")
   if(activity_estimation == "mixture") prms <- c(prms, "activity_proportion")
@@ -1286,16 +1304,35 @@ bayes_rest <- function(formula_stay,
     dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`) %>%
     dplyr::mutate(cv = sd / mean)
 
-  # パラメータ名からインデックスを抽出し、各地点名を安全かつ正確に結合する
+  # パラメータの結合と、共通パラメータの行の削減
   summary_mean <- summary_mean_temp %>%
     dplyr::mutate(
       Species = target_species,
-      # 正規表現で [ ] の中の数字を抽出して数値化
+      BaseVar = stringr::str_remove(Variable, "\\[.*\\]"),
       idx = as.integer(stringr::str_extract(Variable, "(?<=\\[)\\d+(?=\\])")),
-      # 数字が存在すれば対応する地点名(station.id)を、無ければ "All"（全体パラメータ）とする
       Station = ifelse(!is.na(idx), station.id[idx], "All")
     ) %>%
-    # 列の並び順を整理
+    # 共通(global)なパラメータは、地点ごとに同じ値が出力されるため、1地点目 (idx == 1) または NA のみ残す
+    dplyr::filter(
+      !(BaseVar == "density" & is_density_global & !is.na(idx) & idx != 1),
+      !(BaseVar == "mean_stay" & is_stay_global & !is.na(idx) & idx != 1),
+      !(BaseVar == "mean_pass" & is_pass_global & !is.na(idx) & idx != 1)
+    ) %>%
+    # 共通パラメータは名称からインデックスを消し、Stationを確実に "All" にする
+    dplyr::mutate(
+      Station = ifelse(
+        (BaseVar == "density" & is_density_global) |
+          (BaseVar == "mean_stay" & is_stay_global) |
+          (BaseVar == "mean_pass" & is_pass_global),
+        "All", Station
+      ),
+      Variable = ifelse(
+        (BaseVar == "density" & is_density_global) |
+          (BaseVar == "mean_stay" & is_stay_global) |
+          (BaseVar == "mean_pass" & is_pass_global),
+        BaseVar, Variable
+      )
+    ) %>%
     dplyr::select(Species, Station, Variable, mean, sd, lower, median, upper, Rhat, n.eff, cv)
 
   density_result <- list(

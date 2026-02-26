@@ -935,20 +935,32 @@ bayes_rest_multi <- function(formula_stay,
   lppd <- sum(log(colMeans(exp(loglfall))))
   p.waic <- sum(apply(loglfall, 2, var))
   waic <- (-2) * lppd + 2 * p.waic
-
   # 結果の集約 -------------------------------------------------------------------
+
+  # --- 共変量やランダム効果がない（全体共通）かの判定 ---
+  check_no_cov <- function(f) {
+    if (is.null(f)) return(TRUE)
+    f <- as.formula(f)
+    if (length(f) == 3) f <- f[-2]
+    length(all.vars(f)) == 0
+  }
+
+  is_density_global <- check_no_cov(formula_density)
+  is_stay_global    <- check_no_cov(formula_stay) && (is.null(random_effect_stay) || random_effect_stay == "NULL")
+  is_enter_global   <- if (exists("formula_enter")) check_no_cov(formula_enter) else TRUE
+
+  # マルチモデルでの mean_pass が共通になる条件（REST/RAD-REST両対応）
+  is_pass_global <- (is_density_global && is_stay_global) || is_enter_global
 
   # 単一モデルとなったため、WAICやベストモデル選択の記述を削除し、
   # 直前のMCMC結果(chain_output)をそのまま集約に回します。
   mcmc_samples <- coda::as.mcmc.list(chain_output)
 
-  # Mixtureの場合、外部のMCMCサンプル(actv_chain_output)からactivity_proportionを結合
   if(activity_estimation == "mixture") {
     sample_activity <- MCMCvis::MCMCchains(actv_chain_output,
                                            mcmc.list = TRUE,
                                            params = "activity_proportion")
 
-    # 各チェーンごとに cbind して mcmc オブジェクトに戻す
     mcmc_samples <- lapply(seq_along(mcmc_samples), function(i) {
       coda::as.mcmc(cbind(mcmc_samples[[i]], sample_activity[[i]]))
     })
@@ -956,7 +968,6 @@ bayes_rest_multi <- function(formula_stay,
   }
 
   # --- 集約の準備 ---
-  # Nimbleのインデックス[i]に対応する地点のリストを抽出
   unique_stations <- station_effort_data$Station[1:N_station]
 
   # --- Densityの集約 ---
@@ -970,7 +981,7 @@ bayes_rest_multi <- function(formula_stay,
     # density[m] の形：インデックスは Species(m)
     summary_density <- summary_density %>%
       tidyr::extract(Variable, into = "Species_idx", regex = "\\[(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
-      dplyr::mutate(Species = target_species[Species_idx], Station = "All") %>% # NAを"All"に変更
+      dplyr::mutate(Species = target_species[Species_idx], Station = "All") %>%
       dplyr::select(-Species_idx)
   } else {
     # density[i, m] の形：インデックスは Station(i), Species(m)
@@ -991,7 +1002,7 @@ bayes_rest_multi <- function(formula_stay,
     # mean_stay[m] の形：インデックスは Species(m)
     summary_stay <- summary_stay %>%
       tidyr::extract(Variable, into = "Species_idx", regex = "\\[(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
-      dplyr::mutate(Species = target_species[Species_idx], Station = "All") %>% # NAを"All"に変更
+      dplyr::mutate(Species = target_species[Species_idx], Station = "All") %>%
       dplyr::select(-Species_idx)
   } else {
     # mean_stay[i, m] の形：インデックスは Station(i), Species(m)
@@ -1002,15 +1013,29 @@ bayes_rest_multi <- function(formula_stay,
   }
 
   # --- mean_pass の集約 ---
-  # mean_pass は必ず [i, m] の形になります
+  # mean_pass は必ず [i, m] の形で出力されます
   mcmc_samples_pass <- MCMCvis::MCMCchains(mcmc_samples, mcmc.list = TRUE, params = "mean_pass")
   summary_pass <- MCMCvis::MCMCsummary(mcmc_samples_pass, round = 2) %>%
     tibble::rownames_to_column(var = "Variable") %>%
     tibble::as_tibble() %>%
     dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`) %>%
-    tidyr::extract(Variable, into = c("Station_idx", "Species_idx"), regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
-    dplyr::mutate(Species = target_species[Species_idx], Station = unique_stations[Station_idx]) %>%
-    dplyr::select(-Station_idx, -Species_idx)
+    tidyr::extract(Variable, into = c("Station_idx", "Species_idx"), regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE)
+
+  if (is_pass_global) {
+    # 地点間に差異がない場合、全地点が同じ値を持つので1地点目だけを採用して「All」にする
+    summary_pass <- summary_pass %>%
+      dplyr::filter(Station_idx == 1) %>%
+      dplyr::mutate(
+        Species = target_species[Species_idx],
+        Station = "All",
+        Variable = paste0("mean_pass[", Species_idx, "]") # 代表として1Dの変数名に変える
+      ) %>%
+      dplyr::select(-Station_idx, -Species_idx)
+  } else {
+    summary_pass <- summary_pass %>%
+      dplyr::mutate(Species = target_species[Species_idx], Station = unique_stations[Station_idx]) %>%
+      dplyr::select(-Station_idx, -Species_idx)
+  }
 
   # --- 最終結果の結合とCVの計算 ---
   summary_mean <- dplyr::bind_rows(summary_density, summary_stay, summary_pass) %>%
