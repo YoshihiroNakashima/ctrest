@@ -709,7 +709,7 @@ bayes_rest_multi <- function(formula_stay,
       for (i in 1:N_station) {
         for (m in 1:nSpecies) {
           for (g in 1:N_group) {
-            log(alpha_mat[i, m, g]) <- beta_enter[1, g] + species_effect_alpha[m, 1, g]
+            log(alpha_mat[i, m, g]) <- cutpoint[g] + beta_enter[1] + species_effect_alpha[m, 1]
           }
           alpha_sum[i, m] <- sum(alpha_mat[i, m, 1:N_group])
           for (g in 1:N_group) {
@@ -724,7 +724,7 @@ bayes_rest_multi <- function(formula_stay,
       for (i in 1:N_station) {
         for (m in 1:nSpecies) {
           for (g in 1:N_group) {
-            log(alpha_mat[i, m, g]) <- inprod(beta_enter[1:nPreds_alpha, g] + species_effect_alpha[m, 1:nPreds_alpha, g], X_alpha[i, 1:nPreds_alpha])
+            log(alpha_mat[i, m, g]) <- cutpoint[g] + inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
           }
           alpha_sum[i, m] <- sum(alpha_mat[i, m, 1:N_group])
           for (g in 1:N_group) {
@@ -736,6 +736,7 @@ bayes_rest_multi <- function(formula_stay,
       }
     }
 
+
     # model for y (Dirichlet-multinomial)
     for (j in 1:N_station_species) {
       y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
@@ -746,12 +747,13 @@ bayes_rest_multi <- function(formula_stay,
 
     # Priors for Alpha
     for (g in 1:N_group) {
-      for (k in 1:nPreds_alpha) {
-        beta_enter[k, g] ~ dnorm(0, sd = 100)
-        sd_species_alpha[k, g] ~ T(dnorm(0, sd = 100), 0, 5)
-        for (m in 1:nSpecies) {
-          species_effect_alpha[m, k, g] ~ dnorm(0, sd = sd_species_alpha[k, g])
-        }
+      cutpoint[g] ~ dnorm(0, sd = 100)
+    }
+    for (k in 1:nPreds_alpha) {
+      beta_enter[k] ~ dnorm(0, sd = 100)
+      sd_species_alpha[k] ~ T(dnorm(0, sd = 100), 0, 5)
+      for (m in 1:nSpecies) {
+        species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k])
       }
     }
 
@@ -826,9 +828,11 @@ bayes_rest_multi <- function(formula_stay,
       sd_density = runif(1, 0.01, 2),
       sd_species_density = runif(1, 0.01, 2),
 
-      beta_enter = matrix(rnorm(nPreds_alpha * N_group, 0, 0.1), nrow = nPreds_alpha, ncol = N_group),
-      species_effect_alpha = array(rnorm(nSpecies * nPreds_alpha * N_group, 0, 0.1), dim = c(nSpecies, nPreds_alpha, N_group)),
-      sd_species_alpha = matrix(runif(nPreds_alpha * N_group, 0.01, 1), nrow = nPreds_alpha, ncol = N_group)
+      beta_enter = rnorm(nPreds_alpha, 0, 0.1),
+      cutpoint = rnorm(N_group, 0, 0.1),
+      species_effect_alpha = matrix(rnorm(nSpecies * nPreds_alpha, 0, 0.1),
+                                    nrow = nSpecies, ncol = nPreds_alpha),
+      sd_species_alpha = runif(nPreds_alpha, 0.01, 1)
     )
 
     if (!is.null(random_effect_stay)) {
@@ -1246,7 +1250,6 @@ bayes_rest_multi <- function(formula_stay,
   )
   class(density_result) <- "ResultDensity"
 
-  return(density_result)
 
   return(density_result)
 } # 関数 bayes_rest_multi の終端
