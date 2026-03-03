@@ -157,7 +157,40 @@ bayes_rest_multi <- function(formula_stay,
     )
   }
 
+  # -------------------------------------------------------------------------
+  # 共変量を標準化するヘルパー関数
+  # 切片列（全要素が1の列）を除く数値列を平均0・標準偏差1に正規化する。
+  # 標準偏差が0（定数列）の列はスケーリングをスキップして警告を出す。
+  # 戻り値: list(X = 正規化済み行列, center = 各列の平均, scale = 各列のSD)
+  # -------------------------------------------------------------------------
+  standardize_design_matrix <- function(X) {
+    center_vec <- rep(0, ncol(X))
+    scale_vec  <- rep(1, ncol(X))
 
+    for (j in seq_len(ncol(X))) {
+      col_j <- X[, j]
+      # 切片列（全要素が1）はスキップ
+      if (all(col_j == 1)) next
+      # 数値列のみ正規化
+      if (!is.numeric(col_j)) next
+
+      col_mean <- mean(col_j, na.rm = TRUE)
+      col_sd   <- sd(col_j,   na.rm = TRUE)
+
+      if (is.na(col_sd) || col_sd == 0) {
+        warning(paste0(
+          "Column '", colnames(X)[j], "' has zero variance and will not be scaled."
+        ))
+        next
+      }
+
+      X[, j]       <- (col_j - col_mean) / col_sd
+      center_vec[j] <- col_mean
+      scale_vec[j]  <- col_sd
+    }
+
+    list(X = X, center = center_vec, scale = scale_vec)
+  }
   # check options -----------------------------------------------------------
 
   if (!inherits(formula_stay, "formula")) {
@@ -409,10 +442,18 @@ bayes_rest_multi <- function(formula_stay,
   predictors_stay <- vars_stay[-1]
 
   model_frame_stay <- model.frame(formula_stay, stay_data_join)
-  X_stay <- model.matrix(as.formula(formula_stay), model_frame_stay)
+  X_stay_raw <- model.matrix(as.formula(formula_stay), model_frame_stay)
   stay <- model.response(model_frame_stay)
   censored <- stay_data_join[["Cens"]]
   is.censored <- stay_data_join[["Cens"]]
+
+  # ----- 滞在時間の共変量を標準化 -----
+  scaled_stay   <- standardize_design_matrix(X_stay_raw)
+  X_stay        <- scaled_stay$X
+  scaling_stay  <- list(center = scaled_stay$center, scale = scaled_stay$scale)
+  if (ncol(X_stay) > 1) {
+    cat("Covariates in formula_stay have been standardized (mean=0, sd=1).\n")
+  }
 
   # N of random effects
   if (!is.null(random_effect_stay)) {
@@ -465,15 +506,32 @@ bayes_rest_multi <- function(formula_stay,
 
   # === Density data preparation ===
   model_frame_density <- model.frame(formula_density, station_effort_data)
-  X_density <- model.matrix(formula_density, model_frame_density)
-  nPreds_density <- ncol(X_density)
-  X_density <- X_density[1:N_station , , drop = FALSE]
+  X_density_raw <- model.matrix(formula_density, model_frame_density)
+  nPreds_density_raw <- ncol(X_density_raw)
+  X_density_raw <- X_density_raw[1:N_station , , drop = FALSE]
+
+  # ----- 密度の共変量を標準化 -----
+  scaled_density   <- standardize_design_matrix(X_density_raw)
+  X_density        <- scaled_density$X
+  scaling_density  <- list(center = scaled_density$center, scale = scaled_density$scale)
+  nPreds_density   <- ncol(X_density)
+  if (nPreds_density > 1) {
+    cat("Covariates in formula_density have been standardized (mean=0, sd=1).\n")
+  }
 
   # === Enter (Dirichlet Alpha) data preparation ===
   model_frame_enter <- model.frame(formula_enter, station_effort_data)
-  X_alpha <- model.matrix(formula_enter, model_frame_enter)
-  nPreds_alpha <- ncol(X_alpha)
-  X_alpha <- X_alpha[1:N_station , , drop = FALSE]
+  X_alpha_raw <- model.matrix(formula_enter, model_frame_enter)
+  X_alpha_raw <- X_alpha_raw[1:N_station , , drop = FALSE]
+
+  # ----- 進入率の共変量を標準化 -----
+  scaled_alpha   <- standardize_design_matrix(X_alpha_raw)
+  X_alpha        <- scaled_alpha$X
+  scaling_alpha  <- list(center = scaled_alpha$center, scale = scaled_alpha$scale)
+  nPreds_alpha   <- ncol(X_alpha)
+  if (nPreds_alpha > 1) {
+    cat("Covariates in formula_enter have been standardized (mean=0, sd=1).\n")
+  }
 
   S <- focal_area * 10^-6
   N_period <- station_effort_data$Effort[1:N_station] * 60 * 60 * 24
@@ -521,7 +579,6 @@ bayes_rest_multi <- function(formula_stay,
   if (nPreds_stay > 1) {
     data_density$X_stay <- X_stay
   }
-
 
   # Nimble code -------------------------------------------------------------
 
@@ -753,11 +810,14 @@ bayes_rest_multi <- function(formula_stay,
 
 
   cat("Compiling the model. This may take a moment...\n")
+  # 修正後：打ち切りの場合のみ、c_timeより確実に大きい値を初期値として与える
+  stay_inits <- rep(NA, N_stay)
+  stay_inits[is.censored == 1] <- c_time[is.censored == 1] + 1.0
 
   inits_f <- function() {
     common_inits <- list(
       beta_stay = runif(nPreds_stay, -1, 1),
-      stay = ifelse(is.censored == 0, NA, c_time + runif(N_stay, 0.1, 1.0)),
+      stay = stay_inits,
       theta_stay = runif(nSpecies, 0.5, 4.0),
       species_effect_stay = matrix(runif(nSpecies * nPreds_stay, -1, 1), nrow = nSpecies, ncol = nPreds_stay),
 
@@ -935,6 +995,7 @@ bayes_rest_multi <- function(formula_stay,
   lppd <- sum(log(colMeans(exp(loglfall))))
   p.waic <- sum(apply(loglfall, 2, var))
   waic <- (-2) * lppd + 2 * p.waic
+
   # 結果の集約 -------------------------------------------------------------------
 
   # --- 共変量やランダム効果がない（全体共通）かの判定 ---
@@ -1042,10 +1103,28 @@ bayes_rest_multi <- function(formula_stay,
     dplyr::mutate(cv = sd / mean) %>%
     dplyr::select(Species, Station, Variable, mean, sd, cv, lower, median, upper, Rhat, n.eff)
 
+  # -------------------------------------------------------------------------
+  # 正規化パラメータを名前付きリストとして整形して返す
+  # colnames を付与することで、どの変数が何番目かを明示する
+  # -------------------------------------------------------------------------
+  names(scaling_stay$center)    <- colnames(X_stay)
+  names(scaling_stay$scale)     <- colnames(X_stay)
+  names(scaling_density$center) <- colnames(X_density)
+  names(scaling_density$scale)  <- colnames(X_density)
+  names(scaling_alpha$center)   <- colnames(X_alpha)
+  names(scaling_alpha$scale)    <- colnames(X_alpha)
+
+  scaling_params <- list(
+    stay    = scaling_stay,
+    density = scaling_density,
+    enter   = scaling_alpha
+  )
+
   density_result <- list(
     WAIC = waic,
     summary_result = summary_mean,
-    samples = mcmc_samples
+    samples = mcmc_samples,
+    scaling_params = scaling_params   # <-- 正規化パラメータを追加
   )
   class(density_result) <- "ResultDensity"
 
