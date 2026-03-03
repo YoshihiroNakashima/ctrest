@@ -580,44 +580,44 @@ bayes_rest_multi <- function(formula_stay,
     data_density$X_stay <- X_stay
   }
 
-  # Nimble code -------------------------------------------------------------
-
   code <- nimbleCode({
 
+    # ---------------------------------------------------------------------------
     # model for stay
-    for(i in 1:N_stay) {
+    # ---------------------------------------------------------------------------
+    for (i in 1:N_stay) {
       censored[i] ~ dinterval(stay[i], c_time[i])
 
       if (stay_family == "exponential") {
-        stay[i] ~ dexp(rate = 1 / scale[i])
-        pred_t[i] ~ dexp(rate = 1 / scale[i])
-        loglike_obs_stay[i] <- (1 - step(censored[i] - 0.5)) * dexp(stay[i], rate = 1/scale[i], log = 1) +
-          step(censored[i] - 0.5) * log(1 - pexp(c_time[i], rate = 1/scale[i]))
-        loglike_pred_stay[i] <- dexp(pred_t[i], rate = 1/scale[i], log = 1)
+        stay[i]      ~ dexp(rate = 1 / scale[i])
+        pred_t[i]    ~ dexp(rate = 1 / scale[i])
+        loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dexp(stay[i],   rate = 1 / scale[i], log = 1) +
+          step(censored[i] - 0.5)  * log(1 - pexp(c_time[i], rate = 1 / scale[i]))
+        loglike_pred_stay[i] <- dexp(pred_t[i], rate = 1 / scale[i], log = 1)
       }
 
       if (stay_family == "gamma") {
-        stay[i] ~ dgamma(shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i])
-        pred_t[i] ~ dgamma(shape = theta_stay[species_id_stay[i]], rate = 1/ scale[i])
-        loglike_obs_stay[i] <- (1 - step(censored[i] - 0.5)) * dgamma(stay[i], shape = theta_stay[species_id_stay[i]], rate = 1/ scale[i], log = 1) +
-          step(censored[i] - 0.5) * log(1 - pgamma(c_time[i], shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i]))
+        stay[i]      ~ dgamma(shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i])
+        pred_t[i]    ~ dgamma(shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i])
+        loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dgamma(stay[i],   shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i], log = 1) +
+          step(censored[i] - 0.5)  * log(1 - pgamma(c_time[i], shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i]))
         loglike_pred_stay[i] <- dgamma(pred_t[i], shape = theta_stay[species_id_stay[i]], rate = exp(-log(scale[i])), log = 1)
       }
 
       if (stay_family == "lognormal") {
-        stay[i] ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
-        pred_t[i] ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
-        loglike_obs_stay[i] <- (1 - step(censored[i] - 0.5)) * dlnorm(stay[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1) +
-          step(censored[i] - 0.5) * log(1 - plnorm(c_time[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]]))
+        stay[i]      ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
+        pred_t[i]    ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
+        loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dlnorm(stay[i],   meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1) +
+          step(censored[i] - 0.5)  * log(1 - plnorm(c_time[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]]))
         loglike_pred_stay[i] <- dlnorm(pred_t[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1)
         meanlog[i] <- log(scale[i])
       }
 
       if (stay_family == "weibull") {
-        stay[i] ~ dweibull(shape = theta_stay[species_id_stay[i]], scale = scale[i])
-        pred_t[i] ~ dweibull(shape = theta_stay[species_id_stay[i]], scale = scale[i])
-        loglike_obs_stay[i] <- (1 - step(censored[i] - 0.5)) * dweibull(stay[i], shape = theta_stay[species_id_stay[i]], scale = scale[i], log = 1) +
-          step(censored[i] - 0.5) * log(1 - pweibull(c_time[i], shape = theta_stay[species_id_stay[i]], scale = scale[i]))
+        stay[i]      ~ dweibull(shape = theta_stay[species_id_stay[i]], scale = scale[i])
+        pred_t[i]    ~ dweibull(shape = theta_stay[species_id_stay[i]], scale = scale[i])
+        loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dweibull(stay[i],   shape = theta_stay[species_id_stay[i]], scale = scale[i], log = 1) +
+          step(censored[i] - 0.5)  * log(1 - pweibull(c_time[i], shape = theta_stay[species_id_stay[i]], scale = scale[i]))
         loglike_pred_stay[i] <- dweibull(pred_t[i], shape = theta_stay[species_id_stay[i]], scale = scale[i], log = 1)
       }
 
@@ -636,75 +636,116 @@ bayes_rest_multi <- function(formula_stay,
       }
     }
 
-    for(j in 1:nPreds_stay) {
+    # Priors for stay coefficients
+    for (j in 1:nPreds_stay) {
       beta_stay[j] ~ dnorm(0, sd = 100)
     }
 
     if (nLevels_stay > 0) {
-      for(k in 1:nLevels_stay) {
+      for (k in 1:nLevels_stay) {
         random_effect_stay[k] ~ dnorm(0, sd = sigma_stay)
       }
       sigma_stay ~ T(dnorm(0, sd = 100), 0, 5)
     }
 
-
-    for(m in 1:nSpecies) {
+    # Shape/dispersion parameters for stay (species-level, hierarchical)
+    for (m in 1:nSpecies) {
       theta_stay[m] ~ dgamma(shape_stay, rate_stay)
-      if(stay_family == "lognormal") {
+      if (stay_family == "lognormal") {
         sdlog[m] <- theta_stay[m]
       } else {
         shape[m] <- theta_stay[m]
       }
     }
     shape_stay ~ dgamma(0.1, 0.1)
-    rate_stay ~ dgamma(0.1, 0.1)
+    rate_stay  ~ dgamma(0.1, 0.1)
 
-    for(m in 1:nSpecies) {
-      for(j in 1:nPreds_stay) {
+    # Species random effects for stay
+    for (m in 1:nSpecies) {
+      for (j in 1:nPreds_stay) {
         species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay)
       }
     }
-    sigma_species_stay ~  T(dnorm(0, sd = 100), 0, 5)
+    sigma_species_stay ~ T(dnorm(0, sd = 100), 0, 5)
 
-    # Expected value calculation for stay
+    # ---------------------------------------------------------------------------
+    # Expected stay time (mean_stay) per species [x station if nPreds_stay > 1]
+    # ---------------------------------------------------------------------------
     if (nPreds_stay == 1) {
-      if(stay_family == "exponential") {
-        for(m in 1:nSpecies) { mean_stay[m] <- exp(beta_stay[1] + species_effect_stay[m, 1]) }
-      }
-      if(stay_family == "gamma") {
-        for(m in 1:nSpecies) { mean_stay[m] <- theta_stay[m] * exp(beta_stay[1] + species_effect_stay[m, 1]) }
-      }
-      if(stay_family == "lognormal") {
-        for(m in 1:nSpecies) { mean_stay[m] <- exp(beta_stay[1] + species_effect_stay[m, 1] + theta_stay[m] ^ 2 / 2) }
-      }
-      if(stay_family == "weibull") {
-        for(m in 1:nSpecies) { mean_stay[m] <-  lgamma(1 + 1 / theta_stay[m]) + exp(beta_stay[1] + species_effect_stay[m, 1]) }
-      }
-    }
-    if (nPreds_stay > 1) {
-      if(stay_family == "exponential") {
-        for(m in 1:nSpecies) {
-          for(i in 1:N_station) { mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay])) }
+      if (stay_family == "exponential") {
+        for (m in 1:nSpecies) {
+          mean_stay[m] <- exp(beta_stay[1] + species_effect_stay[m, 1])
         }
       }
-      if(stay_family == "gamma") {
-        for(m in 1:nSpecies) {
-          for(i in 1:N_station) { mean_stay[i, m] <- theta_stay[m] * exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay])) }
+      if (stay_family == "gamma") {
+        for (m in 1:nSpecies) {
+          mean_stay[m] <- theta_stay[m] * exp(beta_stay[1] + species_effect_stay[m, 1])
         }
       }
-      if(stay_family == "lognormal") {
-        for(m in 1:nSpecies) {
-          for(i in 1:N_station) { mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + theta_stay[m] ^ 2 / 2) }
+      if (stay_family == "lognormal") {
+        for (m in 1:nSpecies) {
+          mean_stay[m] <- exp(beta_stay[1] + species_effect_stay[m, 1] + theta_stay[m]^2 / 2)
         }
       }
-      if(stay_family == "weibull") {
-        for(m in 1:nSpecies) {
-          for(i in 1:N_station) { mean_stay[i, m] <-  lgamma(1 + 1 / theta_stay[m]) * exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay])) }
+      if (stay_family == "weibull") {
+        # E[X] = scale * Gamma(1 + 1/shape)  →  log(scale) = beta; Gamma expressed via lgamma
+        for (m in 1:nSpecies) {
+          mean_stay[m] <- exp(lgamma(1 + 1 / theta_stay[m]) + beta_stay[1] + species_effect_stay[m, 1])
         }
       }
     }
 
-    # Alpha (Enter) の計算と mean_pass の地点固有化
+    if (nPreds_stay > 1) {
+      if (stay_family == "exponential") {
+        for (m in 1:nSpecies) {
+          for (i in 1:N_station) {
+            mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
+          }
+        }
+      }
+      if (stay_family == "gamma") {
+        for (m in 1:nSpecies) {
+          for (i in 1:N_station) {
+            mean_stay[i, m] <- theta_stay[m] * exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
+          }
+        }
+      }
+      if (stay_family == "lognormal") {
+        for (m in 1:nSpecies) {
+          for (i in 1:N_station) {
+            mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + theta_stay[m]^2 / 2)
+          }
+        }
+      }
+      if (stay_family == "weibull") {
+        for (m in 1:nSpecies) {
+          for (i in 1:N_station) {
+            # 元コードは lgamma(...) * exp(...) だったが正しくは加算
+            mean_stay[i, m] <- exp(lgamma(1 + 1 / theta_stay[m]) + inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
+          }
+        }
+      }
+    }
+
+    # ---------------------------------------------------------------------------
+    # Alpha (Enter): mean_pass の計算
+    #
+    # 構造: log(alpha_mat[i, m, g]) = cutpoint[g] + linear_predictor[i, m]
+    #   cutpoint[g]        : グループ固有の基底値（識別可能性のため cutpoint[1] <- 0 に固定）
+    #   beta_enter[k]      : 共変量 k の全グループ共通係数
+    #   species_effect_alpha[m, k] : 種 m の共変量 k に対する全グループ共通ランダム効果
+    #
+    # nPreds_alpha == 1 かつ X_alpha が切片列のみの場合:
+    #   linear_predictor = beta_enter[1]  (切片は cutpoint に吸収されるため beta_enter[1] は不要だが
+    #   識別可能性のため cutpoint[1] <- 0 を固定し beta_enter[1] を切片として使用)
+    # ---------------------------------------------------------------------------
+
+    # cutpoint[1] を 0 に固定し残りを推定（識別可能性の確保）
+    cutpoint[1] <- 0
+    for (g in 2:N_group) {
+      cutpoint[g] ~ dnorm(0, sd = 100)
+    }
+
     if (nPreds_alpha == 1) {
       for (i in 1:N_station) {
         for (m in 1:nSpecies) {
@@ -720,6 +761,7 @@ bayes_rest_multi <- function(formula_stay,
         }
       }
     }
+
     if (nPreds_alpha > 1) {
       for (i in 1:N_station) {
         for (m in 1:nSpecies) {
@@ -736,19 +778,17 @@ bayes_rest_multi <- function(formula_stay,
       }
     }
 
-
+    # ---------------------------------------------------------------------------
     # model for y (Dirichlet-multinomial)
+    # ---------------------------------------------------------------------------
     for (j in 1:N_station_species) {
-      y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
+      y[j, 1:N_group]      ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
       pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
-      loglike_obs_y[j] <- ddirchmulti(y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+      loglike_obs_y[j]  <- ddirchmulti(y[j,      1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
       loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
     }
 
-    # Priors for Alpha
-    for (g in 1:N_group) {
-      cutpoint[g] ~ dnorm(0, sd = 100)
-    }
+    # Priors for Alpha (beta_enter と species_effect_alpha はグループ共通)
     for (k in 1:nPreds_alpha) {
       beta_enter[k] ~ dnorm(0, sd = 100)
       sd_species_alpha[k] ~ T(dnorm(0, sd = 100), 0, 5)
@@ -757,24 +797,28 @@ bayes_rest_multi <- function(formula_stay,
       }
     }
 
-    # model for N_detection
-    for(m in 1:nSpecies) {
-      for(i in 1:N_station){
+    # ---------------------------------------------------------------------------
+    # model for N_detection (negative binomial)
+    # ---------------------------------------------------------------------------
+    for (m in 1:nSpecies) {
+      for (i in 1:N_station) {
         N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
         p[i, m] <- size[m] / (size[m] + mu[i, m])
 
-        N_detection_rep[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
-        loglike_obs_detection[i] <- dnbinom(N_detection_rep[i, m], size[m], p[i, m])
-        loglike_pred_detection[i] <- dnbinom(N_detection_rep[i, m], size[m], p[i, m])
+        N_detection_rep[i, m]    ~ dnbinom(size = size[m], prob = p[i, m])
+        loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
+        loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
       }
       size[m] ~ dgamma(1, 1)
     }
 
-    # REST formula
-    if(nPreds_density == 1) {
+    # ---------------------------------------------------------------------------
+    # REST formula:  mu[i, m] = density * S * N_period / mean_stay / mean_pass
+    # ---------------------------------------------------------------------------
+    if (nPreds_density == 1) {
       for (m in 1:nSpecies) {
-        for(i in 1:N_station) {
-          if(nPreds_stay == 1) {
+        for (i in 1:N_station) {
+          if (nPreds_stay == 1) {
             log(mu[i, m]) <- log(density[m]) + log(S) + log(N_period[i]) - log(mean_stay[m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
           } else {
             log(mu[i, m]) <- log(density[m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
@@ -785,10 +829,10 @@ bayes_rest_multi <- function(formula_stay,
       beta_density ~ dnorm(0, sd = 100)
     }
 
-    if(nPreds_density > 1) {
-      for(m in 1:nSpecies) {
-        for(i in 1:N_station) {
-          if(nPreds_stay == 1) {
+    if (nPreds_density > 1) {
+      for (m in 1:nSpecies) {
+        for (i in 1:N_station) {
+          if (nPreds_stay == 1) {
             log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
           } else {
             log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
@@ -796,61 +840,69 @@ bayes_rest_multi <- function(formula_stay,
           log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
         }
       }
-      for(j in 1:nPreds_density) {
+      for (j in 1:nPreds_density) {
         beta_density[j] ~ dnorm(0, sd = 100)
       }
     }
 
-    # Random effects for density
-    for(m in 1:nSpecies) {
-      for(k in 1:nPreds_density) {
-        species_effect_density[m, k] ~ dnorm(0, sd_species_density)
+    # Species random effects for density
+    for (m in 1:nSpecies) {
+      for (k in 1:nPreds_density) {
+        species_effect_density[m, k] ~ dnorm(0, sd = sd_species_density)
       }
     }
     sd_species_density ~ T(dnorm(0, sd = 100), 0, 5)
   })
 
 
+  # ---------------------------------------------------------------------------
+  # Initial values
+  # ---------------------------------------------------------------------------
   cat("Compiling the model. This may take a moment...\n")
-  # 修正後：打ち切りの場合のみ、c_timeより確実に大きい値を初期値として与える
+
   stay_inits <- rep(NA, N_stay)
   stay_inits[is.censored == 1] <- c_time[is.censored == 1] + 1.0
 
   inits_f <- function() {
     common_inits <- list(
-      beta_stay = runif(nPreds_stay, -1, 1),
-      stay = stay_inits,
-      theta_stay = runif(nSpecies, 0.5, 4.0),
-      species_effect_stay = matrix(runif(nSpecies * nPreds_stay, -1, 1), nrow = nSpecies, ncol = nPreds_stay),
+      # --- stay ---
+      beta_stay          = runif(nPreds_stay, -1, 1),
+      stay               = stay_inits,
+      theta_stay         = runif(nSpecies, 0.5, 4.0),
+      shape_stay         = runif(1, 0.5, 2.0),
+      rate_stay          = runif(1, 0.5, 2.0),
+      species_effect_stay = matrix(runif(nSpecies * nPreds_stay, -1, 1),
+                                   nrow = nSpecies, ncol = nPreds_stay),
+      sigma_species_stay = runif(1, 0.01, 1),
 
-      beta_density = rnorm(nPreds_density, 0, 1),
-      species_effect_density = matrix(rnorm(nSpecies * nPreds_density, 0, 0.5), nrow = nSpecies, ncol = nPreds_density),
-      sd_density = runif(1, 0.01, 2),
-      sd_species_density = runif(1, 0.01, 2),
+      # --- density ---
+      beta_density           = rnorm(nPreds_density, 0, 1),
+      species_effect_density = matrix(rnorm(nSpecies * nPreds_density, 0, 0.5),
+                                      nrow = nSpecies, ncol = nPreds_density),
+      sd_species_density     = runif(1, 0.01, 2),
 
-      beta_enter = rnorm(nPreds_alpha, 0, 0.1),
-      cutpoint = rnorm(N_group, 0, 0.1),
+      # --- alpha (enter) ---
+      # cutpoint[1] は定数 (0) なので初期値不要; cutpoint[2:N_group] のみ与える
+      cutpoint             = c(NA, rnorm(N_group - 1, 0, 0.5)),
+      beta_enter           = rnorm(nPreds_alpha, 0, 0.1),
       species_effect_alpha = matrix(rnorm(nSpecies * nPreds_alpha, 0, 0.1),
                                     nrow = nSpecies, ncol = nPreds_alpha),
-      sd_species_alpha = runif(nPreds_alpha, 0.01, 1)
+      sd_species_alpha     = runif(nPreds_alpha, 0.01, 1),
+
+      # --- NB size ---
+      size = rgamma(nSpecies, shape = 1, rate = 1)
     )
 
-    if (!is.null(random_effect_stay)) {
-      c(
-        common_inits,
+    if (nLevels_stay > 0) {
+      c(common_inits,
         list(
           random_effect_stay = runif(nLevels_stay, -1, 1),
-          sigma_stay = runif(1, 0.5, 2.5)
-        )
-      )
+          sigma_stay         = runif(1, 0.5, 2.5)
+        ))
     } else {
-      c(
-        common_inits,
-        list(sigma_species_stay = runif(1, 0.5, 2.5))
-      )
+      common_inits
     }
   }
-
   # -------------------------------------------------------------------------
   # クラスターの準備と実行
   # -------------------------------------------------------------------------
