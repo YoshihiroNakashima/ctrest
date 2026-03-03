@@ -1008,173 +1008,228 @@ bayes_rest_multi <- function(formula_stay,
   is_density_global <- check_no_cov(formula_density)
   is_stay_global    <- check_no_cov(formula_stay) && (is.null(random_effect_stay) || random_effect_stay == "NULL")
   is_enter_global   <- if (exists("formula_enter")) check_no_cov(formula_enter) else TRUE
+  is_pass_global    <- (is_density_global && is_stay_global) || is_enter_global
 
-  # マルチモデルでの mean_pass が共通になる条件（REST/RAD-REST両対応）
-  is_pass_global <- (is_density_global && is_stay_global) || is_enter_global
-
-  # 単一モデルとなったため、WAICやベストモデル選択の記述を削除し、
-  # 直前のMCMC結果(chain_output)をそのまま集約に回します。
+  # --- mcmc_samples の構築 ---
   mcmc_samples <- coda::as.mcmc.list(chain_output)
 
-  if(activity_estimation == "mixture") {
+  if (activity_estimation == "mixture") {
     sample_activity <- MCMCvis::MCMCchains(actv_chain_output,
                                            mcmc.list = TRUE,
                                            params = "activity_proportion")
-
     mcmc_samples <- lapply(seq_along(mcmc_samples), function(i) {
       coda::as.mcmc(cbind(mcmc_samples[[i]], sample_activity[[i]]))
     })
     mcmc_samples <- coda::as.mcmc.list(mcmc_samples)
   }
 
+  # 全MCMCサンプルを行列として取得（種ごと係数計算に使用）
+  all_samples_mat <- MCMCvis::MCMCchains(mcmc_samples)
+
+  # -------------------------------------------------------------------------
+  # ヘルパー1: MCMCsummary を実行して整形するラッパー
+  #   exact = TRUE で完全一致検索し、余分なパラメータを拾わないようにする
+  # -------------------------------------------------------------------------
+  summarize_param <- function(param_name) {
+    MCMCvis::MCMCsummary(
+      MCMCvis::MCMCchains(mcmc_samples, mcmc.list = TRUE,
+                          params = param_name, exact = TRUE),
+      round = 4
+    ) %>%
+      tibble::rownames_to_column(var = "Variable") %>%
+      tibble::as_tibble() %>%
+      dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`)
+  }
+
+  # -------------------------------------------------------------------------
+  # ヘルパー2: beta + species_effect の事後サンプルを合算して種ごとに集約する
+  #
+  #  【stay / density】
+  #    beta_stay[j]  または beta_density[j]  （nPreds==1 なら添字なし）
+  #    + species_effect_stay[m, j] または species_effect_density[m, j]
+  #    → coef_stay[j] (変数名) / coef_density[j] (変数名)  ×  種
+  #
+  #  【enter】
+  #    beta_enter[j, g] + species_effect_alpha[m, j, g]
+  #    → coef_enter[j, g] (変数名, catN)  ×  種
+  #    ※ g はディリクレ多項分布のカテゴリ（0-indexed で cat0, cat1, ...）
+  #
+  #  切片列（j == 1）も出力する：切片の種差は基準密度・滞在時間の種差を意味する
+  # -------------------------------------------------------------------------
+  make_species_coef_summary <- function(param_type) {
+
+    cfg <- switch(param_type,
+                  stay    = list(nPreds = nPreds_stay,    col_names = colnames(X_stay),
+                                 beta_pfx = "beta_stay",    eff_pfx = "species_effect_stay"),
+                  density = list(nPreds = nPreds_density,  col_names = colnames(X_density),
+                                 beta_pfx = "beta_density",  eff_pfx = "species_effect_density"),
+                  enter   = list(nPreds = nPreds_alpha,    col_names = colnames(X_alpha),
+                                 beta_pfx = "beta_enter",    eff_pfx = "species_effect_alpha")
+    )
+
+    rows <- list()
+
+    if (param_type %in% c("stay", "density")) {
+
+      for (m in seq_len(nSpecies)) {
+        for (j in seq_len(cfg$nPreds)) {
+
+          # nimble の出力列名：nPreds==1 のとき添字なし、複数のとき [j]
+          beta_col <- if (cfg$nPreds == 1) {
+            cfg$beta_pfx
+          } else {
+            paste0(cfg$beta_pfx, "[", j, "]")
+          }
+          eff_col <- paste0(cfg$eff_pfx, "[", m, ", ", j, "]")
+
+          if (!(beta_col %in% colnames(all_samples_mat))) next
+          if (!(eff_col  %in% colnames(all_samples_mat))) next
+
+          samps <- all_samples_mat[, beta_col] + all_samples_mat[, eff_col]
+
+          rows[[length(rows) + 1]] <- tibble::tibble(
+            Species  = target_species[m],
+            Station  = "All",
+            Variable = paste0("coef_", param_type,
+                              "[", j, "] (", cfg$col_names[j], ")"),
+            mean   = mean(samps),
+            sd     = sd(samps),
+            lower  = quantile(samps, 0.025),
+            median = quantile(samps, 0.500),
+            upper  = quantile(samps, 0.975),
+            Rhat   = NA_real_,
+            n.eff  = NA_real_
+          )
+        }
+      }
+
+    } else if (param_type == "enter") {
+
+      for (m in seq_len(nSpecies)) {
+        for (j in seq_len(cfg$nPreds)) {
+          for (g in seq_len(N_group)) {
+
+            beta_col <- paste0(cfg$beta_pfx, "[", j, ", ", g, "]")
+            eff_col  <- paste0(cfg$eff_pfx,  "[", m, ", ", j, ", ", g, "]")
+
+            if (!(beta_col %in% colnames(all_samples_mat))) next
+            if (!(eff_col  %in% colnames(all_samples_mat))) next
+
+            samps <- all_samples_mat[, beta_col] + all_samples_mat[, eff_col]
+
+            rows[[length(rows) + 1]] <- tibble::tibble(
+              Species  = target_species[m],
+              Station  = "All",
+              Variable = paste0("coef_enter[", j, ", ", g, "] (",
+                                cfg$col_names[j], ", cat", g - 1, ")"),
+              mean   = mean(samps),
+              sd     = sd(samps),
+              lower  = quantile(samps, 0.025),
+              median = quantile(samps, 0.500),
+              upper  = quantile(samps, 0.975),
+              Rhat   = NA_real_,
+              n.eff  = NA_real_
+            )
+          }
+        }
+      }
+    }
+
+    dplyr::bind_rows(rows)
+  }
+
   # --- 集約の準備 ---
   unique_stations <- station_effort_data$Station[1:N_station]
 
-  # --- Densityの集約 ---
-  mcmc_samples_density <- MCMCvis::MCMCchains(mcmc_samples, mcmc.list = TRUE, params = "density")
-  summary_density <- MCMCvis::MCMCsummary(mcmc_samples_density, round = 2) %>%
-    tibble::rownames_to_column(var = "Variable") %>%
-    tibble::as_tibble() %>%
-    dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`)
+  # --- density の集約 ---
+  raw_density <- summarize_param("density")
 
   if (nPreds_density == 1) {
-    # density[m] の形：インデックスは Species(m)
-    summary_density <- summary_density %>%
-      tidyr::extract(Variable, into = "Species_idx", regex = "\\[(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
+    # density[m]：m = 種インデックス
+    summary_density <- raw_density %>%
+      tidyr::extract(Variable, into = "Species_idx",
+                     regex = "\\[(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
       dplyr::mutate(Species = target_species[Species_idx], Station = "All") %>%
       dplyr::select(-Species_idx)
   } else {
-    # density[i, m] の形：インデックスは Station(i), Species(m)
-    summary_density <- summary_density %>%
-      tidyr::extract(Variable, into = c("Station_idx", "Species_idx"), regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
-      dplyr::mutate(Species = target_species[Species_idx], Station = unique_stations[Station_idx]) %>%
+    # density[i, m]：i = 地点インデックス, m = 種インデックス
+    summary_density <- raw_density %>%
+      tidyr::extract(Variable, into = c("Station_idx", "Species_idx"),
+                     regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
+      dplyr::mutate(Species = target_species[Species_idx],
+                    Station = unique_stations[Station_idx]) %>%
       dplyr::select(-Station_idx, -Species_idx)
   }
 
   # --- mean_stay の集約 ---
-  mcmc_samples_stay <- MCMCvis::MCMCchains(mcmc_samples, mcmc.list = TRUE, params = "mean_stay")
-  summary_stay <- MCMCvis::MCMCsummary(mcmc_samples_stay, round = 2) %>%
-    tibble::rownames_to_column(var = "Variable") %>%
-    tibble::as_tibble() %>%
-    dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`)
+  raw_stay <- summarize_param("mean_stay")
 
   if (nPreds_stay == 1) {
-    # mean_stay[m] の形：インデックスは Species(m)
-    summary_stay <- summary_stay %>%
-      tidyr::extract(Variable, into = "Species_idx", regex = "\\[(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
+    # mean_stay[m]
+    summary_stay <- raw_stay %>%
+      tidyr::extract(Variable, into = "Species_idx",
+                     regex = "\\[(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
       dplyr::mutate(Species = target_species[Species_idx], Station = "All") %>%
       dplyr::select(-Species_idx)
   } else {
-    # mean_stay[i, m] の形：インデックスは Station(i), Species(m)
-    summary_stay <- summary_stay %>%
-      tidyr::extract(Variable, into = c("Station_idx", "Species_idx"), regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
-      dplyr::mutate(Species = target_species[Species_idx], Station = unique_stations[Station_idx]) %>%
+    # mean_stay[i, m]
+    summary_stay <- raw_stay %>%
+      tidyr::extract(Variable, into = c("Station_idx", "Species_idx"),
+                     regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
+      dplyr::mutate(Species = target_species[Species_idx],
+                    Station = unique_stations[Station_idx]) %>%
       dplyr::select(-Station_idx, -Species_idx)
   }
 
-  # --- mean_pass の集約 ---
-  # mean_pass は必ず [i, m] の形で出力されます
-  mcmc_samples_pass <- MCMCvis::MCMCchains(mcmc_samples, mcmc.list = TRUE, params = "mean_pass")
-  summary_pass <- MCMCvis::MCMCsummary(mcmc_samples_pass, round = 2) %>%
-    tibble::rownames_to_column(var = "Variable") %>%
-    tibble::as_tibble() %>%
-    dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`) %>%
-    tidyr::extract(Variable, into = c("Station_idx", "Species_idx"), regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE)
+  # --- mean_pass の集約（常に [i, m] 形式） ---
+  raw_pass <- summarize_param("mean_pass") %>%
+    tidyr::extract(Variable, into = c("Station_idx", "Species_idx"),
+                   regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE)
 
   if (is_pass_global) {
-    # 地点間に差異がない場合、全地点が同じ値を持つので1地点目だけを採用して「All」にする
-    summary_pass <- summary_pass %>%
+    # 地点間で同値のため、地点1のみ採用して Station = "All" とする
+    summary_pass <- raw_pass %>%
       dplyr::filter(Station_idx == 1) %>%
-      dplyr::mutate(
-        Species = target_species[Species_idx],
-        Station = "All",
-        Variable = paste0("mean_pass[", Species_idx, "]") # 代表として1Dの変数名に変える
-      ) %>%
+      dplyr::mutate(Species  = target_species[Species_idx],
+                    Station  = "All",
+                    Variable = paste0("mean_pass[", Species_idx, "]")) %>%
       dplyr::select(-Station_idx, -Species_idx)
   } else {
-    summary_pass <- summary_pass %>%
-      dplyr::mutate(Species = target_species[Species_idx], Station = unique_stations[Station_idx]) %>%
+    summary_pass <- raw_pass %>%
+      dplyr::mutate(Species = target_species[Species_idx],
+                    Station = unique_stations[Station_idx]) %>%
       dplyr::select(-Station_idx, -Species_idx)
   }
 
-  # --- 回帰係数の集約（共変量がある場合のみ） ---
-  # beta_stay（滞在時間の回帰係数）
-  if (nPreds_stay > 1) {
-    summary_beta_stay <- MCMCvis::MCMCsummary(
-      MCMCvis::MCMCchains(mcmc_samples, mcmc.list = TRUE, params = "beta_stay"),
-      round = 4
-    ) %>%
-      tibble::rownames_to_column(var = "Variable") %>%
-      tibble::as_tibble() %>%
-      dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`) %>%
-      dplyr::mutate(
-        coef_name = colnames(X_stay),   # 変数名を付与
-        Variable  = paste0("beta_stay[", seq_len(nPreds_stay), "] (", coef_name, ")"),
-        Species   = "All",
-        Station   = "All"
-      ) %>%
-      dplyr::select(-coef_name)
-  }
-
-  # beta_density（密度の回帰係数）
-  if (nPreds_density > 1) {
-    summary_beta_density <- MCMCvis::MCMCsummary(
-      MCMCvis::MCMCchains(mcmc_samples, mcmc.list = TRUE, params = "beta_density"),
-      round = 4
-    ) %>%
-      tibble::rownames_to_column(var = "Variable") %>%
-      tibble::as_tibble() %>%
-      dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`) %>%
-      dplyr::mutate(
-        coef_name = colnames(X_density),
-        Variable  = paste0("beta_density[", seq_len(nPreds_density), "] (", coef_name, ")"),
-        Species   = "All",
-        Station   = "All"
-      ) %>%
-      dplyr::select(-coef_name)
-  }
-
-  # beta_enter（進入率の回帰係数）：N_group カテゴリ × nPreds_alpha の行列
-  if (nPreds_alpha > 1) {
-    summary_beta_enter <- MCMCvis::MCMCsummary(
-      MCMCvis::MCMCchains(mcmc_samples, mcmc.list = TRUE, params = "beta_enter"),
-      round = 4
-    ) %>%
-      tibble::rownames_to_column(var = "Variable") %>%
-      tibble::as_tibble() %>%
-      dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`) %>%
-      # beta_enter[k, g] → k=係数インデックス, g=カテゴリインデックス
-      tidyr::extract(Variable, into = c("k_idx", "g_idx"),
-                     regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
-      dplyr::mutate(
-        coef_name = colnames(X_alpha)[k_idx],
-        Variable  = paste0("beta_enter[", k_idx, ",", g_idx, "] (", coef_name, ", cat", g_idx - 1, ")"),
-        Species   = "All",
-        Station   = "All"
-      ) %>%
-      dplyr::select(-k_idx, -g_idx, -coef_name)
-  }
-
-  # --- 最終結果の結合とCVの計算 ---
+  # --- 種ごとの実効係数（beta + species_effect）---
+  # nPreds > 1 の場合のみ生成する（切片のみモデルでは不要）
   summary_coef_list <- list(summary_density, summary_stay, summary_pass)
-  if (nPreds_stay    > 1) summary_coef_list <- c(summary_coef_list, list(summary_beta_stay))
-  if (nPreds_density > 1) summary_coef_list <- c(summary_coef_list, list(summary_beta_density))
-  if (nPreds_alpha   > 1) summary_coef_list <- c(summary_coef_list, list(summary_beta_enter))
 
+  if (nPreds_stay    > 1) {
+    summary_coef_list <- c(summary_coef_list,
+                           list(make_species_coef_summary("stay")))
+  }
+  if (nPreds_density > 1) {
+    summary_coef_list <- c(summary_coef_list,
+                           list(make_species_coef_summary("density")))
+  }
+  if (nPreds_alpha   > 1) {
+    summary_coef_list <- c(summary_coef_list,
+                           list(make_species_coef_summary("enter")))
+  }
+
+  # --- 最終結合・CV計算（cv は絶対値） ---
   summary_mean <- dplyr::bind_rows(summary_coef_list) %>%
-    dplyr::mutate(cv = sd / mean) %>%
+    dplyr::mutate(cv = abs(sd / mean)) %>%
     dplyr::select(Species, Station, Variable, mean, sd, cv, lower, median, upper, Rhat, n.eff)
 
-  # -------------------------------------------------------------------------
-  # 正規化パラメータを名前付きリストとして整形して返す
-  # colnames を付与することで、どの変数が何番目かを明示する
-  # -------------------------------------------------------------------------
-  names(scaling_stay$center)    <- colnames(X_stay)
-  names(scaling_stay$scale)     <- colnames(X_stay)
-  names(scaling_density$center) <- colnames(X_density)
-  names(scaling_density$scale)  <- colnames(X_density)
-  names(scaling_alpha$center)   <- colnames(X_alpha)
-  names(scaling_alpha$scale)    <- colnames(X_alpha)
+  # --- 正規化パラメータの整形 ---
+  names(scaling_stay$center)     <- colnames(X_stay)
+  names(scaling_stay$scale)      <- colnames(X_stay)
+  names(scaling_density$center)  <- colnames(X_density)
+  names(scaling_density$scale)   <- colnames(X_density)
+  names(scaling_alpha$center)    <- colnames(X_alpha)
+  names(scaling_alpha$scale)     <- colnames(X_alpha)
 
   scaling_params <- list(
     stay    = scaling_stay,
@@ -1182,13 +1237,16 @@ bayes_rest_multi <- function(formula_stay,
     enter   = scaling_alpha
   )
 
+  # --- 返り値の構築 ---
   density_result <- list(
-    WAIC = waic,
+    WAIC           = waic,
     summary_result = summary_mean,
-    samples = mcmc_samples,
-    scaling_params = scaling_params   # <-- 正規化パラメータを追加
+    samples        = mcmc_samples,
+    scaling_params = scaling_params
   )
   class(density_result) <- "ResultDensity"
+
+  return(density_result)
 
   return(density_result)
 } # 関数 bayes_rest_multi の終端
