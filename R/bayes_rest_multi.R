@@ -995,7 +995,6 @@ bayes_rest_multi <- function(formula_stay,
   lppd <- sum(log(colMeans(exp(loglfall))))
   p.waic <- sum(apply(loglfall, 2, var))
   waic <- (-2) * lppd + 2 * p.waic
-
   # 結果の集約 -------------------------------------------------------------------
 
   # --- 共変量やランダム効果がない（全体共通）かの判定 ---
@@ -1098,8 +1097,71 @@ bayes_rest_multi <- function(formula_stay,
       dplyr::select(-Station_idx, -Species_idx)
   }
 
+  # --- 回帰係数の集約（共変量がある場合のみ） ---
+  # beta_stay（滞在時間の回帰係数）
+  if (nPreds_stay > 1) {
+    summary_beta_stay <- MCMCvis::MCMCsummary(
+      MCMCvis::MCMCchains(mcmc_samples, mcmc.list = TRUE, params = "beta_stay"),
+      round = 4
+    ) %>%
+      tibble::rownames_to_column(var = "Variable") %>%
+      tibble::as_tibble() %>%
+      dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`) %>%
+      dplyr::mutate(
+        coef_name = colnames(X_stay),   # 変数名を付与
+        Variable  = paste0("beta_stay[", seq_len(nPreds_stay), "] (", coef_name, ")"),
+        Species   = "All",
+        Station   = "All"
+      ) %>%
+      dplyr::select(-coef_name)
+  }
+
+  # beta_density（密度の回帰係数）
+  if (nPreds_density > 1) {
+    summary_beta_density <- MCMCvis::MCMCsummary(
+      MCMCvis::MCMCchains(mcmc_samples, mcmc.list = TRUE, params = "beta_density"),
+      round = 4
+    ) %>%
+      tibble::rownames_to_column(var = "Variable") %>%
+      tibble::as_tibble() %>%
+      dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`) %>%
+      dplyr::mutate(
+        coef_name = colnames(X_density),
+        Variable  = paste0("beta_density[", seq_len(nPreds_density), "] (", coef_name, ")"),
+        Species   = "All",
+        Station   = "All"
+      ) %>%
+      dplyr::select(-coef_name)
+  }
+
+  # beta_enter（進入率の回帰係数）：N_group カテゴリ × nPreds_alpha の行列
+  if (nPreds_alpha > 1) {
+    summary_beta_enter <- MCMCvis::MCMCsummary(
+      MCMCvis::MCMCchains(mcmc_samples, mcmc.list = TRUE, params = "beta_enter"),
+      round = 4
+    ) %>%
+      tibble::rownames_to_column(var = "Variable") %>%
+      tibble::as_tibble() %>%
+      dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`) %>%
+      # beta_enter[k, g] → k=係数インデックス, g=カテゴリインデックス
+      tidyr::extract(Variable, into = c("k_idx", "g_idx"),
+                     regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
+      dplyr::mutate(
+        coef_name = colnames(X_alpha)[k_idx],
+        Variable  = paste0("beta_enter[", k_idx, ",", g_idx, "] (", coef_name, ", cat", g_idx - 1, ")"),
+        Species   = "All",
+        Station   = "All"
+      ) %>%
+      dplyr::select(-k_idx, -g_idx, -coef_name)
+  }
+
   # --- 最終結果の結合とCVの計算 ---
-  summary_mean <- dplyr::bind_rows(summary_density, summary_stay, summary_pass) %>%
+  summary_coef_list <- list(summary_density, summary_stay, summary_pass)
+  if (nPreds_stay    > 1) summary_coef_list <- c(summary_coef_list, list(summary_beta_stay))
+  if (nPreds_density > 1) summary_coef_list <- c(summary_coef_list, list(summary_beta_density))
+  if (nPreds_alpha   > 1) summary_coef_list <- c(summary_coef_list, list(summary_beta_enter))
+
+  summary_mean <- dplyr::bind_rows(summary_coef_list) %>%
     dplyr::mutate(cv = sd / mean) %>%
     dplyr::select(Species, Station, Variable, mean, sd, cv, lower, median, upper, Rhat, n.eff)
 
