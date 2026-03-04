@@ -135,8 +135,6 @@ bayes_rest_multi <- function(formula_stay,
   nb <- warmup
   nmcmc <- (iter - warmup) * chains / thin
 
-
-  cat("Running MCMC sampling. Please wait...\n")
   bit.test <- function(number, n) {
     (number %/% (2^n)) %% 2
   }
