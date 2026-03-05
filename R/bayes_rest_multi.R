@@ -1062,7 +1062,7 @@ bayes_rest_multi <- function(formula_stay,
   is_density_global <- check_no_cov(formula_density)
   is_stay_global    <- check_no_cov(formula_stay) && (is.null(random_effect_stay) || random_effect_stay == "NULL")
   is_enter_global   <- if (exists("formula_enter")) check_no_cov(formula_enter) else TRUE
-  is_pass_global    <- (is_density_global && is_stay_global) || is_enter_global
+  is_pass_global <- is_enter_global
 
   # --- mcmc_samples の構築 ---
   mcmc_samples <- coda::as.mcmc.list(chain_output)
