@@ -219,16 +219,6 @@ bayes_rest_2 <- function(formula_stay,
     return(length(vars) == 0) # 変数が0個（~1など）ならTRUE
   }
 
-  # (中略)
-
-  # ベストモデルのフォーミュラを使って共通判定を行う
-  formula_density_best <- formula_density_all[[best.model]]
-
-  is_density_global <- check_no_cov(formula_density_best)
-  is_stay_global    <- check_no_cov(formula_stay) && (is.null(random_effect_stay) || random_effect_stay == "NULL")
-
-  # formula_enterが引数として存在するか（RAD-RESTの場合）で分岐
-  is_enter_global <- if (model == "RAD-REST") check_no_cov(formula_enter) else TRUE
 
   # Prepare dataset ---------------------------------------------------------------
 
@@ -1253,8 +1243,16 @@ bayes_rest_2 <- function(formula_stay,
       )
     }
   }
-  # 結果集計 --------------------------------------------------------------------
+  # 結果集計 ----------------------------------------------
 
+  # ベストモデルのフォーミュラを使って共通判定を行う
+  formula_density_best <- formula_density_all[[best.model]]
+
+  is_density_global <- check_no_cov(formula_density_best)
+  is_stay_global    <- check_no_cov(formula_stay) && (is.null(random_effect_stay) || random_effect_stay == "NULL")
+
+  # formula_enterが引数として存在するか（RAD-RESTの場合）で分岐
+  is_enter_global <- if (model == "RAD-REST") check_no_cov(formula_enter) else TRUE
 
   if(is.null(random_effect_stay)) random_effect_stay <- "NULL"
 
