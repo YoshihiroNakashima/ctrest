@@ -209,6 +209,26 @@ bayes_rest_2 <- function(formula_stay,
     stop("`stay_data` must contain the following columns: 'Station', 'Species', 'Stay', and 'Cens'.")
   }
 
+  # --- 共変量やランダム効果がない（全体共通）かの判定 ---
+  check_no_cov <- function(f) {
+    if (is.null(f)) return(TRUE)
+    # 確実にフォーミュラクラスにする
+    f <- stats::as.formula(f)
+    # 右辺の変数を抽出
+    vars <- all.vars(f[[length(f)]])
+    return(length(vars) == 0) # 変数が0個（~1など）ならTRUE
+  }
+
+  # (中略)
+
+  # ベストモデルのフォーミュラを使って共通判定を行う
+  formula_density_best <- formula_density_all[[best.model]]
+
+  is_density_global <- check_no_cov(formula_density_best)
+  is_stay_global    <- check_no_cov(formula_stay) && (is.null(random_effect_stay) || random_effect_stay == "NULL")
+
+  # formula_enterが引数として存在するか（RAD-RESTの場合）で分岐
+  is_enter_global <- if (model == "RAD-REST") check_no_cov(formula_enter) else TRUE
 
   # Prepare dataset ---------------------------------------------------------------
 
@@ -934,10 +954,11 @@ bayes_rest_2 <- function(formula_stay,
           # 共変量 (X_enter) に対応する係数 beta_enter の事前分布
           for (g in 1:N_group) {
             for (k in 1:nPreds_enter) {
-              beta_enter[k, g] ~ dnorm(0, sd = 100)
+              # 【修正前】 beta_enter[k, g] ~ dnorm(0, sd = 100)
+              # 【修正後】 sd を 5 にして発散を防ぐ
+              beta_enter[k, g] ~ dnorm(0, sd = 5)
             }
           }
-
           # カメラ地点ごとに期待値を計算
           for (i in 1:N_station) {
 
@@ -1328,7 +1349,8 @@ bayes_rest_2 <- function(formula_stay,
   density_result <- list(
     WAIC = WAIC,
     summary_result = summary_mean,
-    samples = mcmc_samples_best
+    samples = mcmc_samples_best,
+    tidy_samples = tidy_samples_best # ←これを追加しておくと便利
   )
 
   if(activity_estimation == "mixture") {
