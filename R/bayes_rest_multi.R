@@ -434,6 +434,20 @@ bayes_rest_multi <- function(formula_stay,
     stop(paste0("Input family type(", stay_family, ") is incorrect."))
   }
 
+  # =========================================================================
+  # 1. 基本的な次元（N_stationなど）を先に定義する
+  # =========================================================================
+  N_station_species <- nrow(station_effort_data)
+  N_station <- length(unique(station_effort_data$Station))
+  nSpecies <- length(target_species)
+
+  station.id <- station_effort_data %>%
+    arrange(Species, Station) %>%
+    pull(Station)
+
+  # =========================================================================
+  # 2. Stay（観測データレベル）のデータ準備と標準化
+  # =========================================================================
   # Extract variable names for stay
   vars_stay <- all.vars(formula_stay)
   response_stay <- vars_stay[1]
@@ -449,12 +463,20 @@ bayes_rest_multi <- function(formula_stay,
   scaled_stay   <- standardize_design_matrix(X_stay_raw)
   X_stay        <- scaled_stay$X
   scaling_stay  <- list(center = scaled_stay$center, scale = scaled_stay$scale)
-  if (ncol(X_stay) > 1) {
+  nPreds_stay   <- ncol(X_stay)
+  if (nPreds_stay > 1) {
     cat("Covariates in formula_stay have been standardized (mean=0, sd=1).\n")
   }
 
+  # stay関連の変数整理
+  names(stay) <- NULL
+  c_time <- stay
+  c_time[is.censored == 0] <- c_time[is.censored == 0] + 1
+  stay[is.censored == 1] <- NA
+  N_stay <- length(stay)
+
   # =========================================================================
-  # 【ここから追加】X_stay_station の作成（修正版）
+  # 3. Stay（ステーションレベル）のデータ準備（X_stay_station）
   # =========================================================================
   # formula_stay から応答変数 (Stay) を取り除き、右辺の共変量だけにする
   formula_stay_rhs <- delete.response(terms(as.formula(formula_stay)))
@@ -463,10 +485,10 @@ bayes_rest_multi <- function(formula_stay,
   model_frame_stay_st <- model.frame(formula_stay_rhs, station_effort_data)
   X_stay_station_raw  <- model.matrix(formula_stay_rhs, model_frame_stay_st)
 
-  # 最初のN_station行を抽出
+  # 最初のN_station行を抽出（ここで上で定義した N_station を使用）
   X_stay_station_raw <- X_stay_station_raw[1:N_station , , drop = FALSE]
 
-  # 【超重要】X_stay と全く同じ基準（平均と標準偏差）で標準化する
+  # X_stay と全く同じ基準（平均と標準偏差）で標準化する
   X_stay_station <- scale(X_stay_station_raw,
                           center = scaling_stay$center,
                           scale = scaling_stay$scale)
@@ -475,8 +497,10 @@ bayes_rest_multi <- function(formula_stay,
   X_stay_station <- matrix(as.numeric(X_stay_station),
                            nrow = N_station,
                            ncol = ncol(X_stay_station_raw))
-  # =========================================================================
 
+  # =========================================================================
+  # 4. その他のモデリング変数の準備
+  # =========================================================================
   # N of random effects
   if (!is.null(random_effect_stay)) {
     levels <- unique(stay_data_join[[random_effect_stay]])
@@ -485,26 +509,10 @@ bayes_rest_multi <- function(formula_stay,
     nLevels_stay <- 0
   }
 
-  # N of covariates
-  N_station_species <- nrow(station_effort_data)
-  station.id <- station_effort_data %>%
-    arrange(Species, Station) %>%
-    pull(Station)
-
-  N_station <- length(unique(station_effort_data$Station))
-  nPreds_stay <- ncol(X_stay)
-
-  names(stay) <- NULL
-  c_time <- stay
-  c_time[is.censored == 0] <- c_time[is.censored == 0] + 1
-  stay[is.censored == 1] <- NA
-  N_stay <- length(stay)
-
   y <- station_effort_data %>% dplyr::select(starts_with("y_")) %>% as.matrix()
   N_judge <- apply(y, 1, sum)
   N_group <- ncol(y)
   N_detection <- station_effort_data %>% pull(N)
-  nSpecies <- length(target_species)
 
   if(activity_estimation == "kernel") {
     activity_proportion <- numeric(0)
@@ -522,7 +530,7 @@ bayes_rest_multi <- function(formula_stay,
   vars_enter <- all.vars(formula_enter)
   predictors_enter <- vars_enter
 
-  # MCMCの計算結果を格納するためのリスト等（ループが無くなるためシンプルな構成でOKです）
+  # MCMCの計算結果を格納するためのリスト等
   samples <- list()
   density_estimates <- list()
 
@@ -565,10 +573,19 @@ bayes_rest_multi <- function(formula_stay,
   # 地点IDの作成 (Station列を使用)
   station_id_ey <- station_effort_data %>% pull(Station) %>% factor() %>% as.numeric()
 
+  # =========================================================================
+  # 5. Stan/JAGSへ渡すデータリストの構築
+  # =========================================================================
   data_density <- list(stay = stay, is.censored = is.censored, y = y, N_judge = N_judge, N_detection_matrix = N_detection_matrix)
 
   if(nPreds_density > 1) data_density$X_density <- X_density
-  if(nPreds_alpha > 1) data_density$X_alpha <- X_alpha
+  if(nPreds_alpha > 1)   data_density$X_alpha <- X_alpha
+
+  # stayの共変量がある場合は X_stay と X_stay_station の両方を渡す
+  if (nPreds_stay > 1) {
+    data_density$X_stay         <- X_stay
+    data_density$X_stay_station <- X_stay_station
+  }
 
   cons_density <- list(
     N_stay = N_stay,
@@ -587,6 +604,7 @@ bayes_rest_multi <- function(formula_stay,
     nPreds_density = nPreds_density,
     nPreds_alpha = nPreds_alpha
   )
+
   if(activity_estimation == "kernel") {
     cons_density$activity_proportion <- activity_proportion
   }
@@ -596,15 +614,6 @@ bayes_rest_multi <- function(formula_stay,
     cons_density$nLevels_stay <- nLevels_stay
   } else {
     cons_density$nLevels_stay <- 0
-  }
-
-  if (nPreds_stay > 1) {
-    data_density$X_stay <- X_stay
-  }
-  # 最後の方のリスト格納部分
-  if (nPreds_stay > 1) {
-    data_density$X_stay <- X_stay
-    data_density$X_stay_station <- X_stay_station # ← これを追加
   }
   # code <- nimbleCode({
   #
