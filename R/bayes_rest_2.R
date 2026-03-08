@@ -1030,17 +1030,25 @@ bayes_rest_2 <- function(formula_stay,
         stay_mean_log <- log(mean(stay_data$Stay, na.rm = TRUE))
         beta_stay_init <- stats::rnorm(nPreds_stay, 0, 0.1)
         beta_stay_init[1] <- stay_mean_log
+
+        # --- 密度の初期値も切片だけ現実的な値にする ---
+        beta_density_init <- stats::rnorm(nPreds_density, 0, 0.1)
+
+        # 仮に「100」くらいの密度が想定されるなら log(100) を設定する
+        # （単位に合わせて、0.1 や 10 など、常識的な値に変更してください）
+        expected_density <- 1.0
+        beta_density_init[1] <- log(expected_density)
+        # ----------------------------------------------
+
         common_inits <- list(
           beta_stay = beta_stay_init,
           stay = ifelse(censored == 0, NA, c_time + stats::runif(N_stay, 0.1, 2.0)),
           theta_stay = stats::runif(1, 0.8, 1.2),
-          beta_density = stats::rnorm(nPreds_density, 0, 0.1),
+          beta_density = beta_density_init, # ← ここを書き換え
           beta_enter = matrix(stats::rnorm(nPreds_enter * N_group, 0, 0.1), nrow = nPreds_enter, ncol = N_group),
           size = stats::runif(1, 0.8, 1.2)
-          # 【修正点】決定論的ノード(計算結果が入る場所)である mean_pass の初期値を削除
         )
 
-        # 【修正点】Rの環境に無い変数にアクセスして起きるエラーを防ぐため判定を nLevels_stay に変更
         if (nLevels_stay > 0) {
           common_inits$random_effect_stay <- stats::runif(nLevels_stay, -0.1, 0.1)
           common_inits$sigma_stay <- stats::runif(1, 0.8, 1.5)
