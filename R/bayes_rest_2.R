@@ -287,7 +287,7 @@ bayes_rest_2 <- function(formula_stay,
     constants_mix <- list(N = N, C = C, dens.x = dens.x, ndens = ndens)
     data_mix      <- list(act_data = act_data)
 
-    code_mix <- nimble::nimbleCode({
+    code_mix <- nimbleCode({
       for (k in 1:(C - 1)) {
         v[k] ~ dbeta(1, alpha)
       }
@@ -324,7 +324,7 @@ bayes_rest_2 <- function(formula_stay,
     }
 
     # von Mises カスタム分布（ワーカー共有用）
-    dvonMises_mix <- nimble::nimbleFunction(
+    dvonMises_mix <- nimbleFunction(
       run = function(x = double(0), kappa = double(0), mu = double(0), log = integer(0)) {
         returnType(double(0))
         ccrit <- 1E-6; s <- 1; i <- 1; inc <- 1; satisfied <- FALSE
@@ -339,14 +339,14 @@ bayes_rest_2 <- function(formula_stay,
         if (log) return(log(prob)) else return(prob)
       }
     )
-    rvonMises_mix <- nimble::nimbleFunction(
+    rvonMises_mix <- nimbleFunction(
       run = function(n = integer(0), kappa = double(0), mu = double(0)) {
         returnType(double(0))
         return(0)
       }
     )
 
-    suppressMessages(nimble::registerDistributions(list(
+    suppressMessages(registerDistributions(list(
       dvonMises = list(
         BUGSdist = "dvonMises(kappa, mu)",
         types    = c("value = double(0)", "kappa = double(0)", "mu = double(0)"),
@@ -355,13 +355,13 @@ bayes_rest_2 <- function(formula_stay,
     )))
 
     run_MCMC_vonMises <- function(info, data, constants, code, params, ni, nt, nb) {
-      myModel    <- nimble::nimbleModel(code = code, data = data,
+      myModel    <- nimbleModel(code = code, data = data,
                                         constants = constants, inits = info$inits)
-      CmyModel   <- nimble::compileNimble(myModel)
-      configModel <- nimble::configureMCMC(myModel, monitors = params)
-      myMCMC     <- nimble::buildMCMC(configModel, monitors = params)
-      CmyMCMC    <- nimble::compileNimble(myMCMC)
-      nimble::runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt,
+      CmyModel   <- compileNimble(myModel)
+      configModel <- configureMCMC(myModel, monitors = params)
+      myMCMC     <- buildMCMC(configModel, monitors = params)
+      CmyMCMC    <- compileNimble(myMCMC)
+      runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt,
                       nchains = 1, setSeed = info$seed, samplesAsCodaMCMC = TRUE)
     }
 
@@ -417,7 +417,7 @@ bayes_rest_2 <- function(formula_stay,
     waic          <- numeric(0)
 
     # von Mises カスタム分布（REST 並列用）
-    dvonMises <- nimble::nimbleFunction(
+    dvonMises <- nimbleFunction(
       run = function(x = double(0), kappa = double(0), mu = double(0), log = integer(0)) {
         returnType(double(0))
         ccrit <- 1E-6; s <- 1; i <- 1; inc <- 1; satisfied <- FALSE
@@ -432,7 +432,7 @@ bayes_rest_2 <- function(formula_stay,
         if (log) return(log(prob)) else return(prob)
       }
     )
-    rvonMises <- nimble::nimbleFunction(
+    rvonMises <- nimbleFunction(
       run = function(n = integer(0), kappa = double(0), mu = double(0)) {
         returnType(double(0))
         return(0)
@@ -478,7 +478,7 @@ bayes_rest_2 <- function(formula_stay,
         data_REST$X_stay <- X_stay
       }
 
-      Model_REST <- nimble::nimbleCode({
+      Model_REST <- nimbleCode({
 
         # --- 滞在時間 ---
         for (i in 1:N_stay) {
@@ -631,7 +631,7 @@ bayes_rest_2 <- function(formula_stay,
 
       # 並列 MCMC 実行関数
       run_MCMC_REST <- function(info, data, constants, code, params, ni, nt, nb) {
-        suppressMessages(nimble::registerDistributions(list(
+        suppressMessages(registerDistributions(list(
           dvonMises = list(
             BUGSdist = "dvonMises(kappa, mu)",
             types    = c("value = double(0)", "kappa = double(0)", "mu = double(0)"),
@@ -639,10 +639,10 @@ bayes_rest_2 <- function(formula_stay,
           )
         )))
 
-        myModel     <- nimble::nimbleModel(code = code, data = data,
+        myModel     <- nimbleModel(code = code, data = data,
                                            constants = constants, inits = info$inits)
-        CmyModel    <- nimble::compileNimble(myModel)
-        configModel <- nimble::configureMCMC(myModel, monitors = params)
+        CmyModel    <- compileNimble(myModel)
+        configModel <- configureMCMC(myModel, monitors = params)
 
         # [FIX 12] mixture 時のサンプラー登録を control リスト方式に統一
         if (constants$activity_estimation == "mixture") {
@@ -654,10 +654,10 @@ bayes_rest_2 <- function(formula_stay,
           )
         }
 
-        myMCMC  <- nimble::buildMCMC(configModel, monitors = params)
-        CmyMCMC <- nimble::compileNimble(myMCMC, project = myModel)
+        myMCMC  <- buildMCMC(configModel, monitors = params)
+        CmyMCMC <- compileNimble(myMCMC, project = myModel)
 
-        nimble::runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt,
+        runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt,
                         nchains = 1, setSeed = info$seed, samplesAsCodaMCMC = TRUE)
       }
 
@@ -764,7 +764,7 @@ bayes_rest_2 <- function(formula_stay,
     }
 
     # カスタム分布定義
-    ddirchmulti <- nimble::nimbleFunction(
+    ddirchmulti <- nimbleFunction(
       run = function(x = double(1), alpha = double(1), size = double(0), log = integer(0)) {
         returnType(double(0))
         logProb <- lgamma(size + 1) - sum(lgamma(x + 1)) + lgamma(sum(alpha)) -
@@ -773,15 +773,15 @@ bayes_rest_2 <- function(formula_stay,
         if (log) return(logProb) else return(exp(logProb))
       }
     )
-    rdirchmulti <- nimble::nimbleFunction(
+    rdirchmulti <- nimbleFunction(
       run = function(n = integer(0), alpha = double(1), size = double(0)) {
         returnType(double(1))
         if (n != 1) print("rdirchmulti only allows n = 1; using n = 1.")
-        p <- nimble::rdirch(1, alpha)
-        return(nimble::rmulti(1, size = size, prob = p))
+        p <- rdirch(1, alpha)
+        return(rmulti(1, size = size, prob = p))
       }
     )
-    dvonMises <- nimble::nimbleFunction(
+    dvonMises <- nimbleFunction(
       run = function(x = double(0), kappa = double(0), mu = double(0), log = integer(0)) {
         returnType(double(0))
         ccrit <- 1E-6; s <- 1; i <- 1; inc <- 1; satisfied <- FALSE
@@ -796,7 +796,7 @@ bayes_rest_2 <- function(formula_stay,
         if (log) return(log(prob)) else return(prob)
       }
     )
-    rvonMises <- nimble::nimbleFunction(
+    rvonMises <- nimbleFunction(
       run = function(n = integer(0), kappa = double(0), mu = double(0)) {
         returnType(double(0))
         return(0)
@@ -815,7 +815,7 @@ bayes_rest_2 <- function(formula_stay,
         pqAvail  = FALSE
       )
     )
-    suppressMessages(nimble::registerDistributions(dist_registration_list))
+    suppressMessages(registerDistributions(dist_registration_list))
 
     for (k in seq_along(formula_density_all)) {
 
@@ -865,7 +865,7 @@ bayes_rest_2 <- function(formula_stay,
         cons_REST$group_stay_station <- as.numeric(factor(station_effort_data[[random_effect_stay]], levels = re_levels))
       }
 
-      Model_RAD_REST <- nimble::nimbleCode({
+      Model_RAD_REST <- nimbleCode({
 
         # --- 滞在時間 ---
         for (i in 1:N_stay) {
@@ -1046,10 +1046,10 @@ bayes_rest_2 <- function(formula_stay,
 
       # 並列 MCMC 実行関数
       run_MCMC_RAD <- function(info, data, constants, code, params, ni, nt, nb, is_mixture) {
-        myModel     <- nimble::nimbleModel(code = code, data = data,
+        myModel     <- nimbleModel(code = code, data = data,
                                            constants = constants, inits = info$inits)
-        CmyModel    <- nimble::compileNimble(myModel)
-        configModel <- nimble::configureMCMC(myModel, monitors = params)
+        CmyModel    <- compileNimble(myModel)
+        configModel <- configureMCMC(myModel, monitors = params)
 
         # [FIX 12] control リスト方式で統一
         if (is_mixture) {
@@ -1061,10 +1061,10 @@ bayes_rest_2 <- function(formula_stay,
           )
         }
 
-        myMCMC  <- nimble::buildMCMC(configModel)
-        CmyMCMC <- nimble::compileNimble(myMCMC, project = myModel)
+        myMCMC  <- buildMCMC(configModel)
+        CmyMCMC <- compileNimble(myMCMC, project = myModel)
 
-        nimble::runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt,
+        runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt,
                         nchains = 1, setSeed = info$seed, samplesAsCodaMCMC = TRUE)
       }
 
@@ -1106,7 +1106,7 @@ bayes_rest_2 <- function(formula_stay,
                               envir = environment())
       parallel::clusterEvalQ(this_cluster, {
         library(nimble)
-        suppressMessages(nimble::registerDistributions(dist_registration_list))
+        suppressMessages(registerDistributions(dist_registration_list))
       })
 
       chain_output <- parallel::parLapply(
