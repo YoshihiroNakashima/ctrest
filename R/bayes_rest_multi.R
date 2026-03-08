@@ -454,13 +454,16 @@ bayes_rest_multi <- function(formula_stay,
   }
 
   # =========================================================================
-  # 【ここから追加】X_stay_station の作成
+  # 【ここから追加】X_stay_station の作成（修正版）
   # =========================================================================
-  # 全カメラを網羅している station_effort_data からステーションレベルの共変量を抽出
-  model_frame_stay_st <- model.frame(formula_stay, station_effort_data)
-  X_stay_station_raw <- model.matrix(as.formula(formula_stay), model_frame_stay_st)
+  # formula_stay から応答変数 (Stay) を取り除き、右辺の共変量だけにする
+  formula_stay_rhs <- delete.response(terms(as.formula(formula_stay)))
 
-  # 最初のN_station行を抽出（X_density等と同じロジック）
+  # 応答変数を除いた数式を使って、station_effort_data から共変量を抽出
+  model_frame_stay_st <- model.frame(formula_stay_rhs, station_effort_data)
+  X_stay_station_raw  <- model.matrix(formula_stay_rhs, model_frame_stay_st)
+
+  # 最初のN_station行を抽出
   X_stay_station_raw <- X_stay_station_raw[1:N_station , , drop = FALSE]
 
   # 【超重要】X_stay と全く同じ基準（平均と標準偏差）で標準化する
@@ -472,6 +475,7 @@ bayes_rest_multi <- function(formula_stay,
   X_stay_station <- matrix(as.numeric(X_stay_station),
                            nrow = N_station,
                            ncol = ncol(X_stay_station_raw))
+  # =========================================================================
 
   # N of random effects
   if (!is.null(random_effect_stay)) {
