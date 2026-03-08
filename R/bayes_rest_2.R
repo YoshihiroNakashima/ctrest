@@ -941,37 +941,54 @@ bayes_rest_2 <- function(formula_stay,
 
           # 2. Focal area 侵入回数 (y) のモデリング----
 
+          # --- 【修正】ベースラインの固定とパラメータ分離 ---
+          # 集中度パラメータ（値が大きいほど多項分布に近づき、小さいほど過分散）
+          theta_enter ~ dgamma(1, 0.1)
+
           # 共変量 (X_enter) に対応する係数 beta_enter の事前分布
-          for (g in 1:N_group) {
+          # g=1 はベースラインとして扱うため、g=2 から推定する
+          for (g in 2:N_group) {
             for (k in 1:nPreds_enter) {
-              # 【修正前】 beta_enter[k, g] ~ dnorm(0, sd = 100)
-              # 【修正後】 sd を 5 にして発散を防ぐ
               beta_enter[k, g] ~ dnorm(0, sd = 5)
             }
           }
+
           # カメラ地点ごとに期待値を計算
           for (i in 1:N_station) {
 
-            # --- 次元エラー回避のための条件分岐 ---
+            # ベースライン (g = 1) は 1 ( = exp(0) ) に固定
+            phi[i, 1] <- 1
+
+            # g >= 2 について線形予測子を計算
             if (nPreds_enter == 1) {
-              for (g in 1:N_group) {
-                # スカラー演算
-                log(alpha_Dirichlet[i, g]) <- beta_enter[1, g] * X_enter[i, 1]
+              for (g in 2:N_group) {
+                log_phi[i, g] <- beta_enter[1, g] * X_enter[i, 1]
+                phi[i, g] <- exp(log_phi[i, g])
               }
             } else {
-              for (g in 1:N_group) {
-                # ベクトル演算 (inprod)
-                log(alpha_Dirichlet[i, g]) <- inprod(beta_enter[1:nPreds_enter, g], X_enter[i, 1:nPreds_enter])
+              for (g in 2:N_group) {
+                log_phi[i, g] <- inprod(beta_enter[1:nPreds_enter, g], X_enter[i, 1:nPreds_enter])
+                phi[i, g] <- exp(log_phi[i, g])
               }
             }
+
+            # 確率 (p_enter) に変換 (Softmax)
+            sum_phi[i] <- sum(phi[i, 1:N_group])
+            for (g in 1:N_group) {
+              p_enter[i, g] <- phi[i, g] / sum_phi[i]
+
+              # Dirichletのパラメータを「集中度 * 確率」で定義
+              alpha_Dirichlet[i, g] <- theta_enter * p_enter[i, g]
+            }
+
             # --------------------------------------------------
 
+            # sum(alpha_Dirichlet) は自動的に theta_enter と等しくなる
             alpha_sum[i] <- sum(alpha_Dirichlet[i, 1:N_group])
 
             # 各侵入回数の確率と、それに回数を乗じた期待値
             for (g in 1:N_group) {
-              p_expected[i, g] <- alpha_Dirichlet[i, g] / alpha_sum[i]
-              c_expected[i, g] <- p_expected[i, g] * (g - 1)
+              c_expected[i, g] <- p_enter[i, g] * (g - 1) # p_expected は p_enter に統合
             }
             # カメラ地点 i における侵入回数の期待値
             mean_pass[i] <- sum(c_expected[i, 1:N_group])
@@ -1027,32 +1044,48 @@ bayes_rest_2 <- function(formula_stay,
       )
 
       inits_f <- function() {
+        # 1. 滞在時間 (stay) モデルの初期値
         stay_mean_log <- log(mean(stay_data$Stay, na.rm = TRUE))
         beta_stay_init <- stats::rnorm(nPreds_stay, 0, 0.1)
         beta_stay_init[1] <- stay_mean_log
 
-        # --- 密度の初期値も切片だけ現実的な値にする ---
+        # 2. 密度 (density) モデルの初期値
         beta_density_init <- stats::rnorm(nPreds_density, 0, 0.1)
-
-        # 仮に「100」くらいの密度が想定されるなら log(100) を設定する
-        # （単位に合わせて、0.1 や 10 など、常識的な値に変更してください）
+        # 仮の期待密度（単位に合わせて常識的な値に変更してください）
         expected_density <- 5
         beta_density_init[1] <- log(expected_density)
-        # ----------------------------------------------
 
+        # 3. 侵入回数 (enter) モデルの初期値 【修正部分】
+        # まずすべての要素に小さな乱数を入れる
+        beta_enter_init <- matrix(stats::rnorm(nPreds_enter * N_group, 0, 0.1),
+                                  nrow = nPreds_enter, ncol = N_group)
+        # ベースライン (g = 1) の列は推定しないため、確実に 0 に固定する
+        beta_enter_init[, 1] <- 0
+
+        # 共通の初期値リストを作成
         common_inits <- list(
+          # stay 関連
           beta_stay = beta_stay_init,
           stay = ifelse(censored == 0, NA, c_time + stats::runif(N_stay, 0.1, 2.0)),
           theta_stay = stats::runif(1, 0.8, 1.2),
-          beta_density = beta_density_init, # ← ここを書き換え
-          beta_enter = matrix(stats::rnorm(nPreds_enter * N_group, 0, 0.1), nrow = nPreds_enter, ncol = N_group),
+
+          # density 関連
+          beta_density = beta_density_init,
+
+          # enter 関連 【修正部分】
+          beta_enter = beta_enter_init,          # 1列目を0にした行列を指定
+          theta_enter = stats::runif(1, 1, 5),   # 新規追加した集中度パラメータの初期値
+
+          # 検出 (detection) 関連
           size = stats::runif(1, 0.8, 1.2)
         )
 
+        # 滞在時間のランダムエフェクトがある場合の追加
         if (nLevels_stay > 0) {
           common_inits$random_effect_stay <- stats::runif(nLevels_stay, -0.1, 0.1)
           common_inits$sigma_stay <- stats::runif(1, 0.8, 1.5)
         }
+
         return(common_inits)
       }
 
