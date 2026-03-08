@@ -1091,18 +1091,40 @@ bayes_rest_multi <- function(formula_stay,
         }
         sigma_species_stay ~ T(dnorm(0, sd = 2), 0, )
 
-        # Alpha (Enter) Model
+        # Alpha (Enter) Model: 種ごとの集中度パラメータ
+        for (m in 1:nSpecies) {
+          theta_enter[m] ~ dgamma(1, 0.1)
+        }
+
+        # ベースライン (g = 1 つまり 0回) の切片は 0
         cutpoint[1] <- 0
-        for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
+        for (g in 2:N_group) {
+          # 各回数のベースライン確率（ゼロ過剰などを吸収できる）
+          cutpoint[g] ~ dnorm(0, sd = 5)
+        }
 
         if (nPreds_alpha == 1) {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-              for (g in 1:N_group) { log(alpha_mat[i, m, g]) <- cutpoint[g] + beta_enter[1] + species_effect_alpha[m, 1] }
-              alpha_sum[i, m] <- sum(alpha_mat[i, m, 1:N_group])
+
+              # 共変量と種効果による線形予測子 (グループgに依存しない共通の値)
+              eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
+
               for (g in 1:N_group) {
-                p_expected[i, m, g] <- alpha_mat[i, m, g] / alpha_sum[i, m]
+                # 【重要】回数 (g - 1) に比例して eta が効くようにする
+                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
+                phi[i, m, g] <- exp(log_phi[i, m, g])
+              }
+
+              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
+
+              for (g in 1:N_group) {
+                # 確率の計算
+                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
+
+                # 確率 * 集中度 = Dirichletのアルファ
+                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
               }
               mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
             }
@@ -1110,22 +1132,35 @@ bayes_rest_multi <- function(formula_stay,
         } else {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-              for (g in 1:N_group) { log(alpha_mat[i, m, g]) <- cutpoint[g] + inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha]) }
-              alpha_sum[i, m] <- sum(alpha_mat[i, m, 1:N_group])
+
+              # ベクトル演算による線形予測子
+              eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
+
               for (g in 1:N_group) {
-                p_expected[i, m, g] <- alpha_mat[i, m, g] / alpha_sum[i, m]
+                # 同様に回数 (g - 1) に比例させる
+                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
+                phi[i, m, g] <- exp(log_phi[i, m, g])
+              }
+
+              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
+
+              for (g in 1:N_group) {
+                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
+                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
               }
               mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
             }
           }
         }
 
-        # Priors for Alpha
+        # Priors for Alpha (元のシンプルな形に戻せます)
         for (k in 1:nPreds_alpha) {
           beta_enter[k] ~ dnorm(0, sd = 5)
           sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
+          for (m in 1:nSpecies) {
+            species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k])
+          }
         }
 
         # Model for y
@@ -1224,18 +1259,40 @@ bayes_rest_multi <- function(formula_stay,
         }
         sigma_species_stay ~ T(dnorm(0, sd = 2), 0, )
 
-        # Alpha (Enter) Model
+        # Alpha (Enter) Model: 種ごとの集中度パラメータ
+        for (m in 1:nSpecies) {
+          theta_enter[m] ~ dgamma(1, 0.1)
+        }
+
+        # ベースライン (g = 1 つまり 0回) の切片は 0
         cutpoint[1] <- 0
-        for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
+        for (g in 2:N_group) {
+          # 各回数のベースライン確率（ゼロ過剰などを吸収できる）
+          cutpoint[g] ~ dnorm(0, sd = 5)
+        }
 
         if (nPreds_alpha == 1) {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-              for (g in 1:N_group) { log(alpha_mat[i, m, g]) <- cutpoint[g] + beta_enter[1] + species_effect_alpha[m, 1] }
-              alpha_sum[i, m] <- sum(alpha_mat[i, m, 1:N_group])
+
+              # 共変量と種効果による線形予測子 (グループgに依存しない共通の値)
+              eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
+
               for (g in 1:N_group) {
-                p_expected[i, m, g] <- alpha_mat[i, m, g] / alpha_sum[i, m]
+                # 【重要】回数 (g - 1) に比例して eta が効くようにする
+                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
+                phi[i, m, g] <- exp(log_phi[i, m, g])
+              }
+
+              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
+
+              for (g in 1:N_group) {
+                # 確率の計算
+                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
+
+                # 確率 * 集中度 = Dirichletのアルファ
+                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
               }
               mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
             }
@@ -1243,22 +1300,35 @@ bayes_rest_multi <- function(formula_stay,
         } else {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-              for (g in 1:N_group) { log(alpha_mat[i, m, g]) <- cutpoint[g] + inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha]) }
-              alpha_sum[i, m] <- sum(alpha_mat[i, m, 1:N_group])
+
+              # ベクトル演算による線形予測子
+              eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
+
               for (g in 1:N_group) {
-                p_expected[i, m, g] <- alpha_mat[i, m, g] / alpha_sum[i, m]
+                # 同様に回数 (g - 1) に比例させる
+                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
+                phi[i, m, g] <- exp(log_phi[i, m, g])
+              }
+
+              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
+
+              for (g in 1:N_group) {
+                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
+                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
               }
               mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
             }
           }
         }
 
-        # Priors for Alpha
+        # Priors for Alpha (元のシンプルな形に戻せます)
         for (k in 1:nPreds_alpha) {
           beta_enter[k] ~ dnorm(0, sd = 5)
           sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
+          for (m in 1:nSpecies) {
+            species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k])
+          }
         }
 
         # Model for y
@@ -1268,7 +1338,6 @@ bayes_rest_multi <- function(formula_stay,
           loglike_obs_y[j]  <- ddirchmulti(y[j,      1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
           loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
         }
-
         # Model for N_detection
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
@@ -1358,18 +1427,40 @@ bayes_rest_multi <- function(formula_stay,
         }
         sigma_species_stay ~ T(dnorm(0, sd = 2), 0, )
 
-        # Alpha (Enter) Model
+        # Alpha (Enter) Model: 種ごとの集中度パラメータ
+        for (m in 1:nSpecies) {
+          theta_enter[m] ~ dgamma(1, 0.1)
+        }
+
+        # ベースライン (g = 1 つまり 0回) の切片は 0
         cutpoint[1] <- 0
-        for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
+        for (g in 2:N_group) {
+          # 各回数のベースライン確率（ゼロ過剰などを吸収できる）
+          cutpoint[g] ~ dnorm(0, sd = 5)
+        }
 
         if (nPreds_alpha == 1) {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-              for (g in 1:N_group) { log(alpha_mat[i, m, g]) <- cutpoint[g] + beta_enter[1] + species_effect_alpha[m, 1] }
-              alpha_sum[i, m] <- sum(alpha_mat[i, m, 1:N_group])
+
+              # 共変量と種効果による線形予測子 (グループgに依存しない共通の値)
+              eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
+
               for (g in 1:N_group) {
-                p_expected[i, m, g] <- alpha_mat[i, m, g] / alpha_sum[i, m]
+                # 【重要】回数 (g - 1) に比例して eta が効くようにする
+                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
+                phi[i, m, g] <- exp(log_phi[i, m, g])
+              }
+
+              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
+
+              for (g in 1:N_group) {
+                # 確率の計算
+                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
+
+                # 確率 * 集中度 = Dirichletのアルファ
+                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
               }
               mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
             }
@@ -1377,22 +1468,35 @@ bayes_rest_multi <- function(formula_stay,
         } else {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-              for (g in 1:N_group) { log(alpha_mat[i, m, g]) <- cutpoint[g] + inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha]) }
-              alpha_sum[i, m] <- sum(alpha_mat[i, m, 1:N_group])
+
+              # ベクトル演算による線形予測子
+              eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
+
               for (g in 1:N_group) {
-                p_expected[i, m, g] <- alpha_mat[i, m, g] / alpha_sum[i, m]
+                # 同様に回数 (g - 1) に比例させる
+                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
+                phi[i, m, g] <- exp(log_phi[i, m, g])
+              }
+
+              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
+
+              for (g in 1:N_group) {
+                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
+                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
               }
               mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
             }
           }
         }
 
-        # Priors for Alpha
+        # Priors for Alpha (元のシンプルな形に戻せます)
         for (k in 1:nPreds_alpha) {
           beta_enter[k] ~ dnorm(0, sd = 5)
           sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
+          for (m in 1:nSpecies) {
+            species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k])
+          }
         }
 
         # Model for y
@@ -1491,18 +1595,40 @@ bayes_rest_multi <- function(formula_stay,
         }
         sigma_species_stay ~ T(dnorm(0, sd = 2), 0, )
 
-        # Alpha (Enter) Model
+        # Alpha (Enter) Model: 種ごとの集中度パラメータ
+        for (m in 1:nSpecies) {
+          theta_enter[m] ~ dgamma(1, 0.1)
+        }
+
+        # ベースライン (g = 1 つまり 0回) の切片は 0
         cutpoint[1] <- 0
-        for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
+        for (g in 2:N_group) {
+          # 各回数のベースライン確率（ゼロ過剰などを吸収できる）
+          cutpoint[g] ~ dnorm(0, sd = 5)
+        }
 
         if (nPreds_alpha == 1) {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-              for (g in 1:N_group) { log(alpha_mat[i, m, g]) <- cutpoint[g] + beta_enter[1] + species_effect_alpha[m, 1] }
-              alpha_sum[i, m] <- sum(alpha_mat[i, m, 1:N_group])
+
+              # 共変量と種効果による線形予測子 (グループgに依存しない共通の値)
+              eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
+
               for (g in 1:N_group) {
-                p_expected[i, m, g] <- alpha_mat[i, m, g] / alpha_sum[i, m]
+                # 【重要】回数 (g - 1) に比例して eta が効くようにする
+                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
+                phi[i, m, g] <- exp(log_phi[i, m, g])
+              }
+
+              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
+
+              for (g in 1:N_group) {
+                # 確率の計算
+                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
+
+                # 確率 * 集中度 = Dirichletのアルファ
+                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
               }
               mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
             }
@@ -1510,22 +1636,35 @@ bayes_rest_multi <- function(formula_stay,
         } else {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-              for (g in 1:N_group) { log(alpha_mat[i, m, g]) <- cutpoint[g] + inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha]) }
-              alpha_sum[i, m] <- sum(alpha_mat[i, m, 1:N_group])
+
+              # ベクトル演算による線形予測子
+              eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
+
               for (g in 1:N_group) {
-                p_expected[i, m, g] <- alpha_mat[i, m, g] / alpha_sum[i, m]
+                # 同様に回数 (g - 1) に比例させる
+                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
+                phi[i, m, g] <- exp(log_phi[i, m, g])
+              }
+
+              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
+
+              for (g in 1:N_group) {
+                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
+                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
               }
               mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
             }
           }
         }
 
-        # Priors for Alpha
+        # Priors for Alpha (元のシンプルな形に戻せます)
         for (k in 1:nPreds_alpha) {
           beta_enter[k] ~ dnorm(0, sd = 5)
           sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
+          for (m in 1:nSpecies) {
+            species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k])
+          }
         }
 
         # Model for y
@@ -1535,7 +1674,6 @@ bayes_rest_multi <- function(formula_stay,
           loglike_obs_y[j]  <- ddirchmulti(y[j,      1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
           loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
         }
-
         # Model for N_detection
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
@@ -1607,6 +1745,7 @@ bayes_rest_multi <- function(formula_stay,
       sd_species_density     = runif(1, 0.01, 2),
 
       # --- alpha (enter) ---
+      theta_enter          = runif(nSpecies, 1, 5),    # ←★これを追加！
       cutpoint             = c(NA, rnorm(N_group - 1, 0, 0.5)),
       beta_enter           = rnorm(nPreds_alpha, 0, 0.1),
       species_effect_alpha = matrix(rnorm(nSpecies * nPreds_alpha, 0, 0.1), nrow = nSpecies, ncol = nPreds_alpha),
