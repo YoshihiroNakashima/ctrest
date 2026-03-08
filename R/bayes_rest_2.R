@@ -1090,6 +1090,7 @@ bayes_rest_2 <- function(formula_stay,
       # メインプロセスでの登録
       suppressMessages(nimble::registerDistributions(dist_registration_list))
 
+
       # 3. パラメータの整理
       prms <- c()
       if(stay_family == "exponential") {
