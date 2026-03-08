@@ -1244,7 +1244,8 @@ bayes_rest_2 <- function(formula_stay,
     }
   }
   # 結果集計 ----------------------------------------------
-
+  # ベストモデルのインデックスを確実に取得
+  best.model <- which.min(waic)
   # ベストモデルのフォーミュラを使って共通判定を行う
   formula_density_best <- formula_density_all[[best.model]]
 
