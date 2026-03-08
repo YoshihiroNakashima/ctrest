@@ -7,7 +7,7 @@
 bayes_rest_2(
   formula_stay,
   formula_density,
-  formula_enter = ~1,
+  formula_enter,
   station_effort_data,
   stay_data,
   random_effect_stay = NULL,
@@ -58,7 +58,7 @@ bayes_rest_2(
 \item \code{Station} (character): Camera station ID.
 \item \code{Species} (character): Species name.
 \item \code{Stay} (numeric): Staying time (in seconds) within the focal area for each detected pass.
-\item \code{Cens} (binary): Indicator for censored staying time (1 = censored, 0 = observed).
+\item \code{Censored} (binary): Indicator for censored staying time (1 = censored, 0 = observed).
 }}
 
 \item{random_effect_stay}{A specification of the random effect structure on staying time (e.g., \code{~ (1 | Station)}). Default is \code{NULL} (no random effects).}
@@ -144,7 +144,7 @@ activity_data <- format_activity(
 rest_model <- bayes_rest(
   formula_stay = Stay ~ 1 + x1,
   formula_density = ~ 1,
-  formula_enter = ~ 1,
+  formula_enter = ~ 1, # Ignored since model = "REST"
   station_effort_data = station_effort_REST,
   stay_data = stay_data,
   activity_data = activity_data,
