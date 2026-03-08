@@ -907,7 +907,7 @@ bayes_rest_2 <- function(formula_stay,
           }
 
           for(j in 1:nPreds_stay) {
-            beta_stay[j] ~ dnorm(0, sd = 100)
+            beta_stay[j] ~ dnorm(0, sd = 5) # 【修正点】sd=100から5に変更し発散を防ぐ
           }
 
           if (nLevels_stay  > 0) {
@@ -952,7 +952,7 @@ bayes_rest_2 <- function(formula_stay,
           # カメラ地点ごとに期待値を計算
           for (i in 1:N_station) {
 
-            # --- 【修正点】次元エラー回避のための条件分岐 ---
+            # --- 次元エラー回避のための条件分岐 ---
             if (nPreds_enter == 1) {
               for (g in 1:N_group) {
                 # スカラー演算
@@ -990,8 +990,9 @@ bayes_rest_2 <- function(formula_stay,
             p[i] <- size / (size + mu[i])
 
             N_detection_rep[i] ~ dnbinom(size = size, prob = p[i])
-            loglike_obs_detection[i] <- dnbinom(N_detection[i], size, p[i])
-            loglike_pred_detection[i] <- dnbinom(N_detection_rep[i], size, p[i])
+            # 【修正点】log=1を追加
+            loglike_obs_detection[i] <- dnbinom(N_detection[i], size, p[i], log = 1)
+            loglike_pred_detection[i] <- dnbinom(N_detection_rep[i], size, p[i], log = 1)
           }
           size ~ dgamma(1, 1)
 
@@ -1007,7 +1008,7 @@ bayes_rest_2 <- function(formula_stay,
               }
             }
             log(density) <- beta_density
-            beta_density ~ dnorm(0, sd = 100)
+            beta_density ~ dnorm(0, sd = 5) # 【修正点】sd=100から5に変更
           }
           if(nPreds_density > 1) {
             for(i in 1:N_station) {
@@ -1019,7 +1020,7 @@ bayes_rest_2 <- function(formula_stay,
               log(density[i]) <- inprod(beta_density[1:nPreds_density], X_density[i, 1:nPreds_density])
             }
             for(j in 1:nPreds_density) {
-              beta_density[j] ~ dnorm(0, sd = 100)
+              beta_density[j] ~ dnorm(0, sd = 5) # 【修正点】sd=100から5に変更
             }
           }
         }#end
@@ -1035,10 +1036,12 @@ bayes_rest_2 <- function(formula_stay,
           theta_stay = stats::runif(1, 0.8, 1.2),
           beta_density = stats::rnorm(nPreds_density, 0, 0.1),
           beta_enter = matrix(stats::rnorm(nPreds_enter * N_group, 0, 0.1), nrow = nPreds_enter, ncol = N_group),
-          size = stats::runif(1, 0.8, 1.2),
-          mean_pass = stats::runif(1, 0.5, 2.0)
+          size = stats::runif(1, 0.8, 1.2)
+          # 【修正点】決定論的ノード(計算結果が入る場所)である mean_pass の初期値を削除
         )
-        if (!is.null(random_effect_stay)) {
+
+        # 【修正点】Rの環境に無い変数にアクセスして起きるエラーを防ぐため判定を nLevels_stay に変更
+        if (nLevels_stay > 0) {
           common_inits$random_effect_stay <- stats::runif(nLevels_stay, -0.1, 0.1)
           common_inits$sigma_stay <- stats::runif(1, 0.8, 1.5)
         }
