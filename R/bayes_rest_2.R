@@ -1219,13 +1219,21 @@ bayes_rest_2 <- function(formula_stay,
 
       # --- 安全なWAICの計算 (Log-Sum-Exp Trick) ---
       safe_log_mean_exp <- function(x) {
-        max_val <- max(x, na.rm = TRUE)
-        return(max_val + log(mean(exp(x - max_val), na.rm = TRUE)))
+        x <- x[is.finite(x)] # -InfやNaNなどの異常値を完全に除外
+        if(length(x) == 0) return(NA)
+        max_val <- max(x)
+        return(max_val + log(mean(exp(x - max_val))))
       }
 
-      # 列(各データ点)ごとに安全な対数平均尤度を計算
-      lppd <- sum(apply(loglfall, 2, safe_log_mean_exp))
-      p.waic <- sum(apply(loglfall, 2, stats::var))
+      safe_var <- function(x) {
+        x <- x[is.finite(x)]
+        if(length(x) < 2) return(NA)
+        return(stats::var(x))
+      }
+
+      # 列(各データ点)ごとに安全な対数平均尤度を計算 (na.rm = TRUE を追加)
+      lppd <- sum(apply(loglfall, 2, safe_log_mean_exp), na.rm = TRUE)
+      p.waic <- sum(apply(loglfall, 2, safe_var), na.rm = TRUE)
       waic[k] <- (-2) * lppd + 2 * p.waic
 
       # --- MCMCサンプルの抽出とプロット ---
@@ -1243,26 +1251,25 @@ bayes_rest_2 <- function(formula_stay,
       )
     }
   }
-  # 結果集計 ----------------------------------------------
-  # ベストモデルのインデックスを確実に取得
-  best.model <- which.min(waic)
-  # ベストモデルのフォーミュラを使って共通判定を行う
-  formula_density_best <- formula_density_all[[best.model]]
+  # 結果集計 --------------------------------------------------------------------
 
-  is_density_global <- check_no_cov(formula_density_best)
-  is_stay_global    <- check_no_cov(formula_stay) && (is.null(random_effect_stay) || random_effect_stay == "NULL")
+  if (is.null(random_effect_stay)) random_effect_stay <- "NULL"
 
-  # formula_enterが引数として存在するか（RAD-RESTの場合）で分岐
-  is_enter_global <- if (model == "RAD-REST") check_no_cov(formula_enter) else TRUE
-
-  if(is.null(random_effect_stay)) random_effect_stay <- "NULL"
-
-  # --- 共変量やランダム効果がない（全体共通）かの判定 ---
+  # --- 共変量やランダム効果がない（全体共通）かの判定関数 ---
+  # ※必ず最初に関数を定義します
   check_no_cov <- function(f) {
     if (is.null(f)) return(TRUE)
     f <- stats::as.formula(f)
-    if (length(f) == 3) f <- f[-2] # 左辺を削除して右辺のみにする
-    length(all.vars(f)) == 0       # 変数が0個（~1など）ならTRUE
+    vars <- all.vars(f[[length(f)]]) # 右辺の変数を抽出
+    return(length(vars) == 0)        # 変数が0個（~1など）ならTRUE
+  }
+
+  # --- 安全なベストモデル選択 ---
+  best.model <- which.min(waic)
+  # 万が一WAICがすべてNAになってしまった場合の緊急回避処理
+  if (length(best.model) == 0) {
+    warning("WAICの計算に失敗したため、便宜上1番目のモデルをベストモデルとして選択します。")
+    best.model <- 1
   }
 
   # WAIC表の作成 (formulaを安全に文字列化)
@@ -1273,25 +1280,24 @@ bayes_rest_2 <- function(formula_stay,
   ) %>%
     dplyr::arrange(WAIC)
 
-  # ベストモデルのインデックスを取得
-  best.model <- which.min(waic)
-
-  # 【修正】ベストモデルのフォーミュラを使って共通判定を行う
+  # ベストモデルのフォーミュラを使って共通判定を行う
   formula_density_best <- formula_density_all[[best.model]]
 
   is_density_global <- check_no_cov(formula_density_best)
   is_stay_global    <- check_no_cov(formula_stay) && random_effect_stay == "NULL"
-  is_enter_global   <- if (exists("formula_enter")) check_no_cov(formula_enter) else TRUE
+
+  # formula_enterが引数として存在するか（RAD-RESTの場合）で分岐
+  is_enter_global <- if (model == "RAD-REST") check_no_cov(formula_enter) else TRUE
 
   # mean_passが共通になる条件
-  is_pass_global <- if (exists("model") && model == "REST") {
+  is_pass_global <- if (model == "REST") {
     is_density_global && is_stay_global
   } else {
     is_enter_global
   }
 
   mcmc_samples_best <- mcmc_samples[[best.model]]
-  tidy_samples_best  <- tidy_samples[[best.model]]
+  tidy_samples_best <- tidy_samples[[best.model]]
 
   if(activity_estimation == "mixture") {
     sample_activity <- MCMCvis::MCMCchains(actv_chain_output,
@@ -1349,15 +1355,15 @@ bayes_rest_2 <- function(formula_stay,
     WAIC = WAIC,
     summary_result = summary_mean,
     samples = mcmc_samples_best,
-    tidy_samples = tidy_samples_best # ←これを追加しておくと便利
+    tidy_samples = tidy_samples_best
   )
 
   if(activity_estimation == "mixture") {
-    # (actv_chain_output を使って推定された activity_density_estimates が存在すると想定)
     density_result$activity_curve <- activity_density_estimates
   }
   class(density_result) <- "ResultDensity"
 
   # 出力
-  density_result
+  return(density_result)
+}
 }
