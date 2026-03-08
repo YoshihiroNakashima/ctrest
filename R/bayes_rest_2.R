@@ -940,10 +940,21 @@ bayes_rest_2 <- function(formula_stay,
 
           # カメラ地点ごとに期待値を計算
           for (i in 1:N_station) {
-            # logリンク関数を用いて alpha_Dirichlet を計算
-            for (g in 1:N_group) {
-              log(alpha_Dirichlet[i, g]) <- inprod(beta_enter[1:nPreds_enter, g], X_enter[i, 1:nPreds_enter])
+
+            # --- 【修正点】次元エラー回避のための条件分岐 ---
+            if (nPreds_enter == 1) {
+              for (g in 1:N_group) {
+                # スカラー演算
+                log(alpha_Dirichlet[i, g]) <- beta_enter[1, g] * X_enter[i, 1]
+              }
+            } else {
+              for (g in 1:N_group) {
+                # ベクトル演算 (inprod)
+                log(alpha_Dirichlet[i, g]) <- inprod(beta_enter[1:nPreds_enter, g], X_enter[i, 1:nPreds_enter])
+              }
             }
+            # --------------------------------------------------
+
             alpha_sum[i] <- sum(alpha_Dirichlet[i, 1:N_group])
 
             # 各侵入回数の確率と、それに回数を乗じた期待値
@@ -1023,75 +1034,7 @@ bayes_rest_2 <- function(formula_stay,
         return(common_inits)
       }
 
-      # 1. カスタム分布の定義 (グローバル環境)
-      ddirchmulti <- nimble::nimbleFunction(
-        run = function(x = double(1), alpha = double(1), size = double(0), log = integer(0)) {
-          returnType(double(0))
-          logProb <- lgamma(size + 1) - sum(lgamma(x + 1)) + lgamma(sum(alpha)) -
-            sum(lgamma(alpha)) + sum(lgamma(alpha + x)) -
-            lgamma(sum(alpha) + size)
-          if (log) return(logProb)
-          else return(exp(logProb))
-        }
-      )
-
-      rdirchmulti <- nimble::nimbleFunction(
-        run = function(n = integer(0), alpha = double(1), size = double(0)) {
-          returnType(double(1))
-          if (n != 1) print("rdirchmulti only allows n = 1; using n = 1.")
-          p <- rdirch(1, alpha)
-          return(rmulti(1, size = size, prob = p))
-        }
-      )
-
-      dvonMises <- nimble::nimbleFunction(
-        run = function(x = double(0), kappa = double(0), mu = double(0), log = integer(0)) {
-          returnType(double(0))
-          ccrit <- 1E-6
-          s <- 1
-          i <- 1
-          inc <- 1
-          x_2i <- 0
-          satisfied <- FALSE
-          while(!satisfied) {
-            x_2i <- kappa / (2 * i)
-            inc <- inc * x_2i * x_2i
-            s <- s + inc
-            i <- i + 1
-            satisfied <- inc < ccrit
-          }
-          prob <- exp(kappa * cos(x - mu)) / (2 * pi * s)
-          if (log) return(log(prob))
-          else return(prob)
-        }
-      )
-
-      rvonMises <- nimble::nimbleFunction(
-        run = function(n = integer(0), kappa = double(0), mu = double(0)) {
-          returnType(double(0))
-          return(0)
-        }
-      )
-
-      # 2. カスタム分布の登録情報のリスト化
-      dist_registration_list <- list(
-        dvonMises = list(
-          BUGSdist = "dvonMises(kappa, mu)",
-          types = c('value = double(0)', 'kappa = double(0)', 'mu = double(0)'),
-          pqAvail = FALSE
-        ),
-        ddirchmulti = list(
-          BUGSdist = "ddirchmulti(alpha, size)",
-          types = c('value = double(1)', 'alpha = double(1)', 'size = double(0)'),
-          pqAvail = FALSE
-        )
-      )
-
-      # メインプロセスでの登録
-      suppressMessages(nimble::registerDistributions(dist_registration_list))
-
-
-      # 3. パラメータの整理
+      # 1. パラメータの整理
       prms <- c()
       if(stay_family == "exponential") {
         prms <- c("scale", "mean_stay")
@@ -1101,7 +1044,6 @@ bayes_rest_2 <- function(formula_stay,
         prms <- c("meanlog", "sdlog", "mean_stay")
       }
 
-      # "alpha_Dirichlet" を削除
       prms <- unique(c(prms, "density", "mean_stay", "mean_pass", "mu",
                        "p", "size", "beta_stay", "beta_density"))
 
@@ -1112,26 +1054,28 @@ bayes_rest_2 <- function(formula_stay,
       params <- c(prms, "loglike_obs_stay", "loglike_obs_y",
                   "loglike_pred_stay", "loglike_pred_y")
 
-      # 4. 各チェーン用の情報リストの作成
+      # 2. 各チェーン用の情報リストの作成と nc の安全な定義
       if(activity_estimation == "mixture") {
-        nc <- length(actv_out_trace) # チェーン数をリスト長に合わせる
-        per_chain_info <- lapply(1:nc, function(i) {
-          list(seed = sample(1:9999, 1),
-               inits = inits_f(),
-               actv_samples = as.matrix(actv_out_trace[[i]]))
-        })
+        nc <- length(actv_out_trace)
       } else {
-        per_chain_info <- lapply(1:nc, function(i) {
-          list(seed = sample(1:9999, 1),
-               inits = inits_f(),
-               actv_samples = NULL)
-        })
+        nc <- chains
       }
 
-      # 5. 並列処理用のMCMC実行関数
+      per_chain_info <- lapply(1:nc, function(i) {
+        list(seed = sample(1:9999, 1),
+             inits = inits_f(),
+             actv_samples = if(activity_estimation == "mixture") as.matrix(actv_out_trace[[i]]) else NULL)
+      })
+
+      # 3. 並列処理用のMCMC実行関数
       run_MCMC_RAD <- function(info, data, constants, code, params, ni, nt, nb, is_mixture) {
+
+        # ワーカーごとに固有の一時ディレクトリを作成してコンパイル競合を回避
+        worker_dir <- file.path(tempdir(), paste0("nimble_worker_", Sys.getpid()))
+        dir.create(worker_dir, showWarnings = FALSE)
+
         myModel <- nimble::nimbleModel(code = code, data = data, constants = constants, inits = info$inits)
-        CmyModel <- nimble::compileNimble(myModel)
+        CmyModel <- nimble::compileNimble(myModel, dirName = worker_dir)
 
         configModel <- nimble::configureMCMC(myModel, monitors = params)
 
@@ -1145,8 +1089,9 @@ bayes_rest_2 <- function(formula_stay,
         }
 
         myMCMC <- nimble::buildMCMC(configModel)
-        # project = myModel を指定してC++コンパイルの競合を回避
-        CmyMCMC <- nimble::compileNimble(myMCMC, project = myModel)
+
+        # C++プロジェクトを紐付けつつディレクトリを分離
+        CmyMCMC <- nimble::compileNimble(myMCMC, project = myModel, dirName = worker_dir)
 
         results <- nimble::runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt, nchains = 1,
                                    setSeed = info$seed, samplesAsCodaMCMC = TRUE)
@@ -1155,22 +1100,82 @@ bayes_rest_2 <- function(formula_stay,
 
       cat("Running MCMC sampling. Please wait...\n")
 
-      # 6. クラスターのセットアップと実行
+      # 4. クラスターのセットアップと実行
       this_cluster <- parallel::makeCluster(nc)
 
-      # ワーカーノードへ必要な変数とカスタム関数をすべて送る
-      parallel::clusterExport(this_cluster,
-                              c("dist_registration_list",
-                                "dvonMises", "rvonMises", "ddirchmulti", "rdirchmulti", "run_MCMC_RAD"),
-                              envir = environment())
+      # 実行関数だけを送る
+      parallel::clusterExport(this_cluster, c("run_MCMC_RAD"), envir = environment())
 
-      # 関数が送られた「後」に、NIMBLEのロードと分布の登録を実行する
+      # ワーカー内部でゼロからカスタム関数を定義し直して登録
       parallel::clusterEvalQ(this_cluster, {
         library(nimble)
-        suppressMessages(registerDistributions(dist_registration_list))
+
+        ddirchmulti <- nimble::nimbleFunction(
+          run = function(x = double(1), alpha = double(1), size = double(0), log = integer(0)) {
+            returnType(double(0))
+            logProb <- lgamma(size + 1) - sum(lgamma(x + 1)) + lgamma(sum(alpha)) -
+              sum(lgamma(alpha)) + sum(lgamma(alpha + x)) -
+              lgamma(sum(alpha) + size)
+            if (log) return(logProb)
+            else return(exp(logProb))
+          }
+        )
+
+        rdirchmulti <- nimble::nimbleFunction(
+          run = function(n = integer(0), alpha = double(1), size = double(0)) {
+            returnType(double(1))
+            if (n != 1) print("rdirchmulti only allows n = 1; using n = 1.")
+            p <- rdirch(1, alpha)
+            return(rmulti(1, size = size, prob = p))
+          }
+        )
+
+        dvonMises <- nimble::nimbleFunction(
+          run = function(x = double(0), kappa = double(0), mu = double(0), log = integer(0)) {
+            returnType(double(0))
+            ccrit <- 1E-6
+            s <- 1
+            i <- 1
+            inc <- 1
+            x_2i <- 0
+            satisfied <- FALSE
+            while(!satisfied) {
+              x_2i <- kappa / (2 * i)
+              inc <- inc * x_2i * x_2i
+              s <- s + inc
+              i <- i + 1
+              satisfied <- inc < ccrit
+            }
+            prob <- exp(kappa * cos(x - mu)) / (2 * pi * s)
+            if (log) return(log(prob))
+            else return(prob)
+          }
+        )
+
+        rvonMises <- nimble::nimbleFunction(
+          run = function(n = integer(0), kappa = double(0), mu = double(0)) {
+            returnType(double(0))
+            return(0)
+          }
+        )
+
+        dist_registration_list <- list(
+          dvonMises = list(
+            BUGSdist = "dvonMises(kappa, mu)",
+            types = c('value = double(0)', 'kappa = double(0)', 'mu = double(0)'),
+            pqAvail = FALSE
+          ),
+          ddirchmulti = list(
+            BUGSdist = "ddirchmulti(alpha, size)",
+            types = c('value = double(1)', 'alpha = double(1)', 'size = double(0)'),
+            pqAvail = FALSE
+          )
+        )
+
+        suppressMessages(nimble::registerDistributions(dist_registration_list))
       })
 
-      # 並列処理の実行
+      # 並列処理の実行 (引数のマッピングを修正済)
       chain_output <- parallel::parLapply(
         cl = this_cluster,
         X = per_chain_info,
@@ -1179,9 +1184,9 @@ bayes_rest_2 <- function(formula_stay,
         code = Model_REST,
         constants = cons_REST,
         params = params,
-        ni = ni,
-        nt = nt,
-        nb = nb,
+        ni = iter,
+        nt = thin,
+        nb = warmup,
         is_mixture = (activity_estimation == "mixture")
       )
 
@@ -1193,7 +1198,6 @@ bayes_rest_2 <- function(formula_stay,
       loglfy <- MCMCvis::MCMCchains(chain_output, params = c("loglike_obs_y"))
 
       if (activity_estimation == "mixture") {
-        # 【注意】loglact がグローバルまたは事前計算されている前提です
         if (!exists("loglact")) {
           stop("エラー: 'loglact' が未定義です。尤度のトレースを用意してください。")
         }
