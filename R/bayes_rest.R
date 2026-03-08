@@ -757,7 +757,7 @@ bayes_rest <- function(formula_stay,
   }
 
   # RAD-REST model ----------------------------------------------------------
-  if (model == "RAD-REST") if (model == "RAD-REST") {
+  if (model == "RAD-REST") {
     # Extract variable names (Enter)
     station_data_target <- station_effort_data %>%
       dplyr::filter(Species == target_species)
