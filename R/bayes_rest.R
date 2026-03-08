@@ -845,6 +845,7 @@ bayes_rest <- function(formula_stay,
       }
 
       # REST model
+      # REST model
       Model_REST <- nimbleCode(
         {
           ## 1. 滞在時間 (Stay time) のモデリング----
@@ -908,7 +909,7 @@ bayes_rest <- function(formula_stay,
           }
 
           for(j in 1:nPreds_stay) {
-            beta_stay[j] ~ dnorm(0, sd = 100)
+            beta_stay[j] ~ dnorm(0, sd = 5)
           }
 
           if (nLevels_stay  > 0) {
@@ -945,7 +946,7 @@ bayes_rest <- function(formula_stay,
           # 共変量 (X_enter) に対応する係数 beta_enter の事前分布
           for (g in 1:N_group) {
             for (k in 1:nPreds_enter) {
-              beta_enter[k, g] ~ dnorm(0, sd = 100)
+              beta_enter[k, g] ~ dnorm(0, sd = 5)
             }
           }
 
@@ -979,8 +980,8 @@ bayes_rest <- function(formula_stay,
             p[i] <- size / (size + mu[i])
 
             N_detection_rep[i] ~ dnbinom(size = size, prob = p[i])
-            loglike_obs_detection[i] <- dnbinom(N_detection[i], size, p[i])
-            loglike_pred_detection[i] <- dnbinom(N_detection_rep[i], size, p[i])
+            loglike_obs_detection[i] <- dnbinom(N_detection[i], size, p[i], log = 1)
+            loglike_pred_detection[i] <- dnbinom(N_detection_rep[i], size, p[i], log = 1)
           }
           size ~ dgamma(1, 1)
 
@@ -996,7 +997,7 @@ bayes_rest <- function(formula_stay,
               }
             }
             log(density) <- beta_density
-            beta_density ~ dnorm(0, sd = 100)
+            beta_density ~ dnorm(0, sd = 5)
           }
           if(nPreds_density > 1) {
             for(i in 1:N_station) {
@@ -1008,7 +1009,7 @@ bayes_rest <- function(formula_stay,
               log(density[i]) <- inprod(beta_density[1:nPreds_density], X_density[i, 1:nPreds_density])
             }
             for(j in 1:nPreds_density) {
-              beta_density[j] ~ dnorm(0, sd = 100)
+              beta_density[j] ~ dnorm(0, sd = 5)
             }
           }
         }#end
@@ -1024,10 +1025,9 @@ bayes_rest <- function(formula_stay,
           theta_stay = stats::runif(1, 0.8, 1.2),
           beta_density = stats::rnorm(nPreds_density, 0, 0.1),
           beta_enter = matrix(rnorm(nPreds_enter * N_group, 0, 0.1), nrow = nPreds_enter, ncol = N_group),
-          size = stats::runif(1, 0.8, 1.2),
-          mean_pass = stats::runif(1, 0.5, 2.0)
+          size = stats::runif(1, 0.8, 1.2)
         )
-        if (!is.null(random_effect_stay)) {
+        if (nLevels_stay > 0) {
           common_inits$random_effect_stay <- stats::runif(nLevels_stay, -0.1, 0.1)
           common_inits$sigma_stay <- stats::runif(1, 0.8, 1.5)
         }
