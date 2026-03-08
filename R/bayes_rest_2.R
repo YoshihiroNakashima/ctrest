@@ -1366,4 +1366,3 @@ bayes_rest_2 <- function(formula_stay,
   # 出力
   return(density_result)
 }
-}
