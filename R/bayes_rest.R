@@ -757,28 +757,28 @@ bayes_rest <- function(formula_stay,
   }
 
   # RAD-REST model ----------------------------------------------------------
-  if (model == "RAD-REST") {
+  if (model == "RAD-REST") if (model == "RAD-REST") {
     # Extract variable names (Enter)
     station_data_target <- station_effort_data %>%
-      filter(Species == target_species)
+      dplyr::filter(Species == target_species)
 
-    model_frame_enter <- model.frame(formula_enter, data = station_data_target)
-    X_enter <- model.matrix(as.formula(formula_enter), model_frame_enter)
+    model_frame_enter <- stats::model.frame(formula_enter, data = station_data_target)
+    X_enter <- stats::model.matrix(stats::as.formula(formula_enter), model_frame_enter)
     nPreds_enter <- ncol(X_enter)
 
     y_enter_cols <- grep("^y_", names(station_data_target), value = TRUE)
     y_enter <- station_data_target %>%
-      select(all_of(y_enter_cols)) %>%
+      dplyr::select(dplyr::all_of(y_enter_cols)) %>%
       as.matrix()
 
     N_enter_group <- ncol(y_enter)
-    N_det <- station_data_target %>% pull(N)
+    N_det <- station_data_target %>% dplyr::pull(N)
 
-    # 【修正 2】多項分布のサイズ不整合によるエラーを防ぐため、実際のデータの行合計を取得
+    # 多項分布のサイズ不整合によるエラーを防ぐため、実際のデータの行合計を取得
     N_enter_judge <- apply(y_enter, 1, sum)
 
     tidy_samples <- mcmc_samples <- list()
-    waic <- numeric(0)
+    waic <- numeric(length(formula_density_all))
 
     y <- station_effort_data %>% dplyr::select(dplyr::starts_with("y_")) %>% as.matrix()
     N_judge <- apply(y, 1, sum)
@@ -787,16 +787,16 @@ bayes_rest <- function(formula_stay,
 
     if (nPreds_stay > 1) {
       stay_terms <- stats::delete.response(stats::terms(stats::as.formula(formula_stay)))
-      # 【修正 4】欠測行が自動削除されて行列のサイズが合わなくなるのを防ぐ (na.pass)
+      # 欠測行が自動削除されて行列のサイズが合わなくなるのを防ぐ (na.pass)
       model_frame_stay_st <- stats::model.frame(stay_terms, data = station_effort_data, na.action = stats::na.pass)
       X_stay_station <- stats::model.matrix(stay_terms, model_frame_stay_st)
     }
 
     for (k in 1:length(formula_density_all)) {
 
-      formula_density <- formula_density_all[[k]]
-      model_frame_density <- stats::model.frame(formula_density, data = station_effort_data)
-      X_density <- stats::model.matrix(stats::as.formula(formula_density), model_frame_density)
+      current_formula_density <- formula_density_all[[k]]
+      model_frame_density <- stats::model.frame(current_formula_density, data = station_effort_data)
+      X_density <- stats::model.matrix(stats::as.formula(current_formula_density), model_frame_density)
       nPreds_density <- ncol(X_density)
 
       data_REST <- list(
@@ -824,7 +824,7 @@ bayes_rest <- function(formula_stay,
         nPreds_enter = nPreds_enter,
         N_det = N_det,
         N_enter_group = N_enter_group,
-        N_enter_judge = N_enter_judge # 【修正 2】追加
+        N_enter_judge = N_enter_judge
       )
 
       if (activity_estimation == "kernel") {
@@ -845,7 +845,7 @@ bayes_rest <- function(formula_stay,
       }
 
       # REST model
-      Model_REST <- nimbleCode(
+      Model_REST <- nimble::nimbleCode(
         {
           ## 1. 滞在時間 (Stay time) のモデリング----
           for(i in 1:N_stay) {
@@ -1020,10 +1020,10 @@ bayes_rest <- function(formula_stay,
         beta_stay_init[1] <- stay_mean_log
         common_inits <- list(
           beta_stay = beta_stay_init,
-          stay = ifelse(censored == 0, NA, c_time + runif(N_stay, 0.1, 2.0)),
+          stay = ifelse(censored == 0, NA, c_time + stats::runif(N_stay, 0.1, 2.0)),
           theta_stay = stats::runif(1, 0.8, 1.2),
           beta_density = stats::rnorm(nPreds_density, 0, 0.1),
-          beta_enter = matrix(rnorm(nPreds_enter * N_group, 0, 0.1), nrow = nPreds_enter, ncol = N_group),
+          beta_enter = matrix(stats::rnorm(nPreds_enter * N_group, 0, 0.1), nrow = nPreds_enter, ncol = N_group),
           size = stats::runif(1, 0.8, 1.2),
           mean_pass = stats::runif(1, 0.5, 2.0)
         )
@@ -1035,7 +1035,7 @@ bayes_rest <- function(formula_stay,
       }
 
       # 1. カスタム分布の定義 (グローバル環境)
-      ddirchmulti <- nimbleFunction(
+      ddirchmulti <- nimble::nimbleFunction(
         run = function(x = double(1), alpha = double(1), size = double(0), log = integer(0)) {
           returnType(double(0))
           logProb <- lgamma(size + 1) - sum(lgamma(x + 1)) + lgamma(sum(alpha)) -
@@ -1046,7 +1046,7 @@ bayes_rest <- function(formula_stay,
         }
       )
 
-      rdirchmulti <- nimbleFunction(
+      rdirchmulti <- nimble::nimbleFunction(
         run = function(n = integer(0), alpha = double(1), size = double(0)) {
           returnType(double(1))
           if (n != 1) print("rdirchmulti only allows n = 1; using n = 1.")
@@ -1055,7 +1055,7 @@ bayes_rest <- function(formula_stay,
         }
       )
 
-      dvonMises <- nimbleFunction(
+      dvonMises <- nimble::nimbleFunction(
         run = function(x = double(0), kappa = double(0), mu = double(0), log = integer(0)) {
           returnType(double(0))
           ccrit <- 1E-6
@@ -1077,14 +1077,14 @@ bayes_rest <- function(formula_stay,
         }
       )
 
-      rvonMises <- nimbleFunction(
+      rvonMises <- nimble::nimbleFunction(
         run = function(n = integer(0), kappa = double(0), mu = double(0)) {
           returnType(double(0))
           return(0)
         }
       )
 
-      # 2. カスタム分布の登録情報のリスト化 (ワーカーノードでも使用するため)
+      # 2. カスタム分布の登録情報のリスト化
       dist_registration_list <- list(
         dvonMises = list(
           BUGSdist = "dvonMises(kappa, mu)",
@@ -1099,12 +1099,12 @@ bayes_rest <- function(formula_stay,
       )
 
       # メインプロセスでの登録
-      suppressMessages(registerDistributions(dist_registration_list))
+      suppressMessages(nimble::registerDistributions(dist_registration_list))
 
-      # 3. パラメータの整理 (バグ修正・重複排除)
+      # 3. パラメータの整理
       prms <- c()
       if(stay_family == "exponential") {
-        prms <- c("scale", "mean_stay") # shapeの重複上書きバグを修正
+        prms <- c("scale", "mean_stay")
       } else if(stay_family %in% c("gamma", "weibull")) {
         prms <- c("scale", "shape", "mean_stay")
       } else if(stay_family == "lognormal") {
@@ -1122,7 +1122,7 @@ bayes_rest <- function(formula_stay,
       params <- c(prms, "loglike_obs_stay", "loglike_obs_y",
                   "loglike_pred_stay", "loglike_pred_y")
 
-      # 4. 各チェーン用の情報リストの作成 (条件分岐をすっきり統合)
+      # 4. 各チェーン用の情報リストの作成
       if(activity_estimation == "mixture") {
         nc <- length(actv_out_trace) # チェーン数をリスト長に合わせる
         per_chain_info <- lapply(1:nc, function(i) {
@@ -1134,54 +1134,54 @@ bayes_rest <- function(formula_stay,
         per_chain_info <- lapply(1:nc, function(i) {
           list(seed = sample(1:9999, 1),
                inits = inits_f(),
-               actv_samples = NULL) # データ構造を統一
+               actv_samples = NULL)
         })
       }
 
-      # 5. 並列処理用のMCMC実行関数 (単一の関数に統合)
+      # 5. 並列処理用のMCMC実行関数
       run_MCMC_RAD <- function(info, data, constants, code, params, ni, nt, nb, is_mixture) {
-        myModel <- nimbleModel(code = code, data = data, constants = constants, inits = info$inits)
-        CmyModel <- compileNimble(myModel)
+        myModel <- nimble::nimbleModel(code = code, data = data, constants = constants, inits = info$inits)
+        CmyModel <- nimble::compileNimble(myModel)
 
-        configModel <- configureMCMC(myModel, monitors = params)
+        configModel <- nimble::configureMCMC(myModel, monitors = params)
 
         if(is_mixture) {
           configModel$removeSampler("activity_proportion")
           configModel$addSampler(
             target = "activity_proportion",
             type = 'prior_samples',
-            control = list(samples = info$actv_samples) # 注: NIMBLEではcontrolリストに入れるのが標準です
+            control = list(samples = info$actv_samples)
           )
         }
 
-        myMCMC <- buildMCMC(configModel)
+        myMCMC <- nimble::buildMCMC(configModel)
         # project = myModel を指定してC++コンパイルの競合を回避
-        CmyMCMC <- compileNimble(myMCMC, project = myModel)
+        CmyMCMC <- nimble::compileNimble(myMCMC, project = myModel)
 
-        results <- runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt, nchains = 1,
-                           setSeed = info$seed, samplesAsCodaMCMC = TRUE)
+        results <- nimble::runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt, nchains = 1,
+                                   setSeed = info$seed, samplesAsCodaMCMC = TRUE)
         return(results)
       }
 
       cat("Running MCMC sampling. Please wait...\n")
 
       # 6. クラスターのセットアップと実行
-      this_cluster <- makeCluster(nc)
+      this_cluster <- parallel::makeCluster(nc)
 
-      # 【修正】先にワーカーノードへ必要な変数とカスタム関数をすべて送る！
-      clusterExport(this_cluster,
-                    c("dist_registration_list",
-                      "dvonMises", "rvonMises", "ddirchmulti", "rdirchmulti", "run_MCMC_RAD"),
-                    envir = environment())
+      # ワーカーノードへ必要な変数とカスタム関数をすべて送る
+      parallel::clusterExport(this_cluster,
+                              c("dist_registration_list",
+                                "dvonMises", "rvonMises", "ddirchmulti", "rdirchmulti", "run_MCMC_RAD"),
+                              envir = environment())
 
       # 関数が送られた「後」に、NIMBLEのロードと分布の登録を実行する
-      clusterEvalQ(this_cluster, {
+      parallel::clusterEvalQ(this_cluster, {
         library(nimble)
         suppressMessages(registerDistributions(dist_registration_list))
       })
 
       # 並列処理の実行
-      chain_output <- parLapply(
+      chain_output <- parallel::parLapply(
         cl = this_cluster,
         X = per_chain_info,
         fun = run_MCMC_RAD,
@@ -1195,19 +1195,15 @@ bayes_rest <- function(formula_stay,
         is_mixture = (activity_estimation == "mixture")
       )
 
-      stopCluster(this_cluster)
+      parallel::stopCluster(this_cluster)
       cat("Estimation is finished!\n")
 
-
-      # --- 修正箇所 1: 尤度チェーンの抽出 ---
+      # --- 尤度チェーンの抽出 ---
       loglfstay <- MCMCvis::MCMCchains(chain_output, params = c("loglike_obs_stay"))
       loglfy <- MCMCvis::MCMCchains(chain_output, params = c("loglike_obs_y"))
 
-      # --- 修正箇所 2: loglact の処理 ---
       if (activity_estimation == "mixture") {
-        # 【注意】loglact がグローバルまたは事前計算されている前提です。
-        # もし MCMC 内で計算しているなら、params に "loglike_obs_act" 等を追加し抽出してください。
-        # 例: loglact <- MCMCvis::MCMCchains(chain_output, params = c("loglike_obs_act"))
+        # 【注意】loglact がグローバルまたは事前計算されている前提です
         if (!exists("loglact")) {
           stop("エラー: 'loglact' が未定義です。尤度のトレースを用意してください。")
         }
@@ -1216,8 +1212,7 @@ bayes_rest <- function(formula_stay,
         loglfall <- cbind(loglfstay, loglfy)
       }
 
-      # --- 修正箇所 3: 安全なWAICの計算 (Log-Sum-Exp Trick) ---
-      # オーバーフロー/アンダーフローを防ぐためのヘルパー関数
+      # --- 安全なWAICの計算 (Log-Sum-Exp Trick) ---
       safe_log_mean_exp <- function(x) {
         max_val <- max(x, na.rm = TRUE)
         return(max_val + log(mean(exp(x - max_val), na.rm = TRUE)))
@@ -1228,10 +1223,9 @@ bayes_rest <- function(formula_stay,
       p.waic <- sum(apply(loglfall, 2, stats::var))
       waic[k] <- (-2) * lppd + 2 * p.waic
 
-      # --- 修正箇所 4: MCMCサンプルの抽出とプロット ---
+      # --- MCMCサンプルの抽出とプロット ---
       mcmc_samples[[k]] <- MCMCvis::MCMCchains(chain_output, mcmc.list = TRUE, params = prms)
       samples_mat <- MCMCvis::MCMCchains(chain_output)
-
 
       n_iters <- nrow(samples_mat)
       p_names <- colnames(samples_mat)
