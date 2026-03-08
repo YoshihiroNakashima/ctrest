@@ -14,21 +14,54 @@ add_effort(
 )
 }
 \arguments{
-\item{detection_data}{A data frame containing information on individual video records.}
+\item{detection_data}{A data frame containing individual detection records.}
 
-\item{station_data_formatted}{A data frame returned by the \code{format_station_data()} function.}
+\item{station_data_formatted}{A data frame returned by \code{format_station_data()}.
+Must contain a \code{Station} column.}
 
-\item{col_name_station}{A string specifying the column name containing camera station IDs.}
+\item{col_name_station}{A string specifying the column name containing camera
+station IDs.}
 
-\item{col_name_datetime}{A string specifying the column name containing datetime information.}
+\item{col_name_datetime}{A string specifying the column name containing
+datetime information. The format \code{"YYYY-MM-DD HH:MM:SS"} or similar
+is recommended.}
 
-\item{col_name_term}{(Optional) A string specifying the column name indicating different survey periods.}
+\item{col_name_term}{(Optional) A string specifying the column name indicating
+different survey terms. When provided, effort is computed separately for
+each term and summed per station.}
 
-\item{plot}{Logical. If TRUE, a plot showing the camera operation periods will be displayed.}
+\item{plot}{Logical. If \code{TRUE}, a Gantt-style plot showing the camera
+operation periods per station is displayed. Default is \code{FALSE}.}
 }
 \value{
-A data frame with an additional column \code{Effort}. Stations with \code{Effort == 0} or no detections are removed.
+A data frame based on \code{station_data_formatted} with an additional
+\code{Effort} column (in days). Stations with \code{Effort == 0} or no
+detections are removed from the output with a warning.
 }
 \description{
-Computes the total camera trapping effort (in days) for each station based on detection data.
+Computes the total camera trapping effort (in days) for each station based
+on detection records. When \code{col_name_term} is specified, effort is
+calculated per term as the difference between the last and first detection
+within that term; values across terms are then summed to give the total
+effort per station. When \code{col_name_term} is \code{NULL}, effort is
+calculated as the difference between the last and first detection across
+the entire survey period for each station.
+}
+\details{
+Effort is approximated as \emph{last detection - first detection} (in days)
+within each grouping. This approach is intended for use when actual camera
+operation logs are unavailable. When \code{col_name_term} is specified,
+inactive periods between terms are not counted toward total effort.
+}
+\examples{
+\dontrun{
+station_with_effort <- add_effort(
+  detection_data         = my_detections,
+  station_data_formatted = my_stations,
+  col_name_station       = "Station",
+  col_name_datetime      = "DateTime",
+  col_name_term          = "Term",
+  plot                   = TRUE
+)
+}
 }
