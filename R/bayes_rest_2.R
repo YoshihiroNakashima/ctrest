@@ -1036,7 +1036,7 @@ bayes_rest_2 <- function(formula_stay,
 
         # 仮に「100」くらいの密度が想定されるなら log(100) を設定する
         # （単位に合わせて、0.1 や 10 など、常識的な値に変更してください）
-        expected_density <- 1.0
+        expected_density <- 5
         beta_density_init[1] <- log(expected_density)
         # ----------------------------------------------
 
