@@ -453,6 +453,26 @@ bayes_rest_multi <- function(formula_stay,
     cat("Covariates in formula_stay have been standardized (mean=0, sd=1).\n")
   }
 
+  # =========================================================================
+  # 【ここから追加】X_stay_station の作成
+  # =========================================================================
+  # 全カメラを網羅している station_effort_data からステーションレベルの共変量を抽出
+  model_frame_stay_st <- model.frame(formula_stay, station_effort_data)
+  X_stay_station_raw <- model.matrix(as.formula(formula_stay), model_frame_stay_st)
+
+  # 最初のN_station行を抽出（X_density等と同じロジック）
+  X_stay_station_raw <- X_stay_station_raw[1:N_station , , drop = FALSE]
+
+  # 【超重要】X_stay と全く同じ基準（平均と標準偏差）で標準化する
+  X_stay_station <- scale(X_stay_station_raw,
+                          center = scaling_stay$center,
+                          scale = scaling_stay$scale)
+
+  # scale()関数特有の属性を消して純粋な行列にする
+  X_stay_station <- matrix(as.numeric(X_stay_station),
+                           nrow = N_station,
+                           ncol = ncol(X_stay_station_raw))
+
   # N of random effects
   if (!is.null(random_effect_stay)) {
     levels <- unique(stay_data_join[[random_effect_stay]])
@@ -577,7 +597,11 @@ bayes_rest_multi <- function(formula_stay,
   if (nPreds_stay > 1) {
     data_density$X_stay <- X_stay
   }
-
+  # 最後の方のリスト格納部分
+  if (nPreds_stay > 1) {
+    data_density$X_stay <- X_stay
+    data_density$X_stay_station <- X_stay_station # ← これを追加
+  }
   # code <- nimbleCode({
   #
   #   # ---------------------------------------------------------------------------
@@ -1071,59 +1095,55 @@ bayes_rest_multi <- function(formula_stay,
             else { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] + random_effect_stay[group_stay[i]] }
           }
         }
+
+        # Station-level prediction for mean_stay
         if (nPreds_stay == 1) {
-          for (m in 1:nSpecies) { mean_stay[m] <- exp(beta_stay[1] + species_effect_stay[m, 1]) }
+          for (m in 1:nSpecies) {
+            for (i in 1:N_station) { mean_stay[i, m] <- exp(beta_stay[1] + species_effect_stay[m, 1]) }
+          }
         } else {
-          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay])) } }
+          for (m in 1:nSpecies) {
+            for (i in 1:N_station) { mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])) }
+          }
         }
 
         # ==========================================
         # [Common Model] (全分布共通)
         # ==========================================
-        # Stay Priors
-        for (j in 1:nPreds_stay) { beta_stay[j] ~ dnorm(0, sd = 5) }
+        # Stay Priors (ランダム効果の分散を共変量ごとに独立化)
+        for (j in 1:nPreds_stay) {
+          beta_stay[j] ~ dnorm(0, sd = 5)
+          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) {
+            species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j])
+          }
+        }
         if (nLevels_stay > 0) {
           for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
           sigma_stay ~ T(dnorm(0, sd = 2), 0, )
         }
-        for (m in 1:nSpecies) {
-          for (j in 1:nPreds_stay) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay) }
-        }
-        sigma_species_stay ~ T(dnorm(0, sd = 2), 0, )
 
-        # Alpha (Enter) Model: 種ごとの集中度パラメータ
+        # Alpha (Enter) Model
         for (m in 1:nSpecies) {
           theta_enter[m] ~ dgamma(1, 0.1)
         }
-
-        # ベースライン (g = 1 つまり 0回) の切片は 0
         cutpoint[1] <- 0
         for (g in 2:N_group) {
-          # 各回数のベースライン確率（ゼロ過剰などを吸収できる）
           cutpoint[g] ~ dnorm(0, sd = 5)
         }
 
         if (nPreds_alpha == 1) {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-
-              # 共変量と種効果による線形予測子 (グループgに依存しない共通の値)
               eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
-
               for (g in 1:N_group) {
-                # 【重要】回数 (g - 1) に比例して eta が効くようにする
                 log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
                 phi[i, m, g] <- exp(log_phi[i, m, g])
               }
-
               sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-
               for (g in 1:N_group) {
-                # 確率の計算
                 p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
-
-                # 確率 * 集中度 = Dirichletのアルファ
                 alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
               }
               mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
@@ -1132,18 +1152,12 @@ bayes_rest_multi <- function(formula_stay,
         } else {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-
-              # ベクトル演算による線形予測子
               eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
-
               for (g in 1:N_group) {
-                # 同様に回数 (g - 1) に比例させる
                 log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
                 phi[i, m, g] <- exp(log_phi[i, m, g])
               }
-
               sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-
               for (g in 1:N_group) {
                 p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
@@ -1154,7 +1168,6 @@ bayes_rest_multi <- function(formula_stay,
           }
         }
 
-        # Priors for Alpha (元のシンプルな形に戻せます)
         for (k in 1:nPreds_alpha) {
           beta_enter[k] ~ dnorm(0, sd = 5)
           sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
@@ -1183,31 +1196,30 @@ bayes_rest_multi <- function(formula_stay,
           size[m] ~ dgamma(1, 1)
         }
 
-        # REST formula & Density Priors
+        # REST formula & Density Priors (次元を統一)
         if (nPreds_density == 1) {
           for (m in 1:nSpecies) {
             for (i in 1:N_station) {
-              if (nPreds_stay == 1) { log(mu[i, m]) <- log(density[m]) + log(S) + log(N_period[i]) - log(mean_stay[m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
-              else { log(mu[i, m]) <- log(density[m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
+              log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
             }
-            log(density[m]) <- beta_density[1] + species_effect_density[m, 1]
           }
-          beta_density[1] ~ dnorm(0, sd = 5)
         } else {
           for (m in 1:nSpecies) {
             for (i in 1:N_station) {
-              if (nPreds_stay == 1) { log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
-              else { log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
               log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
             }
           }
-          for (j in 1:nPreds_density) { beta_density[j] ~ dnorm(0, sd = 5) }
         }
 
-        for (m in 1:nSpecies) {
-          for (k in 1:nPreds_density) { species_effect_density[m, k] ~ dnorm(0, sd = sd_species_density) }
+        for (j in 1:nPreds_density) {
+          beta_density[j] ~ dnorm(0, sd = 5)
+          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) {
+            species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j])
+          }
         }
-        sd_species_density ~ T(dnorm(0, sd = 2), 0, )
       })
       return(code)
 
@@ -1239,59 +1251,46 @@ bayes_rest_multi <- function(formula_stay,
         shape_stay ~ dgamma(2, 0.5)
         rate_stay  ~ dgamma(2, 0.5)
 
+        # Station-level prediction for mean_stay
         if (nPreds_stay == 1) {
-          for (m in 1:nSpecies) { mean_stay[m] <- theta_stay[m] * exp(beta_stay[1] + species_effect_stay[m, 1]) }
+          for (m in 1:nSpecies) {
+            for (i in 1:N_station) { mean_stay[i, m] <- theta_stay[m] * exp(beta_stay[1] + species_effect_stay[m, 1]) }
+          }
         } else {
-          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- theta_stay[m] * exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay])) } }
+          for (m in 1:nSpecies) {
+            for (i in 1:N_station) { mean_stay[i, m] <- theta_stay[m] * exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])) }
+          }
         }
 
         # ==========================================
         # [Common Model] (全分布共通)
         # ==========================================
-        # Stay Priors
-        for (j in 1:nPreds_stay) { beta_stay[j] ~ dnorm(0, sd = 5) }
+        for (j in 1:nPreds_stay) {
+          beta_stay[j] ~ dnorm(0, sd = 5)
+          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
+        }
         if (nLevels_stay > 0) {
           for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
           sigma_stay ~ T(dnorm(0, sd = 2), 0, )
         }
-        for (m in 1:nSpecies) {
-          for (j in 1:nPreds_stay) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay) }
-        }
-        sigma_species_stay ~ T(dnorm(0, sd = 2), 0, )
 
-        # Alpha (Enter) Model: 種ごとの集中度パラメータ
-        for (m in 1:nSpecies) {
-          theta_enter[m] ~ dgamma(1, 0.1)
-        }
-
-        # ベースライン (g = 1 つまり 0回) の切片は 0
+        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(1, 0.1) }
         cutpoint[1] <- 0
-        for (g in 2:N_group) {
-          # 各回数のベースライン確率（ゼロ過剰などを吸収できる）
-          cutpoint[g] ~ dnorm(0, sd = 5)
-        }
+        for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
 
         if (nPreds_alpha == 1) {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-
-              # 共変量と種効果による線形予測子 (グループgに依存しない共通の値)
               eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
-
               for (g in 1:N_group) {
-                # 【重要】回数 (g - 1) に比例して eta が効くようにする
                 log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
                 phi[i, m, g] <- exp(log_phi[i, m, g])
               }
-
               sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-
               for (g in 1:N_group) {
-                # 確率の計算
                 p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
-
-                # 確率 * 集中度 = Dirichletのアルファ
                 alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
               }
               mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
@@ -1300,18 +1299,12 @@ bayes_rest_multi <- function(formula_stay,
         } else {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-
-              # ベクトル演算による線形予測子
               eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
-
               for (g in 1:N_group) {
-                # 同様に回数 (g - 1) に比例させる
                 log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
                 phi[i, m, g] <- exp(log_phi[i, m, g])
               }
-
               sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-
               for (g in 1:N_group) {
                 p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
@@ -1322,23 +1315,19 @@ bayes_rest_multi <- function(formula_stay,
           }
         }
 
-        # Priors for Alpha (元のシンプルな形に戻せます)
         for (k in 1:nPreds_alpha) {
           beta_enter[k] ~ dnorm(0, sd = 5)
           sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) {
-            species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k])
-          }
+          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
         }
 
-        # Model for y
         for (j in 1:N_station_species) {
           y[j, 1:N_group]      ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
           pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
           loglike_obs_y[j]  <- ddirchmulti(y[j,      1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
           loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
         }
-        # Model for N_detection
+
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
             N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
@@ -1350,31 +1339,27 @@ bayes_rest_multi <- function(formula_stay,
           size[m] ~ dgamma(1, 1)
         }
 
-        # REST formula & Density Priors
         if (nPreds_density == 1) {
           for (m in 1:nSpecies) {
             for (i in 1:N_station) {
-              if (nPreds_stay == 1) { log(mu[i, m]) <- log(density[m]) + log(S) + log(N_period[i]) - log(mean_stay[m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
-              else { log(mu[i, m]) <- log(density[m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
+              log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
             }
-            log(density[m]) <- beta_density[1] + species_effect_density[m, 1]
           }
-          beta_density[1] ~ dnorm(0, sd = 5)
         } else {
           for (m in 1:nSpecies) {
             for (i in 1:N_station) {
-              if (nPreds_stay == 1) { log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
-              else { log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
               log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
             }
           }
-          for (j in 1:nPreds_density) { beta_density[j] ~ dnorm(0, sd = 5) }
         }
 
-        for (m in 1:nSpecies) {
-          for (k in 1:nPreds_density) { species_effect_density[m, k] ~ dnorm(0, sd = sd_species_density) }
+        for (j in 1:nPreds_density) {
+          beta_density[j] ~ dnorm(0, sd = 5)
+          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
         }
-        sd_species_density ~ T(dnorm(0, sd = 2), 0, )
       })
       return(code)
 
@@ -1407,59 +1392,46 @@ bayes_rest_multi <- function(formula_stay,
         shape_stay ~ dgamma(2, 0.5)
         rate_stay  ~ dgamma(2, 0.5)
 
+        # Station-level prediction for mean_stay
         if (nPreds_stay == 1) {
-          for (m in 1:nSpecies) { mean_stay[m] <- exp(beta_stay[1] + species_effect_stay[m, 1] + theta_stay[m]^2 / 2) }
+          for (m in 1:nSpecies) {
+            for (i in 1:N_station) { mean_stay[i, m] <- exp(beta_stay[1] + species_effect_stay[m, 1] + theta_stay[m]^2 / 2) }
+          }
         } else {
-          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + theta_stay[m]^2 / 2) } }
+          for (m in 1:nSpecies) {
+            for (i in 1:N_station) { mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay]) + theta_stay[m]^2 / 2) }
+          }
         }
 
         # ==========================================
         # [Common Model] (全分布共通)
         # ==========================================
-        # Stay Priors
-        for (j in 1:nPreds_stay) { beta_stay[j] ~ dnorm(0, sd = 5) }
+        for (j in 1:nPreds_stay) {
+          beta_stay[j] ~ dnorm(0, sd = 5)
+          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
+        }
         if (nLevels_stay > 0) {
           for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
           sigma_stay ~ T(dnorm(0, sd = 2), 0, )
         }
-        for (m in 1:nSpecies) {
-          for (j in 1:nPreds_stay) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay) }
-        }
-        sigma_species_stay ~ T(dnorm(0, sd = 2), 0, )
 
-        # Alpha (Enter) Model: 種ごとの集中度パラメータ
-        for (m in 1:nSpecies) {
-          theta_enter[m] ~ dgamma(1, 0.1)
-        }
-
-        # ベースライン (g = 1 つまり 0回) の切片は 0
+        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(1, 0.1) }
         cutpoint[1] <- 0
-        for (g in 2:N_group) {
-          # 各回数のベースライン確率（ゼロ過剰などを吸収できる）
-          cutpoint[g] ~ dnorm(0, sd = 5)
-        }
+        for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
 
         if (nPreds_alpha == 1) {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-
-              # 共変量と種効果による線形予測子 (グループgに依存しない共通の値)
               eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
-
               for (g in 1:N_group) {
-                # 【重要】回数 (g - 1) に比例して eta が効くようにする
                 log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
                 phi[i, m, g] <- exp(log_phi[i, m, g])
               }
-
               sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-
               for (g in 1:N_group) {
-                # 確率の計算
                 p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
-
-                # 確率 * 集中度 = Dirichletのアルファ
                 alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
               }
               mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
@@ -1468,18 +1440,12 @@ bayes_rest_multi <- function(formula_stay,
         } else {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-
-              # ベクトル演算による線形予測子
               eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
-
               for (g in 1:N_group) {
-                # 同様に回数 (g - 1) に比例させる
                 log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
                 phi[i, m, g] <- exp(log_phi[i, m, g])
               }
-
               sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-
               for (g in 1:N_group) {
                 p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
@@ -1490,16 +1456,12 @@ bayes_rest_multi <- function(formula_stay,
           }
         }
 
-        # Priors for Alpha (元のシンプルな形に戻せます)
         for (k in 1:nPreds_alpha) {
           beta_enter[k] ~ dnorm(0, sd = 5)
           sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) {
-            species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k])
-          }
+          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
         }
 
-        # Model for y
         for (j in 1:N_station_species) {
           y[j, 1:N_group]      ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
           pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
@@ -1507,7 +1469,6 @@ bayes_rest_multi <- function(formula_stay,
           loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
         }
 
-        # Model for N_detection
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
             N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
@@ -1519,31 +1480,27 @@ bayes_rest_multi <- function(formula_stay,
           size[m] ~ dgamma(1, 1)
         }
 
-        # REST formula & Density Priors
         if (nPreds_density == 1) {
           for (m in 1:nSpecies) {
             for (i in 1:N_station) {
-              if (nPreds_stay == 1) { log(mu[i, m]) <- log(density[m]) + log(S) + log(N_period[i]) - log(mean_stay[m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
-              else { log(mu[i, m]) <- log(density[m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
+              log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
             }
-            log(density[m]) <- beta_density[1] + species_effect_density[m, 1]
           }
-          beta_density[1] ~ dnorm(0, sd = 5)
         } else {
           for (m in 1:nSpecies) {
             for (i in 1:N_station) {
-              if (nPreds_stay == 1) { log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
-              else { log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
               log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
             }
           }
-          for (j in 1:nPreds_density) { beta_density[j] ~ dnorm(0, sd = 5) }
         }
 
-        for (m in 1:nSpecies) {
-          for (k in 1:nPreds_density) { species_effect_density[m, k] ~ dnorm(0, sd = sd_species_density) }
+        for (j in 1:nPreds_density) {
+          beta_density[j] ~ dnorm(0, sd = 5)
+          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
         }
-        sd_species_density ~ T(dnorm(0, sd = 2), 0, )
       })
       return(code)
 
@@ -1575,59 +1532,46 @@ bayes_rest_multi <- function(formula_stay,
         shape_stay ~ dgamma(2, 0.5)
         rate_stay  ~ dgamma(2, 0.5)
 
+        # Station-level prediction for mean_stay
         if (nPreds_stay == 1) {
-          for (m in 1:nSpecies) { mean_stay[m] <- exp(lgamma(1 + 1 / theta_stay[m]) + beta_stay[1] + species_effect_stay[m, 1]) }
+          for (m in 1:nSpecies) {
+            for (i in 1:N_station) { mean_stay[i, m] <- exp(lgamma(1 + 1 / theta_stay[m]) + beta_stay[1] + species_effect_stay[m, 1]) }
+          }
         } else {
-          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(lgamma(1 + 1 / theta_stay[m]) + inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay[i, 1:nPreds_stay])) } }
+          for (m in 1:nSpecies) {
+            for (i in 1:N_station) { mean_stay[i, m] <- exp(lgamma(1 + 1 / theta_stay[m]) + inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])) }
+          }
         }
 
         # ==========================================
         # [Common Model] (全分布共通)
         # ==========================================
-        # Stay Priors
-        for (j in 1:nPreds_stay) { beta_stay[j] ~ dnorm(0, sd = 5) }
+        for (j in 1:nPreds_stay) {
+          beta_stay[j] ~ dnorm(0, sd = 5)
+          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
+        }
         if (nLevels_stay > 0) {
           for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
           sigma_stay ~ T(dnorm(0, sd = 2), 0, )
         }
-        for (m in 1:nSpecies) {
-          for (j in 1:nPreds_stay) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay) }
-        }
-        sigma_species_stay ~ T(dnorm(0, sd = 2), 0, )
 
-        # Alpha (Enter) Model: 種ごとの集中度パラメータ
-        for (m in 1:nSpecies) {
-          theta_enter[m] ~ dgamma(1, 0.1)
-        }
-
-        # ベースライン (g = 1 つまり 0回) の切片は 0
+        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(1, 0.1) }
         cutpoint[1] <- 0
-        for (g in 2:N_group) {
-          # 各回数のベースライン確率（ゼロ過剰などを吸収できる）
-          cutpoint[g] ~ dnorm(0, sd = 5)
-        }
+        for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
 
         if (nPreds_alpha == 1) {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-
-              # 共変量と種効果による線形予測子 (グループgに依存しない共通の値)
               eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
-
               for (g in 1:N_group) {
-                # 【重要】回数 (g - 1) に比例して eta が効くようにする
                 log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
                 phi[i, m, g] <- exp(log_phi[i, m, g])
               }
-
               sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-
               for (g in 1:N_group) {
-                # 確率の計算
                 p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
-
-                # 確率 * 集中度 = Dirichletのアルファ
                 alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
               }
               mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
@@ -1636,18 +1580,12 @@ bayes_rest_multi <- function(formula_stay,
         } else {
           for (i in 1:N_station) {
             for (m in 1:nSpecies) {
-
-              # ベクトル演算による線形予測子
               eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
-
               for (g in 1:N_group) {
-                # 同様に回数 (g - 1) に比例させる
                 log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
                 phi[i, m, g] <- exp(log_phi[i, m, g])
               }
-
               sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-
               for (g in 1:N_group) {
                 p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
                 c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
@@ -1658,23 +1596,19 @@ bayes_rest_multi <- function(formula_stay,
           }
         }
 
-        # Priors for Alpha (元のシンプルな形に戻せます)
         for (k in 1:nPreds_alpha) {
           beta_enter[k] ~ dnorm(0, sd = 5)
           sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) {
-            species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k])
-          }
+          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
         }
 
-        # Model for y
         for (j in 1:N_station_species) {
           y[j, 1:N_group]      ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
           pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
           loglike_obs_y[j]  <- ddirchmulti(y[j,      1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
           loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
         }
-        # Model for N_detection
+
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
             N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
@@ -1686,31 +1620,27 @@ bayes_rest_multi <- function(formula_stay,
           size[m] ~ dgamma(1, 1)
         }
 
-        # REST formula & Density Priors
         if (nPreds_density == 1) {
           for (m in 1:nSpecies) {
             for (i in 1:N_station) {
-              if (nPreds_stay == 1) { log(mu[i, m]) <- log(density[m]) + log(S) + log(N_period[i]) - log(mean_stay[m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
-              else { log(mu[i, m]) <- log(density[m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
+              log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
             }
-            log(density[m]) <- beta_density[1] + species_effect_density[m, 1]
           }
-          beta_density[1] ~ dnorm(0, sd = 5)
         } else {
           for (m in 1:nSpecies) {
             for (i in 1:N_station) {
-              if (nPreds_stay == 1) { log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
-              else { log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) }
               log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
             }
           }
-          for (j in 1:nPreds_density) { beta_density[j] ~ dnorm(0, sd = 5) }
         }
 
-        for (m in 1:nSpecies) {
-          for (k in 1:nPreds_density) { species_effect_density[m, k] ~ dnorm(0, sd = sd_species_density) }
+        for (j in 1:nPreds_density) {
+          beta_density[j] ~ dnorm(0, sd = 5)
+          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
         }
-        sd_species_density ~ T(dnorm(0, sd = 2), 0, )
       })
       return(code)
     }
@@ -1745,8 +1675,9 @@ bayes_rest_multi <- function(formula_stay,
       sd_species_density     = runif(1, 0.01, 2),
 
       # --- alpha (enter) ---
-      theta_enter          = runif(nSpecies, 1, 5),    # ←★これを追加！
-      cutpoint             = c(NA, rnorm(N_group - 1, 0, 0.5)),
+      theta_enter          = runif(nSpecies, 1, 5),
+      # ↓【修正】閾値が必ず昇順になるように sort() を追加しました
+      cutpoint             = c(NA, sort(rnorm(N_group - 1, 0, 0.5))),
       beta_enter           = rnorm(nPreds_alpha, 0, 0.1),
       species_effect_alpha = matrix(rnorm(nSpecies * nPreds_alpha, 0, 0.1), nrow = nSpecies, ncol = nPreds_alpha),
       sd_species_alpha     = runif(nPreds_alpha, 0.01, 1),
