@@ -985,33 +985,59 @@ bayes_rest <- function(formula_stay,
           }
           size ~ dgamma(1, 1)
 
-          # 4. REST formula (mu の計算)----
+          # 4. REST formula (ベース期待値の計算)----
 
-          # mean_pass は常に地点ごとのベクトル mean_pass[i] となります
+          # 修正点: 左辺を直接 log(mu) や log(density) とせず、
+          # 一旦中間変数 log_density_base, log_mu_base として受けます。
           if(nPreds_density == 1) {
             for(i in 1:N_station) {
+              log_density_base[i] <- beta_density[1]
+
               if(nPreds_stay == 1) {
-                log(mu[i]) <- log(density) + log(S) + log(N_period[i]) - log(mean_stay) + log(activity_proportion) - log(mean_pass[i])
+                log_mu_base[i] <- log_density_base[i] + log(S) + log(N_period[i]) - log(mean_stay) + log(activity_proportion) - log(mean_pass[i])
               } else {
-                log(mu[i]) <- log(density) + log(S) + log(N_period[i]) - log(mean_stay[i]) + log(activity_proportion) - log(mean_pass[i])
+                log_mu_base[i] <- log_density_base[i] + log(S) + log(N_period[i]) - log(mean_stay[i]) + log(activity_proportion) - log(mean_pass[i])
               }
             }
-            log(density) <- beta_density
-            beta_density ~ dnorm(0, sd = 5)
-          }
-          if(nPreds_density > 1) {
+            beta_density[1] ~ dnorm(0, sd = 5)
+
+          } else { # nPreds_density > 1 の場合
             for(i in 1:N_station) {
+              log_density_base[i] <- inprod(beta_density[1:nPreds_density], X_density[i, 1:nPreds_density])
+
               if(nPreds_stay == 1) {
-                log(mu[i]) <- log(density[i]) + log(S) + log(N_period[i]) - log(mean_stay) + log(activity_proportion) - log(mean_pass[i])
+                log_mu_base[i] <- log_density_base[i] + log(S) + log(N_period[i]) - log(mean_stay) + log(activity_proportion) - log(mean_pass[i])
               } else {
-                log(mu[i]) <- log(density[i]) + log(S) + log(N_period[i]) - log(mean_stay[i]) + log(activity_proportion) - log(mean_pass[i])
+                log_mu_base[i] <- log_density_base[i] + log(S) + log(N_period[i]) - log(mean_stay[i]) + log(activity_proportion) - log(mean_pass[i])
               }
-              log(density[i]) <- inprod(beta_density[1:nPreds_density], X_density[i, 1:nPreds_density])
             }
             for(j in 1:nPreds_density) {
               beta_density[j] ~ dnorm(0, sd = 5)
             }
           }
+
+          # 5. 観測モデルと地点ごとの局所密度 (density) の計算----
+          # ※元コードの dpois() の部分をこれに置き換えてください
+          for(i in 1:N_station) {
+            # ポアソンのベース期待値
+            mu_base[i] <- exp(log_mu_base[i])
+
+            # 負の二項分布の確率パラメータ
+            p_nb[i] <- size / (size + mu_base[i])
+
+            # ========================================================
+            # 【重要】 `y_obs[i]` の部分は、実際のパッケージ内で使っている
+            # カメラの撮影回数のデータ変数名（N_detection 等）に変更してください。
+            # ========================================================
+            y_obs[i] ~ dnbinom(size = size, prob = p_nb[i])
+
+            # 局所密度の事後期待値による決定論的計算
+            # これにより、MCMCを邪魔せずに地点ごとの密度 density[i] を出力できます
+            density[i] <- exp(log_density_base[i]) * ((size + y_obs[i]) / (size + mu_base[i]))
+          }
+
+          # カメラ間の過分散パラメータ（ばらつき具合）
+          size ~ dgamma(1, 1)
         }#end
       )
 
