@@ -947,10 +947,11 @@ bayes_rest_2 <- function(formula_stay,
             # [変更点] カメラごとの共変量の効果（線形予測子）。次元が下がりスッキリします。
             eta[i] <- inprod(beta_enter[1:nPreds_enter], X_enter[i, 1:nPreds_enter])
 
+
             # 各グループの未正規化確率（log_phi）の計算
             for (g in 1:N_group) {
-              # 順序ロジットに近い構造: (g - 1) を掛けることで「回数が増えるごとに効果が蓄積する」制約
-              log_phi[i, g] <- cutpoint[g] + (g - 1) * eta[i]
+              # 計算結果が -50 から 50 の間に収まるように強制制限（expの爆発を防ぐ）
+              log_phi[i, g] <- max(min(cutpoint[g] + (g - 1) * eta[i], 50), -50)
               phi[i, g] <- exp(log_phi[i, g])
             }
             sum_phi[i] <- sum(phi[i, 1:N_group])
@@ -1030,9 +1031,10 @@ bayes_rest_2 <- function(formula_stay,
         expected_density <- 5
         beta_density_init[1] <- log(expected_density)
 
-        # 3. 侵入回数 (enter) モデルの初期値 【ここを修正】
-        # 行列ではなく、単なるベクトル (長さ: nPreds_enter) にします
-        beta_enter_init <- stats::rnorm(nPreds_enter, 0, 0.1)
+        # 3. 侵入回数 (enter) モデルの初期値 【ここを修正】】
+        # rnorm(乱数)をやめて、すべて 0 に固定して安全にスタートさせる
+        beta_enter_init <- rep(0, nPreds_enter)
+        cutpoint_init <- c(NA, rep(0, N_group - 1))
 
         # 新しく追加した cutpoint の初期値も設定 (1つ目はモデル内で0固定なのでNA、2つ目以降に乱数)
         cutpoint_init <- c(NA, stats::rnorm(N_group - 1, 0, 0.5))
@@ -1051,6 +1053,8 @@ bayes_rest_2 <- function(formula_stay,
           beta_enter  = beta_enter_init,        # ベクトルを渡す
           cutpoint    = cutpoint_init,          # cutpointの初期値を追加
           theta_enter = stats::runif(1, 1, 5),
+
+
 
           # 検出 (detection) 関連
           size = stats::runif(1, 0.8, 1.2)
