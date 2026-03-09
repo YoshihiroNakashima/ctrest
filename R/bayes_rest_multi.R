@@ -1076,7 +1076,7 @@ bayes_rest_multi <- function(formula_stay,
   #
   # stopCluster(this_cluster)
 
-  library(nimble)
+  # library(nimble)
 
   # ---------------------------------------------------------------------------
   # モデルコード生成関数
@@ -1987,20 +1987,21 @@ bayes_rest_multi <- function(formula_stay,
   }
 
   # --- mean_stay の集約 ---
-  raw_stay <- summarize_param("mean_stay")
+  raw_stay <- summarize_param("mean_stay") %>%
+    tidyr::extract(Variable, into = c("Station_idx", "Species_idx"),
+                   regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE)
 
   if (nPreds_stay == 1) {
-    # mean_stay[m]
+    # 地点間で同値（共変量なし）のため、地点1のみ採用して Station = "All" とする
     summary_stay <- raw_stay %>%
-      tidyr::extract(Variable, into = "Species_idx",
-                     regex = "\\[(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
-      dplyr::mutate(Species = target_species[Species_idx], Station = "All") %>%
-      dplyr::select(-Species_idx)
+      dplyr::filter(Station_idx == 1) %>%
+      dplyr::mutate(Species  = target_species[Species_idx],
+                    Station  = "All",
+                    Variable = paste0("mean_stay[", Species_idx, "]")) %>%
+      dplyr::select(-Station_idx, -Species_idx)
   } else {
-    # mean_stay[i, m]
+    # 共変量があり、地点ごとに値が異なる場合
     summary_stay <- raw_stay %>%
-      tidyr::extract(Variable, into = c("Station_idx", "Species_idx"),
-                     regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
       dplyr::mutate(Species = target_species[Species_idx],
                     Station = unique_stations[Station_idx]) %>%
       dplyr::select(-Station_idx, -Species_idx)
