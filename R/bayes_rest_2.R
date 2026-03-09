@@ -1027,16 +1027,15 @@ bayes_rest_2 <- function(formula_stay,
 
         # 2. 密度 (density) モデルの初期値
         beta_density_init <- stats::rnorm(nPreds_density, 0, 0.1)
-        # 仮の期待密度（単位に合わせて常識的な値に変更してください）
         expected_density <- 5
         beta_density_init[1] <- log(expected_density)
 
-        # 3. 侵入回数 (enter) モデルの初期値 【修正部分】
-        # まずすべての要素に小さな乱数を入れる
-        beta_enter_init <- matrix(stats::rnorm(nPreds_enter * N_group, 0, 0.1),
-                                  nrow = nPreds_enter, ncol = N_group)
-        # ベースライン (g = 1) の列は推定しないため、確実に 0 に固定する
-        beta_enter_init[, 1] <- 0
+        # 3. 侵入回数 (enter) モデルの初期値 【ここを修正】
+        # 行列ではなく、単なるベクトル (長さ: nPreds_enter) にします
+        beta_enter_init <- stats::rnorm(nPreds_enter, 0, 0.1)
+
+        # 新しく追加した cutpoint の初期値も設定 (1つ目はモデル内で0固定なのでNA、2つ目以降に乱数)
+        cutpoint_init <- c(NA, stats::rnorm(N_group - 1, 0, 0.5))
 
         # 共通の初期値リストを作成
         common_inits <- list(
@@ -1048,9 +1047,10 @@ bayes_rest_2 <- function(formula_stay,
           # density 関連
           beta_density = beta_density_init,
 
-          # enter 関連 【修正部分】
-          beta_enter = beta_enter_init,          # 1列目を0にした行列を指定
-          theta_enter = stats::runif(1, 1, 5),   # 新規追加した集中度パラメータの初期値
+          # enter 関連 【ここを修正】
+          beta_enter  = beta_enter_init,        # ベクトルを渡す
+          cutpoint    = cutpoint_init,          # cutpointの初期値を追加
+          theta_enter = stats::runif(1, 1, 5),
 
           # 検出 (detection) 関連
           size = stats::runif(1, 0.8, 1.2)
