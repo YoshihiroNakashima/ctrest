@@ -943,26 +943,53 @@ bayes_rest <- function(formula_stay,
 
           # 2. Focal area 侵入回数 (y) のモデリング----
 
-          # 共変量 (X_enter) に対応する係数 beta_enter の事前分布
-          for (g in 1:N_group) {
-            for (k in 1:nPreds_enter) {
-              beta_enter[k, g] ~ dnorm(0, sd = 5)
-            }
+          # ==========================================
+          # 1. 事前分布の設定
+          # ==========================================
+
+          # [変更点] Dirichlet分布の「集中度合い（分散の逆数）」を制御する単一パラメータ
+          theta_enter ~ dgamma(2, 2)
+
+          # [変更点] グループ（回数）ごとのベースライン発生確率（切片）
+          # 識別性（Identifiability）を確保するため、最初のグループ(0回)を0に固定します。
+          cutpoint[1] <- 0
+          for (g in 2:N_group) {
+            cutpoint[g] ~ dnorm(0, sd = 5)
           }
 
-          # カメラ地点ごとに期待値を計算
-          for (i in 1:N_station) {
-            # logリンク関数を用いて alpha_Dirichlet を計算
-            for (g in 1:N_group) {
-              log(alpha_Dirichlet[i, g]) <- inprod(beta_enter[1:nPreds_enter, g], X_enter[i, 1:nPreds_enter])
-            }
-            alpha_sum[i] <- sum(alpha_Dirichlet[i, 1:N_group])
+          # [変更点] 共変量の係数。グループごとではなく「1セット」だけ推定します。
+          for (k in 1:nPreds_enter) {
+            beta_enter[k] ~ dnorm(0, sd = 5)
+          }
 
-            # 各侵入回数の確率と、それに回数を乗じた期待値
+          # ==========================================
+          # 2. カメラ地点ごとの期待値と尤度計算
+          # ==========================================
+          for (i in 1:N_station) {
+
+            # [変更点] カメラごとの共変量の効果（線形予測子）。次元が下がりスッキリします。
+            eta[i] <- inprod(beta_enter[1:nPreds_enter], X_enter[i, 1:nPreds_enter])
+
+            # 各グループの未正規化確率（log_phi）の計算
             for (g in 1:N_group) {
-              p_expected[i, g] <- alpha_Dirichlet[i, g] / alpha_sum[i]
+              # 順序ロジットに近い構造: (g - 1) を掛けることで「回数が増えるごとに効果が蓄積する」制約
+              log_phi[i, g] <- cutpoint[g] + (g - 1) * eta[i]
+              phi[i, g] <- exp(log_phi[i, g])
+            }
+            sum_phi[i] <- sum(phi[i, 1:N_group])
+
+            # 確率(p)とDirichletパラメータ(alpha)の算出
+            for (g in 1:N_group) {
+              # 発生確率 (合計1になる)
+              p_expected[i, g] <- phi[i, g] / sum_phi[i]
+
+              # [変更点] 確率(p)に精度(theta)を掛けてalphaを算出。平均と分散を完全に分離します。
+              alpha_Dirichlet[i, g] <- theta_enter * p_expected[i, g]
+
+              # 期待値の計算用
               c_expected[i, g] <- p_expected[i, g] * (g - 1)
             }
+
             # カメラ地点 i における侵入回数の期待値
             mean_pass[i] <- sum(c_expected[i, 1:N_group])
 
