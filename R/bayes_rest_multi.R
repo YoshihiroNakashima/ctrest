@@ -616,16 +616,6 @@ bayes_rest_multi <- function(formula_stay,
     cons_density$nLevels_stay <- 0
   }
 
-
-  # library(nimble)
-
-  # ---------------------------------------------------------------------------
-  # モデルコード生成関数
-  # R側で分岐させることで、NIMBLEコンパイラには必要な分布のコードのみが渡されます
-  # ---------------------------------------------------------------------------
-  # ---------------------------------------------------------------------------
-  # モデルコード生成関数（NIMBLEの仕様に合わせた安全なベタ書き方式）
-  # ---------------------------------------------------------------------------
   get_rest_code <- function(stay_family) {
 
     if (stay_family == "exponential") {
@@ -679,7 +669,7 @@ bayes_rest_multi <- function(formula_stay,
 
         # Alpha (Enter) Model
         for (m in 1:nSpecies) {
-          theta_enter[m] ~ dgamma(1, 0.1)
+          theta_enter[m] ~ dgamma(2, 2)
         }
         cutpoint[1] <- 0
         for (g in 2:N_group) {
@@ -829,7 +819,7 @@ bayes_rest_multi <- function(formula_stay,
           sigma_stay ~ T(dnorm(0, sd = 2), 0, )
         }
 
-        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(1, 0.1) }
+        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
         cutpoint[1] <- 0
         for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
 
@@ -926,8 +916,11 @@ bayes_rest_multi <- function(formula_stay,
           censored[i] ~ dinterval(stay[i], c_time[i])
           stay[i]      ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
           pred_t[i]    ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
+
+          # 修正点：log(1 - plnorm(...))のアンダーフローを防ぐため、lower.tail = 0, log.p = 1 を使用
           loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dlnorm(stay[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1) +
-            step(censored[i] - 0.5)  * log(1 - plnorm(c_time[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]]))
+            step(censored[i] - 0.5)  * plnorm(c_time[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], lower.tail = 0, log.p = 1)
+
           loglike_pred_stay[i] <- dlnorm(pred_t[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1)
           meanlog[i] <- log(scale[i])
 
@@ -970,7 +963,7 @@ bayes_rest_multi <- function(formula_stay,
           sigma_stay ~ T(dnorm(0, sd = 2), 0, )
         }
 
-        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(1, 0.1) }
+        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
         cutpoint[1] <- 0
         for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
 
@@ -1025,10 +1018,8 @@ bayes_rest_multi <- function(formula_stay,
 
         # ==========================================
         # [Density & Detection Model]
-        # ポアソン・ガンマ混合による地点（カメラ）レベルの密度推定
         # ==========================================
 
-        # 1. ベースの期待値計算（ここでモデル式の分岐を処理）
         if (nPreds_density == 1) {
           for (m in 1:nSpecies) {
             for (i in 1:N_station) {
@@ -1045,27 +1036,26 @@ bayes_rest_multi <- function(formula_stay,
           }
         }
 
-        # 2. カメラごとの局所密度と観測モデル（分岐なしで共通処理）
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
-            # カメラごとの局所的なばらつき（ガンマ分布）
-            rho[i, m] ~ dgamma(size[m], size[m])
+            # ポアソン分布の期待値
+            mu[i, m] <- exp(log_mu_base[i, m])
 
-            # 【常に出力可能】カメラごとの局所密度
-            density[i, m] <- exp(log_density_base[i, m]) * rho[i, m]
+            # 負の二項分布の確率パラメータ (size / (size + mu))
+            p_nb[i, m] <- size[m] / (size[m] + mu[i, m])
 
-            # ポアソン分布の期待値（ベース期待値 × 局所ばらつき）
-            lambda[i, m] <- exp(log_mu_base[i, m]) * rho[i, m]
-
-            # 観測モデル（ポアソン分布）
-            N_detection_matrix[i, m] ~ dpois(lambda[i, m])
+            # 修正点：尤度は負の二項分布に周辺化し、潜在変数 rho の生成を回避（収束を圧倒的に改善）
+            N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p_nb[i, m])
 
             # WAIC / PPC 用
-            N_detection_rep[i, m]    ~ dpois(lambda[i, m])
-            loglike_obs_detection[i, m]  <- dpois(N_detection_matrix[i, m], lambda[i, m], log = 1)
-            loglike_pred_detection[i, m] <- dpois(N_detection_rep[i, m],    lambda[i, m], log = 1)
+            N_detection_rep[i, m]    ~ dnbinom(size = size[m], prob = p_nb[i, m])
+            loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size = size[m], prob = p_nb[i, m], log = 1)
+            loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size = size[m], prob = p_nb[i, m], log = 1)
+
+            # 修正点：MCMCを崩さずに局所密度 density[i,m] を取得する「事後期待値」の決定論的計算
+            # Gamma(size, size) 事前分布と Poisson(mu) 尤度から、事後分布の期待値は (size + y) / (size + mu) になる
+            density[i, m] <- exp(log_density_base[i, m]) * ((size[m] + N_detection_matrix[i, m]) / (size[m] + mu[i, m]))
           }
-          # 種ごとの過分散（ばらつき具合）パラメータ
           size[m] ~ dgamma(1, 1)
         }
 
@@ -1132,7 +1122,7 @@ bayes_rest_multi <- function(formula_stay,
           sigma_stay ~ T(dnorm(0, sd = 2), 0, )
         }
 
-        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(1, 0.1) }
+        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
         cutpoint[1] <- 0
         for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
 
@@ -1431,21 +1421,6 @@ bayes_rest_multi <- function(formula_stay,
       dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`)
   }
 
-  # -------------------------------------------------------------------------
-  # ヘルパー2: beta + species_effect の事後サンプルを合算して種ごとに集約する
-  #
-  #  【stay / density】
-  #    beta_stay[j]  または beta_density[j]  （nPreds==1 なら添字なし）
-  #    + species_effect_stay[m, j] または species_effect_density[m, j]
-  #    → coef_stay[j] (変数名) / coef_density[j] (変数名)  ×  種
-  #
-  #  【enter】
-  #    beta_enter[j, g] + species_effect_alpha[m, j, g]
-  #    → coef_enter[j, g] (変数名, catN)  ×  種
-  #    ※ g はディリクレ多項分布のカテゴリ（0-indexed で cat0, cat1, ...）
-  #
-  #  切片列（j == 1）も出力する：切片の種差は基準密度・滞在時間の種差を意味する
-  # -------------------------------------------------------------------------
   make_species_coef_summary <- function(param_type) {
 
     cfg <- switch(param_type,
