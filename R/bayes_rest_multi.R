@@ -1052,7 +1052,7 @@ bayes_rest_multi <- function(formula_stay,
             rho[i, m] ~ dgamma(size[m], size[m])
 
             # 【常に出力可能】カメラごとの局所密度
-            density_cam[i, m] <- exp(log_density_base[i, m]) * rho[i, m]
+            density[i, m] <- exp(log_density_base[i, m]) * rho[i, m]
 
             # ポアソン分布の期待値（ベース期待値 × 局所ばらつき）
             lambda[i, m] <- exp(log_mu_base[i, m]) * rho[i, m]
@@ -1345,7 +1345,7 @@ bayes_rest_multi <- function(formula_stay,
   if(stay_family == "gamma" | stay_family == "weibull") prms <- c("scale", "shape", "mean_stay")
   if(stay_family == "lognormal") prms <- c("meanlog", "sdlog", "mean_stay")
 
-  prms <- c(prms, "density", "density_cam", "mean_pass")
+  prms <- c(prms, "density", "mean_pass")
 
   params <- c(prms, "loglike_obs_stay", "loglike_obs_y", "loglike_obs_detection",
               "loglike_pred_detection", "loglike_pred_stay", "loglike_pred_y",
