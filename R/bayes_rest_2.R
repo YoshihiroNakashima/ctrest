@@ -940,9 +940,6 @@ bayes_rest_2 <- function(formula_stay,
           }
 
           # ==========================================
-          # 2. カメラ地点ごとの期待値と尤度計算
-          # ==========================================
-          # ==========================================
           # enterモデル：比例オッズ (Cumulative Logit)
           # ==========================================
 
@@ -951,54 +948,53 @@ bayes_rest_2 <- function(formula_stay,
             beta_enter[k] ~ dnorm(0, sd = 2)
           }
 
-          # cutpoint の順序制約：差分パラメータ(delta)で保証
+          # cutpointの順序制約
           cutpoint[1] ~ dnorm(0, sd = 3)
-          for (g in 2:(N_group - 1)) {
-            delta[g - 1] ~ dgamma(1, 1)                        # 正の値のみ → 順序を保証
+          for (g in 2:(N_group - 1)) {          # N_group=2なら実行されない（問題なし）
+            delta[g - 1] ~ dgamma(1, 1)
             cutpoint[g] <- cutpoint[g - 1] + delta[g - 1]
           }
 
-          # 過分散パラメータ
-          theta_enter ~ dgamma(2, 0.1)                          # 緩い正則化、大きな値も許容
+          theta_enter ~ dgamma(2, 0.1)
 
           # --- カメラ地点ごとの尤度 ---
           for (i in 1:N_station) {
 
-            # 線形予測子（X_enterに切片列を含めないこと）
             eta[i] <- inprod(beta_enter[1:nPreds_enter], X_enter[i, 1:nPreds_enter])
 
-            # 累積確率：logit(P(Y <= g)) = cutpoint[g] - eta[i]
+            # 累積確率
             for (g in 1:(N_group - 1)) {
-              cum_p[i, g] <- ilogit(cutpoint[g] - eta[i])      # = 1 / (1 + exp(-(cutpoint[g] - eta[i])))
+              cum_p[i, g] <- ilogit(cutpoint[g] - eta[i])
             }
 
-            # 各カテゴリの確率（累積確率の差分）
+            # カテゴリ確率（差分）
             p_expected[i, 1] <- cum_p[i, 1]
             for (g in 2:(N_group - 1)) {
               p_expected[i, g] <- cum_p[i, g] - cum_p[i, g - 1]
             }
             p_expected[i, N_group] <- 1 - cum_p[i, N_group - 1]
 
-            # Dirichlet-Multinomial の alpha パラメータ
+            # Dirichlet-Multinomialのalpha
             for (g in 1:N_group) {
               alpha_Dirichlet[i, g] <- theta_enter * p_expected[i, g]
             }
 
-            # 期待値（解釈用：平均侵入回数）
-            for (g in 1:N_group) {
-              c_expected[i, g] <- p_expected[i, g] * (g - 1)
-            }
-            mean_pass[i] <- sum(c_expected[i, 1:N_group])
+            # =============================================
+            # 【修正】mean_pass：侵入「回数」は (g-1) 回
+            # g=1 → 0回, g=2 → 1回, g=3 → 2回 ...
+            # mean_pass が 0 にならないよう下限を設ける
+            # =============================================
+            mean_pass_raw[i] <- sum(p_expected[i, 2:N_group] *        # g=1(0回)を除いた和
+                                      (1:(N_group - 1)))                 # 1回, 2回, 3回...
+            mean_pass[i] <- max(mean_pass_raw[i], 0.001)              # log(0)防止
 
             # 尤度
             y[i, 1:N_group] ~ ddirchmulti(alpha_Dirichlet[i, 1:N_group], N_judge[i])
-
-            # 事後予測（PPCに使う場合）
             pred_y[i, 1:N_group] ~ ddirchmulti(alpha_Dirichlet[i, 1:N_group], N_judge[i])
-
-            # 対数尤度（WAICやLOO計算用）
-            loglike_obs_y[i]  <- ddirchmulti(y[i, 1:N_group],      alpha_Dirichlet[i, 1:N_group], N_judge[i], log = TRUE)
-            loglike_pred_y[i] <- ddirchmulti(pred_y[i, 1:N_group], alpha_Dirichlet[i, 1:N_group], N_judge[i], log = TRUE)
+            loglike_obs_y[i]  <- ddirchmulti(y[i, 1:N_group],
+                                             alpha_Dirichlet[i, 1:N_group], N_judge[i], log = TRUE)
+            loglike_pred_y[i] <- ddirchmulti(pred_y[i, 1:N_group],
+                                             alpha_Dirichlet[i, 1:N_group], N_judge[i], log = TRUE)
           }
 
           # 3. 検出回数 (N_detection) の尤度----
@@ -1056,43 +1052,45 @@ bayes_rest_2 <- function(formula_stay,
 
         # 3. 侵入回数 (enter) モデルの初期値 【比例オッズモデル用に修正】
         beta_enter_init <- rep(0, nPreds_enter)
+
         # cutpoint はデータの経験的累積分布から逆ロジット変換で初期値を設定
-        # y_mat: 各地点の観測カウント行列 (N_station × N_group)
-        total_obs   <- sum(y_mat)                          # 全観測数
-        cum_counts  <- cumsum(colSums(y_mat))[1:(N_group - 1)]  # カテゴリ1〜G-1の累積カウント
-        cum_prop    <- cum_counts / total_obs              # 累積割合
+        # (注: y_mat はグローバル環境等に存在している前提)
+        total_obs   <- sum(y_mat)                                  # 全観測数
+        cum_counts  <- cumsum(colSums(y_mat))[1:(N_group - 1)]     # カテゴリ1〜G-1の累積カウント
+        cum_prop    <- cum_counts / total_obs                      # 累積割合
+
         # 割合が0や1に張り付くと logit が ±Inf になるので 0.01〜0.99 にクランプ
         cum_prop    <- pmin(pmax(cum_prop, 0.01), 0.99)
-        cutpoint_empirical <- qlogis(cum_prop)             # logit変換 → cutpointの経験的初期値
+        cutpoint_empirical <- stats::qlogis(cum_prop)              # logit変換 → cutpointの経験的初期値
 
         # 差分パラメータ (delta) による順序制約を使う場合の初期値
-        # cutpoint[g] = cutpoint[1] + sum(delta[2:g])  (delta > 0)
-        delta_init  <- pmax(diff(c(-Inf, cutpoint_empirical)), 0.1)  # 差分、最小0.1で正を保証
-        cutpoint_init        <- rep(NA, N_group - 1)
-        cutpoint_init[1]     <- cutpoint_empirical[1]
-        if (N_group > 2) {
-          delta_init_vec     <- pmax(diff(cutpoint_empirical), 0.1)  # 長さ N_group-2
-        }
+        cutpoint_init    <- rep(NA, N_group - 1)
+        cutpoint_init[1] <- cutpoint_empirical[1]                  # cutpoint[1] のみ確率変数として初期値を渡す
 
         # 共通の初期値リストを作成
         common_inits <- list(
           # stay 関連
-          beta_stay   = beta_stay_init,
-          stay        = ifelse(censored == 0, NA, c_time + stats::runif(N_stay, 0.1, 2.0)),
-          theta_stay  = stats::runif(1, 0.8, 1.2),
+          beta_stay  = beta_stay_init,
+          stay       = ifelse(censored == 0, NA, c_time + stats::runif(N_stay, 0.1, 2.0)),
+          theta_stay = stats::runif(1, 0.8, 1.2),
+
           # density 関連
           beta_density = beta_density_init,
+
           # enter 関連 【修正】
           beta_enter  = beta_enter_init,
-          cutpoint    = cutpoint_init,               # cutpoint[1] のみ; [2:] は delta 経由
-          theta_enter = stats::runif(1, 5, 20),      # 過分散が小さめのほうが初期収束が安定
+          cutpoint    = cutpoint_init,             # cutpoint[1] のみ値あり、以降は NA
+          theta_enter = stats::runif(1, 5, 20),    # 過分散が小さめのほうが初期収束が安定
+
           # 検出 (detection) 関連
           size        = stats::runif(1, 0.8, 1.2)
         )
 
-        # delta を使う場合は追加
+        # delta を使う場合は追加 (N_group >= 3 の場合)
         if (N_group > 2) {
-          common_inits$delta <- delta_init_vec       # 長さ N_group-2、すべて正
+          # cutpoint_empirical の差分をとり、最小0.1で正を保証
+          delta_init_vec <- pmax(diff(cutpoint_empirical), 0.1)
+          common_inits$delta <- delta_init_vec
         }
 
         # 滞在時間のランダムエフェクトがある場合の追加
@@ -1100,9 +1098,6 @@ bayes_rest_2 <- function(formula_stay,
           common_inits$random_effect_stay <- stats::runif(nLevels_stay, -0.1, 0.1)
           common_inits$sigma_stay         <- stats::runif(1, 0.8, 1.5)
         }
-
-        return(common_inits)
-      }
 
         return(common_inits)
       }
