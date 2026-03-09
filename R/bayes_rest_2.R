@@ -1039,6 +1039,8 @@ bayes_rest_2 <- function(formula_stay,
           }
         }#end
       )
+      y_mat <- y
+
       inits_f <- function() {
         # 1. 滞在時間 (stay) モデルの初期値
         stay_mean_log <- log(mean(stay_data$Stay, na.rm = TRUE))
