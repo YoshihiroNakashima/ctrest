@@ -1249,6 +1249,8 @@ bayes_rest_multi <- function(formula_stay,
       beta_density           = rnorm(nPreds_density, 0, 1),
       species_effect_density = matrix(rnorm(nSpecies * nPreds_density, 0, 0.5), nrow = nSpecies, ncol = nPreds_density),
       sd_species_density     = runif(1, 0.01, 2),
+      # ★これを追加！ (N_station行 × nSpecies列の、全て1の行列)
+      rho = matrix(1, nrow = N_station, ncol = nSpecies),
 
       # --- alpha (enter) ---
       theta_enter          = runif(nSpecies, 1, 5),
