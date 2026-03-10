@@ -922,7 +922,7 @@ bayes_rest_multi <- function(formula_stay,
           #   step(censored[i] - 0.5)  * plnorm(c_time[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], lower.tail = 0, log.p = 1)
           #
           # loglike_pred_stay[i] <- dlnorm(pred_t[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1)
-          # meanlog[i] <- log(scale[i])
+          meanlog[i] <- log(scale[i])
 
           if (nPreds_stay > 1) {
             if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
@@ -1085,7 +1085,7 @@ bayes_rest_multi <- function(formula_stay,
             N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p_nb[i, m])
 
             # WAIC / PPC 用
-            N_detection_rep[i, m]    ~ dnbinom(size = size[m], prob = p_nb[i, m])
+            # N_detection_rep[i, m]    ~ dnbinom(size = size[m], prob = p_nb[i, m])
             # loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size = size[m], prob = p_nb[i, m], log = 1)
             # loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size = size[m], prob = p_nb[i, m], log = 1)
 
