@@ -917,12 +917,12 @@ bayes_rest_multi <- function(formula_stay,
           stay[i]      ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
           pred_t[i]    ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
 
-          # 修正点：log(1 - plnorm(...))のアンダーフローを防ぐため、lower.tail = 0, log.p = 1 を使用
-          loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dlnorm(stay[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1) +
-            step(censored[i] - 0.5)  * plnorm(c_time[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], lower.tail = 0, log.p = 1)
-
-          loglike_pred_stay[i] <- dlnorm(pred_t[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1)
-          meanlog[i] <- log(scale[i])
+          # # 修正点：log(1 - plnorm(...))のアンダーフローを防ぐため、lower.tail = 0, log.p = 1 を使用
+          # loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dlnorm(stay[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1) +
+          #   step(censored[i] - 0.5)  * plnorm(c_time[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], lower.tail = 0, log.p = 1)
+          #
+          # loglike_pred_stay[i] <- dlnorm(pred_t[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1)
+          # meanlog[i] <- log(scale[i])
 
           if (nPreds_stay > 1) {
             if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
@@ -963,57 +963,94 @@ bayes_rest_multi <- function(formula_stay,
           sigma_stay ~ T(dnorm(0, sd = 2), 0, )
         }
 
-        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
-        cutpoint[1] <- 0
-        for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
+        # ==========================================
+        # [2] Enter Model (Cumulative Logit / Proportional Odds)
+        # ==========================================
 
-        if (nPreds_alpha == 1) {
-          for (i in 1:N_station) {
-            for (m in 1:nSpecies) {
-              eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
-              for (g in 1:N_group) {
-                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
-                phi[i, m, g] <- exp(log_phi[i, m, g])
-              }
-              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-              for (g in 1:N_group) {
-                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
-                c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
-                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
-              }
-              mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
-            }
-          }
-        } else {
-          for (i in 1:N_station) {
-            for (m in 1:nSpecies) {
-              eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
-              for (g in 1:N_group) {
-                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
-                phi[i, m, g] <- exp(log_phi[i, m, g])
-              }
-              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-              for (g in 1:N_group) {
-                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
-                c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
-                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
-              }
-              mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
-            }
-          }
+        # --- 事前分布 ---
+        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
+
+        # cutpointの順序制約 (N_group-1 個の閾値)
+        cutpoint[1] ~ dnorm(0, sd = 3)
+        for (g in 2:(N_group - 1)) {
+          delta[g - 1] ~ dgamma(1, 1)
+          cutpoint[g] <- cutpoint[g - 1] + delta[g - 1]
         }
 
+        # βと種特異的ランダムエフェクト
         for (k in 1:nPreds_alpha) {
           beta_enter[k] ~ dnorm(0, sd = 5)
           sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
           for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
         }
 
+        # --- カメラ地点(i) × 種(m) ごとの尤度 ---
+        if (nPreds_alpha == 1) {
+          for (i in 1:N_station) {
+            for (m in 1:nSpecies) {
+              eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
+
+              # 累積確率
+              for (g in 1:(N_group - 1)) {
+                cum_p[i, m, g] <- ilogit(cutpoint[g] - eta[i, m])
+              }
+
+              # カテゴリ確率（差分）
+              p_expected[i, m, 1] <- cum_p[i, m, 1]
+              for (g in 2:(N_group - 1)) {
+                p_expected[i, m, g] <- cum_p[i, m, g] - cum_p[i, m, g - 1]
+              }
+              p_expected[i, m, N_group] <- 1 - cum_p[i, m, N_group - 1]
+
+              # Dirichlet-Multinomialのalpha
+              for (g in 1:N_group) {
+                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
+              }
+
+              # mean_pass：侵入「回数」の期待値
+              mean_pass_raw[i, m] <- sum(p_expected[i, m, 2:N_group] * (1:(N_group - 1)))
+              mean_pass[i, m] <- max(mean_pass_raw[i, m], 0.001)  # log(0)防止
+            }
+          }
+        } else {
+          for (i in 1:N_station) {
+            for (m in 1:nSpecies) {
+              eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
+
+              # 累積確率
+              for (g in 1:(N_group - 1)) {
+                cum_p[i, m, g] <- ilogit(cutpoint[g] - eta[i, m])
+              }
+
+              # カテゴリ確率（差分）
+              p_expected[i, m, 1] <- cum_p[i, m, 1]
+              for (g in 2:(N_group - 1)) {
+                p_expected[i, m, g] <- cum_p[i, m, g] - cum_p[i, m, g - 1]
+              }
+              p_expected[i, m, N_group] <- 1 - cum_p[i, m, N_group - 1]
+
+              # Dirichlet-Multinomialのalpha
+              for (g in 1:N_group) {
+                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
+              }
+
+              # mean_pass：侵入「回数」の期待値
+              mean_pass_raw[i, m] <- sum(p_expected[i, m, 2:N_group] * (1:(N_group - 1)))
+              mean_pass[i, m] <- max(mean_pass_raw[i, m], 0.001)  # log(0)防止
+            }
+          }
+        }
+
+        # --- 観測モデル ---
         for (j in 1:N_station_species) {
-          y[j, 1:N_group]      ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
-          pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
-          loglike_obs_y[j]  <- ddirchmulti(y[j,      1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
-          loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+          y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
+
+          # ==========================================
+          # 【PPC / WAIC用コード】（計算速度を優先するため通常はコメントアウト）
+          # pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
+          # loglike_obs_y[j]  <- ddirchmulti(y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+          # loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+          # ==========================================
         }
 
         # ==========================================
@@ -1049,8 +1086,8 @@ bayes_rest_multi <- function(formula_stay,
 
             # WAIC / PPC 用
             N_detection_rep[i, m]    ~ dnbinom(size = size[m], prob = p_nb[i, m])
-            loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size = size[m], prob = p_nb[i, m], log = 1)
-            loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size = size[m], prob = p_nb[i, m], log = 1)
+            # loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size = size[m], prob = p_nb[i, m], log = 1)
+            # loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size = size[m], prob = p_nb[i, m], log = 1)
 
             # 修正点：MCMCを崩さずに局所密度 density[i,m] を取得する「事後期待値」の決定論的計算
             # Gamma(size, size) 事前分布と Poisson(mu) 尤度から、事後分布の期待値は (size + y) / (size + mu) になる
@@ -1122,66 +1159,105 @@ bayes_rest_multi <- function(formula_stay,
           sigma_stay ~ T(dnorm(0, sd = 2), 0, )
         }
 
-        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
-        cutpoint[1] <- 0
-        for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
 
-        if (nPreds_alpha == 1) {
-          for (i in 1:N_station) {
-            for (m in 1:nSpecies) {
-              eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
-              for (g in 1:N_group) {
-                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
-                phi[i, m, g] <- exp(log_phi[i, m, g])
-              }
-              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-              for (g in 1:N_group) {
-                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
-                c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
-                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
-              }
-              mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
-            }
-          }
-        } else {
-          for (i in 1:N_station) {
-            for (m in 1:nSpecies) {
-              eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
-              for (g in 1:N_group) {
-                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
-                phi[i, m, g] <- exp(log_phi[i, m, g])
-              }
-              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-              for (g in 1:N_group) {
-                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
-                c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
-                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
-              }
-              mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
-            }
-          }
+        # ==========================================
+        # [2] Enter Model (Cumulative Logit / Proportional Odds)
+        # ==========================================
+
+        # --- 事前分布 ---
+        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
+
+        # cutpointの順序制約 (N_group-1 個の閾値)
+        cutpoint[1] ~ dnorm(0, sd = 3)
+        for (g in 2:(N_group - 1)) {
+          delta[g - 1] ~ dgamma(1, 1)
+          cutpoint[g] <- cutpoint[g - 1] + delta[g - 1]
         }
 
+        # βと種特異的ランダムエフェクト
         for (k in 1:nPreds_alpha) {
           beta_enter[k] ~ dnorm(0, sd = 5)
           sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
           for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
         }
 
-        for (j in 1:N_station_species) {
-          y[j, 1:N_group]      ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
-          pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
-          loglike_obs_y[j]  <- ddirchmulti(y[j,      1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
-          loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+        # --- カメラ地点(i) × 種(m) ごとの尤度 ---
+        if (nPreds_alpha == 1) {
+          for (i in 1:N_station) {
+            for (m in 1:nSpecies) {
+              eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
+
+              # 累積確率
+              for (g in 1:(N_group - 1)) {
+                cum_p[i, m, g] <- ilogit(cutpoint[g] - eta[i, m])
+              }
+
+              # カテゴリ確率（差分）
+              p_expected[i, m, 1] <- cum_p[i, m, 1]
+              for (g in 2:(N_group - 1)) {
+                p_expected[i, m, g] <- cum_p[i, m, g] - cum_p[i, m, g - 1]
+              }
+              p_expected[i, m, N_group] <- 1 - cum_p[i, m, N_group - 1]
+
+              # Dirichlet-Multinomialのalpha
+              for (g in 1:N_group) {
+                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
+              }
+
+              # mean_pass：侵入「回数」の期待値
+              mean_pass_raw[i, m] <- sum(p_expected[i, m, 2:N_group] * (1:(N_group - 1)))
+              mean_pass[i, m] <- max(mean_pass_raw[i, m], 0.001)  # log(0)防止
+            }
+          }
+        } else {
+          for (i in 1:N_station) {
+            for (m in 1:nSpecies) {
+              eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
+
+              # 累積確率
+              for (g in 1:(N_group - 1)) {
+                cum_p[i, m, g] <- ilogit(cutpoint[g] - eta[i, m])
+              }
+
+              # カテゴリ確率（差分）
+              p_expected[i, m, 1] <- cum_p[i, m, 1]
+              for (g in 2:(N_group - 1)) {
+                p_expected[i, m, g] <- cum_p[i, m, g] - cum_p[i, m, g - 1]
+              }
+              p_expected[i, m, N_group] <- 1 - cum_p[i, m, N_group - 1]
+
+              # Dirichlet-Multinomialのalpha
+              for (g in 1:N_group) {
+                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
+              }
+
+              # mean_pass：侵入「回数」の期待値
+              mean_pass_raw[i, m] <- sum(p_expected[i, m, 2:N_group] * (1:(N_group - 1)))
+              mean_pass[i, m] <- max(mean_pass_raw[i, m], 0.001)  # log(0)防止
+            }
+          }
         }
+
+        # --- 観測モデル ---
+        for (j in 1:N_station_species) {
+          y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
+
+          # ==========================================
+          # 【PPC / WAIC用コード】（計算速度を優先するため通常はコメントアウト）
+          # pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
+          # loglike_obs_y[j]  <- ddirchmulti(y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+          # loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+          # ==========================================
+        }
+
 
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
             N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
             p[i, m] <- size[m] / (size[m] + mu[i, m])
             N_detection_rep[i, m]    ~ dnbinom(size = size[m], prob = p[i, m])
-            loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
-            loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
+            # loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
+            # loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
           }
           size[m] ~ dgamma(1, 1)
         }
@@ -1339,8 +1415,9 @@ bayes_rest_multi <- function(formula_stay,
 
   prms <- c(prms, "density", "mean_pass")
 
-  params <- c(prms, "loglike_obs_stay", "loglike_obs_y", "loglike_obs_detection",
-              "loglike_pred_detection", "loglike_pred_stay", "loglike_pred_y",
+  params <- c(prms,
+              # "loglike_obs_stay", "loglike_obs_y", "loglike_obs_detection",
+              # "loglike_pred_detection", "loglike_pred_stay", "loglike_pred_y",
               "beta_density", "species_effect_density",
               "beta_stay", "species_effect_stay",
               "beta_enter", "species_effect_alpha")
@@ -1366,15 +1443,16 @@ bayes_rest_multi <- function(formula_stay,
   stopCluster(this_cluster)
   cat("Estimation is finished!\n")
   ## WAIC
-  loglfy <- MCMCchains(chain_output, params = c("loglike_obs_y"))
-  loglfstay <- MCMCchains(chain_output, params = c("loglike_obs_stay"))
-  loglfN <- MCMCchains(chain_output, params = c("loglike_obs_detection"))
+  # loglfy <- MCMCchains(chain_output, params = c("loglike_obs_y"))
+  # loglfstay <- MCMCchains(chain_output, params = c("loglike_obs_stay"))
+  # loglfN <- MCMCchains(chain_output, params = c("loglike_obs_detection"))
 
-  loglfall <- cbind(loglfstay, loglfy, loglfN) # kernel/mixture関係なく結合可能
-
-  lppd <- sum(log(colMeans(exp(loglfall))))
-  p.waic <- sum(apply(loglfall, 2, var))
-  waic <- (-2) * lppd + 2 * p.waic
+  # loglfall <- cbind(loglfstay, loglfy, loglfN) # kernel/mixture関係なく結合可能
+  #
+  # lppd <- sum(log(colMeans(exp(loglfall))))
+  # p.waic <- sum(apply(loglfall, 2, var))
+  # waic <- (-2) * lppd + 2 * p.waic
+  waic <- 1
   # 結果の集約 -------------------------------------------------------------------
 
   # --- 共変量やランダム効果がない（全体共通）かの判定 ---
