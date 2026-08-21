@@ -15,7 +15,7 @@ estimating the density of ground-dwelling mammals and birds based on
 video data obtained from camera traps. For details on the REST model,
 please refer to [Nakashima et
 al. (2018)](https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/1365-2664.13059),
-and for the REST-RAD model, please refer to XXXXXX. For the data
+and for the REST-RAD model, please refer to [Nakashima et al. （2026）](https://besjournals.onlinelibrary.wiley.com/doi/10.1111/2041-210x.70248). For the data
 preparation process, please refer to [Nakashima et
 al. (2021)](https://www.biorxiv.org/content/10.1101/2021.05.18.444583v2).
 The package includes the following functions:
