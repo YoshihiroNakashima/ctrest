@@ -760,17 +760,6 @@ bayes_rest <- function(formula_stay,
     X_enter <- stats::model.matrix(stats::as.formula(formula_enter), model_frame_enter)
     nPreds_enter <- ncol(X_enter)
 
-    y_enter_cols <- grep("^y_", names(station_effort_data_target), value = TRUE)
-    y_enter <- station_effort_data_target %>%
-      dplyr::select(dplyr::all_of(y_enter_cols)) %>%
-      as.matrix()
-
-    N_enter_group <- ncol(y_enter)
-    N_det <- station_effort_data_target %>% dplyr::pull(N)
-
-    # 多項分布のサイズ不整合によるエラーを防ぐため、実際のデータの行合計を取得
-    N_enter_judge <- apply(y_enter, 1, sum)
-
     tidy_samples <- mcmc_samples <- list()
     waic <- numeric(length(formula_density_all))
 
@@ -798,8 +787,7 @@ bayes_rest <- function(formula_stay,
         N_detection = N_detection,
         stay = stay,
         censored = censored,
-        N_judge = N_judge,
-        y_enter = y_enter
+        N_judge = N_judge
       )
 
       cons_REST <- list(
@@ -815,10 +803,7 @@ bayes_rest <- function(formula_stay,
         activity_estimation = activity_estimation,
         X_density = X_density,
         X_enter = X_enter,
-        nPreds_enter = nPreds_enter,
-        N_det = N_det,
-        N_enter_group = N_enter_group,
-        N_enter_judge = N_enter_judge
+        nPreds_enter = nPreds_enter
       )
 
       if (activity_estimation == "kernel") {
