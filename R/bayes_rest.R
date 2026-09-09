@@ -676,9 +676,11 @@ bayes_rest <- function(formula_stay,
       }
 
       # パラメータリストの構築 (バグ修正済)
-      # mean_stay は NIMBLE の決定論的ノードのため監視せず、
-      # 確率的ノード beta_stay・theta_stay から R 側で再計算する
-      prms <- c("density", "p", "size", "beta_stay", "theta_stay")
+      if (stay_family == "exponential") prms <- c("scale", "mean_stay")
+      if (stay_family %in% c("gamma", "weibull")) prms <- c("scale", "shape", "mean_stay")
+      if (stay_family == "lognormal") prms <- c("meanlog", "sdlog", "mean_stay")
+
+      prms <- c(prms, "density", "p", "size")
       params <- c(prms, "loglike_obs_stay", "loglike_obs_y", "loglike_pred_stay", "loglike_pred_y")
 
       if (activity_estimation == "mixture") {
@@ -1318,27 +1320,6 @@ bayes_rest <- function(formula_stay,
 
   mcmc_samples_best <- mcmc_samples[[best.model]]
   tidy_samples_best <- tidy_samples[[best.model]]
-
-  # mean_stay は NIMBLE 内の決定論的ノードのため、確率的ノード
-  # beta_stay[1] と theta_stay から R 側で計算して mcmc_samples_best に列追加する
-  if (nPreds_stay == 1) {
-    mcmc_samples_best <- lapply(mcmc_samples_best, function(ch) {
-      m <- as.matrix(ch)
-      b1_col <- grep("^beta_stay\\[1\\]$", colnames(m), value = TRUE)
-      th_col <- grep("^theta_stay$",        colnames(m), value = TRUE)
-      if (length(b1_col) == 0 || length(th_col) == 0) return(coda::as.mcmc(m))
-      b1 <- m[, b1_col]
-      th <- m[, th_col]
-      new_ms <- switch(stay_family,
-        "lognormal"   = exp(b1 + th^2 / 2),
-        "exponential" = exp(b1),
-        "gamma"       = th * exp(b1),
-        "weibull"     = exp(b1 + lgamma(1 + 1/th))
-      )
-      coda::as.mcmc(cbind(m, mean_stay = new_ms))
-    })
-    mcmc_samples_best <- coda::as.mcmc.list(mcmc_samples_best)
-  }
 
   if(activity_estimation == "mixture") {
     sample_activity <- MCMCvis::MCMCchains(actv_chain_output,
