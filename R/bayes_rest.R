@@ -940,7 +940,11 @@ bayes_rest <- function(formula_stay,
           # --- カメラ地点ごとの尤度 ---
           for (i in 1:N_station) {
 
-            eta[i] <- inprod(beta_enter[1:nPreds_enter], X_enter[i, 1:nPreds_enter])
+            if (nPreds_enter == 1) {
+              eta[i] <- beta_enter[1]
+            } else {
+              eta[i] <- inprod(beta_enter[1:nPreds_enter], X_enter[i, 1:nPreds_enter])
+            }
 
             # 累積確率
             for (g in 1:(N_group - 1)) {
@@ -1138,6 +1142,7 @@ bayes_rest <- function(formula_stay,
 
       # 4. クラスターのセットアップと実行
       this_cluster <- parallel::makeCluster(nc)
+      on.exit(try(parallel::stopCluster(this_cluster), silent = TRUE), add = TRUE)
 
       # 実行関数だけを送る
       parallel::clusterExport(this_cluster, c("run_MCMC_RAD"), envir = environment())
@@ -1227,6 +1232,7 @@ bayes_rest <- function(formula_stay,
       )
 
       parallel::stopCluster(this_cluster)
+      on.exit()
       cat("Estimation is finished!\n")
 
       # --- 尤度チェーンの抽出 ---
@@ -1314,6 +1320,35 @@ bayes_rest <- function(formula_stay,
 
   mcmc_samples_best <- mcmc_samples[[best.model]]
   tidy_samples_best <- tidy_samples[[best.model]]
+
+  # NIMBLEの決定論的ノード mean_stay がサンプリング中に更新されない問題を回避:
+  # stochastic ノード (beta_stay, sdlog/shape) からR側で再計算して正しい Rhat を得る
+  if (nPreds_stay == 1) {
+    mcmc_samples_best <- lapply(mcmc_samples_best, function(ch) {
+      m <- as.matrix(ch)
+      b1_col <- grep("beta_stay", colnames(m), value = TRUE)[1]
+      if (is.na(b1_col) || !("mean_stay" %in% colnames(m))) return(coda::as.mcmc(m))
+      b1 <- m[, b1_col]
+      new_ms <- switch(stay_family,
+        "lognormal" = {
+          sc <- grep("^sdlog$", colnames(m), value = TRUE)[1]
+          exp(b1 + m[, sc]^2 / 2)
+        },
+        "exponential" = exp(b1),
+        "gamma" = {
+          sc <- grep("^shape$", colnames(m), value = TRUE)[1]
+          m[, sc] * exp(b1)
+        },
+        "weibull" = {
+          sc <- grep("^shape$", colnames(m), value = TRUE)[1]
+          exp(b1 + lgamma(1 + 1 / m[, sc]))
+        }
+      )
+      m[, "mean_stay"] <- new_ms
+      coda::as.mcmc(m)
+    })
+    mcmc_samples_best <- coda::as.mcmc.list(mcmc_samples_best)
+  }
 
   if(activity_estimation == "mixture") {
     sample_activity <- MCMCvis::MCMCchains(actv_chain_output,
