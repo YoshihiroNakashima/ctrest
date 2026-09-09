@@ -676,11 +676,9 @@ bayes_rest <- function(formula_stay,
       }
 
       # パラメータリストの構築 (バグ修正済)
-      if (stay_family == "exponential") prms <- c("scale", "mean_stay")
-      if (stay_family %in% c("gamma", "weibull")) prms <- c("scale", "shape", "mean_stay")
-      if (stay_family == "lognormal") prms <- c("meanlog", "sdlog", "mean_stay")
-
-      prms <- c(prms, "density", "p", "size")
+      # mean_stay は NIMBLE の決定論的ノードのため監視せず、
+      # 確率的ノード beta_stay・theta_stay から R 側で再計算する
+      prms <- c("density", "p", "size", "beta_stay", "theta_stay")
       params <- c(prms, "loglike_obs_stay", "loglike_obs_y", "loglike_pred_stay", "loglike_pred_y")
 
       if (activity_estimation == "mixture") {
@@ -1321,31 +1319,23 @@ bayes_rest <- function(formula_stay,
   mcmc_samples_best <- mcmc_samples[[best.model]]
   tidy_samples_best <- tidy_samples[[best.model]]
 
-  # NIMBLEの決定論的ノード mean_stay がサンプリング中に更新されない問題を回避:
-  # stochastic ノード (beta_stay, sdlog/shape) からR側で再計算して正しい Rhat を得る
+  # mean_stay は NIMBLE 内の決定論的ノードのため、確率的ノード
+  # beta_stay[1] と theta_stay から R 側で計算して mcmc_samples_best に列追加する
   if (nPreds_stay == 1) {
     mcmc_samples_best <- lapply(mcmc_samples_best, function(ch) {
       m <- as.matrix(ch)
-      b1_col <- grep("beta_stay", colnames(m), value = TRUE)[1]
-      if (is.na(b1_col) || !("mean_stay" %in% colnames(m))) return(coda::as.mcmc(m))
+      b1_col <- grep("^beta_stay\\[1\\]$", colnames(m), value = TRUE)
+      th_col <- grep("^theta_stay$",        colnames(m), value = TRUE)
+      if (length(b1_col) == 0 || length(th_col) == 0) return(coda::as.mcmc(m))
       b1 <- m[, b1_col]
+      th <- m[, th_col]
       new_ms <- switch(stay_family,
-        "lognormal" = {
-          sc <- grep("^sdlog$", colnames(m), value = TRUE)[1]
-          exp(b1 + m[, sc]^2 / 2)
-        },
+        "lognormal"   = exp(b1 + th^2 / 2),
         "exponential" = exp(b1),
-        "gamma" = {
-          sc <- grep("^shape$", colnames(m), value = TRUE)[1]
-          m[, sc] * exp(b1)
-        },
-        "weibull" = {
-          sc <- grep("^shape$", colnames(m), value = TRUE)[1]
-          exp(b1 + lgamma(1 + 1 / m[, sc]))
-        }
+        "gamma"       = th * exp(b1),
+        "weibull"     = exp(b1 + lgamma(1 + 1/th))
       )
-      m[, "mean_stay"] <- new_ms
-      coda::as.mcmc(m)
+      coda::as.mcmc(cbind(m, mean_stay = new_ms))
     })
     mcmc_samples_best <- coda::as.mcmc.list(mcmc_samples_best)
   }
