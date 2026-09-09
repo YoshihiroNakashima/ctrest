@@ -62,30 +62,39 @@ add_effort <- function(detection_data,
 
   # --- Input validation -------------------------------------------------------
 
-  if (!is.data.frame(detection_data)) {
+  if (!is.data.frame(detection_data))
     stop("'detection_data' must be a data frame.", call. = FALSE)
+  if (!is.data.frame(station_data_formatted))
+    stop("'station_data_formatted' must be a data frame. Did you run format_station_data() first?",
+         call. = FALSE)
+
+  for (nm in c("col_name_station", "col_name_datetime")) {
+    if (!is.character(get(nm)) || length(get(nm)) != 1)
+      stop(sprintf("'%s' must be a single character string.", nm), call. = FALSE)
   }
-  if (!is.data.frame(station_data_formatted)) {
-    stop("'station_data_formatted' must be a data frame.", call. = FALSE)
-  }
+  if (!is.null(col_name_term) && (!is.character(col_name_term) || length(col_name_term) != 1))
+    stop("'col_name_term' must be a single character string or NULL.", call. = FALSE)
+  if (!is.logical(plot) || length(plot) != 1)
+    stop("'plot' must be TRUE or FALSE.", call. = FALSE)
 
   req_cols <- c(col_name_station, col_name_datetime)
   if (!is.null(col_name_term)) req_cols <- c(req_cols, col_name_term)
-
   missing_cols <- setdiff(req_cols, colnames(detection_data))
-  if (length(missing_cols) > 0) {
+  if (length(missing_cols) > 0)
     stop(
-      paste("Missing columns in detection_data:", paste(missing_cols, collapse = ", ")),
+      sprintf(
+        "Column(s) not found in 'detection_data': %s\n  Available columns: %s",
+        paste(missing_cols, collapse = ", "),
+        paste(colnames(detection_data), collapse = ", ")
+      ),
       call. = FALSE
     )
-  }
 
-  if (!"Station" %in% colnames(station_data_formatted)) {
+  if (!"Station" %in% colnames(station_data_formatted))
     stop(
       "'station_data_formatted' must contain a 'Station' column. Did you run format_station_data() first?",
       call. = FALSE
     )
-  }
 
   # --- Column selection and renaming ------------------------------------------
 
@@ -106,20 +115,40 @@ add_effort <- function(detection_data,
   # --- Datetime parsing -------------------------------------------------------
 
   if (!inherits(det_clean$DateTime, "POSIXt")) {
-    det_clean <- det_clean |>
-      dplyr::mutate(
-        DateTime = lubridate::parse_date_time(
-          as.character(.data$DateTime),
-          orders = c("Ymd HMS", "Ymd HM", "Ymd", "Ymd H")
-        )
+    dt_raw <- as.character(det_clean$DateTime)
+    parsed <- suppressWarnings(
+      lubridate::parse_date_time(
+        dt_raw,
+        orders = c("Ymd HMS", "Ymd HM", "Ymd H", "Ymd"),
+        quiet  = TRUE
       )
-  }
-
-  if (anyNA(det_clean$DateTime)) {
-    stop(
-      "Failed to parse some datetime values. Ensure the format is 'YYYY-MM-DD HH:MM:SS' or similar.",
-      call. = FALSE
     )
+    n_fail <- sum(is.na(parsed))
+    if (n_fail == length(parsed)) {
+      ex <- dt_raw[!is.na(dt_raw)][1]
+      stop(
+        sprintf(
+          paste0(
+            "Could not parse any datetime value in column '%s'.\n",
+            "  Example value seen: \"%s\"\n",
+            "  Supported formats: 'YYYY-MM-DD HH:MM:SS', 'YYYY/MM/DD HH:MM', 'YYYY-MM-DD'.\n",
+            "  Alternatively, convert the column to POSIXct before calling this function."
+          ),
+          col_name_datetime, ex
+        ),
+        call. = FALSE
+      )
+    }
+    if (n_fail > 0)
+      warning(
+        sprintf(
+          "%d of %d datetime value(s) in column '%s' could not be parsed and will be excluded.",
+          n_fail, length(parsed), col_name_datetime
+        ),
+        call. = FALSE
+      )
+    det_clean$DateTime <- parsed
+    det_clean <- det_clean |> dplyr::filter(!is.na(.data$DateTime))
   }
 
   # --- Effort calculation -----------------------------------------------------
@@ -173,6 +202,16 @@ add_effort <- function(detection_data,
 
   final_data <- final_data |>
     dplyr::filter(!is.na(.data$Effort), .data$Effort > 0)
+
+  if (nrow(final_data) == 0)
+    stop(
+      paste0(
+        "No stations remain after removing those with zero or missing effort.\n",
+        "  Check that station IDs in 'detection_data' match those in 'station_data_formatted',\n",
+        "  and that each station has at least two detections (to compute a non-zero effort)."
+      ),
+      call. = FALSE
+    )
 
   # --- Optional plot ----------------------------------------------------------
 

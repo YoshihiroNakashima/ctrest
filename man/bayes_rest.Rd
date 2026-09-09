@@ -32,7 +32,7 @@ bayes_rest(
 
 \item{formula_density}{A model formula for animal density. For example, \code{~ 1 + x1}. Note that the left-hand side must be omitted as density is a latent parameter.}
 
-\item{formula_enter}{A model formula for the total number of passes (\code{Y}) through the focal area for each station-species pair. For example, \code{~ 1 + x1}. Note that this argument is strictly used for the RAD-REST model and is completely ignored when \code{model = "REST"}.}
+\item{formula_enter}{A model formula for the number of passes through the focal area per video. For example, \code{~ 1 + x1}. Required when \code{model = "RAD-REST"}; ignored when \code{model = "REST"}.}
 
 \item{station_effort_data}{A data frame containing information for each camera station. Typically, this is the output of the \code{add_effort} function. Alternatively, a manually prepared data frame may be provided, with the required columns depending on the model:
 \itemize{
@@ -58,10 +58,10 @@ bayes_rest(
 \item \code{Station} (character): Camera station ID.
 \item \code{Species} (character): Species name.
 \item \code{Stay} (numeric): Staying time (in seconds) within the focal area for each detected pass.
-\item \code{Censored} (binary): Indicator for censored staying time (1 = censored, 0 = observed).
+\item \code{Cens} (binary): Indicator for censored staying time (1 = censored, 0 = observed).
 }}
 
-\item{random_effect_stay}{A specification of the random effect structure on staying time (e.g., \code{~ (1 | Station)}). Default is \code{NULL} (no random effects).}
+\item{random_effect_stay}{A character string specifying the column name in \code{stay_data} to use as a grouping factor for a station-level random intercept on staying time (e.g., \code{"Station"}). Default is \code{NULL} (no random effects).}
 
 \item{activity_data}{A data frame containing a \code{time} column, representing detection times transformed into radians. Typically, this is the output of the \code{format_activity} function.}
 
@@ -75,7 +75,7 @@ bayes_rest(
 
 \item{focal_area}{A numeric value representing the area of the camera focal area, in square meters.}
 
-\item{cores}{An integer specifying the number of CPU cores to use for parallel computation. Default is 3.}
+\item{cores}{An integer specifying the number of CPU cores (validated but currently unused; the number of parallel workers equals \code{chains}). Default is 3.}
 
 \item{iter}{An integer specifying the total number of MCMC iterations per chain. Default is 5000.}
 
@@ -92,14 +92,14 @@ bayes_rest(
 \item{target_species}{A character string specifying the target species to be analyzed. Only a single species can be specified at a time.}
 }
 \value{
-A list of class \code{"ResultDensity"}, which includes the following components:
+A list of class \code{"ResultDensity"} with the following components:
 \describe{
-\item{\code{WAIC}}{An object containing WAIC (Widely Applicable Information Criterion) results for model evaluation.}
-\item{\code{summary_result}}{A data frame summarizing the posterior estimates of the parameters, including the mean staying time and density.}
-\item{\code{samples}}{A \code{coda::mcmc.list} object containing full MCMC posterior samples for all model parameters.}
+\item{\code{WAIC}}{A data frame of WAIC values for each candidate density model (rows sorted from best to worst), with columns \code{Model}, \code{random_effect_stay}, and \code{WAIC}.}
+\item{\code{summary_result}}{A data frame of posterior summaries (mean, sd, 2.5\\%, 50\\%, 97.5\\%, Rhat, n.eff, cv) for \code{density} and \code{mean_stay} (and \code{mean_pass} for RAD-REST). When density or stay covariates are present, one row is returned per station; otherwise a single row labelled \code{Station = "All"}.}
+\item{\code{samples}}{A \code{coda::mcmc.list} object of full MCMC posterior samples from the best model. Use the \code{MCMCvis} package for convergence diagnostics.}
+\item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC samples from the best model, with columns \code{parameter}, \code{value}, and \code{iteration}.}
+\item{\code{activity_curve}}{(Returned only when \code{activity_estimation = "mixture"}.) A data frame of the estimated activity density curve with columns \code{variable}, \code{x}, and posterior summary statistics.}
 }
-The returned object has a custom print method that automatically displays the WAIC and a summary of the estimates.
-You can access the full MCMC samples via \code{$samples} and visually analyze convergence using the \code{MCMCvis} package.
 }
 \description{
 Bayesian parameter estimation for the REST/RAD-REST model via MCMC sampling using \code{nimble}.

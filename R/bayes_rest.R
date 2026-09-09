@@ -1374,13 +1374,16 @@ bayes_rest <- function(formula_stay,
     dplyr::select(Species, Station, Variable, mean, sd, lower, median, upper, Rhat, n.eff, cv)
 
   density_result <- list(
-    WAIC = WAIC,
-    summary_result = summary_mean,
-    samples = mcmc_samples_best,
-    tidy_samples = tidy_samples_best
+    WAIC             = WAIC,
+    summary_result   = summary_mean,
+    samples          = mcmc_samples_best,
+    tidy_samples     = tidy_samples_best,
+    target_species   = target_species,
+    model            = model,
+    stay_family      = stay_family
   )
 
-  if(activity_estimation == "mixture") {
+  if (activity_estimation == "mixture") {
     density_result$activity_curve <- activity_density_estimates
   }
   class(density_result) <- "ResultDensity"

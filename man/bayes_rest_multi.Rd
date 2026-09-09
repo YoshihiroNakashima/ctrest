@@ -22,6 +22,7 @@ bayes_rest_multi(
   warmup = 1000,
   chains = 3,
   thin = 4,
+  model = "RAD-REST",
   target_species
 )
 }
@@ -30,7 +31,7 @@ bayes_rest_multi(
 
 \item{formula_density}{A model formula for animal density (e.g., \code{~ 1 + x1}). Note that the left-hand side must be omitted as density is a latent parameter.}
 
-\item{formula_enter}{A model formula for the total number of passes (\code{Y}) entering the focal area (e.g., \code{~ 1 + x1}). Note that the left-hand side must be omitted. This is particularly used for the RAD-REST model or when estimating intrusion rates.}
+\item{formula_enter}{A model formula for the number of passes through the focal area per video (e.g., \code{~ 1 + x1}). Required when \code{model = "RAD-REST"}; ignored when \code{model = "REST"}.}
 
 \item{station_effort_data}{A data frame containing information for each camera station. Typically, this is the output of the \code{add_effort} function. Alternatively, a manually prepared data frame may be provided with the following required columns:
 \itemize{
@@ -56,10 +57,10 @@ bayes_rest_multi(
 \item \code{Station} (character): Camera station ID.
 \item \code{Species} (character): Species name.
 \item \code{Stay} (numeric): Staying time (in seconds) within the focal area for each detected pass.
-\item \code{Censored} (binary): Indicator for censored staying time (1 = censored, 0 = observed).
+\item \code{Cens} (binary): Indicator for censored staying time (1 = censored, 0 = observed).
 }}
 
-\item{random_effect_stay}{A character string specifying a random effect structure on mean staying time (e.g., \code{"~ (1 | Station)"}). Default is \code{NULL}. Note: Species-level random effects are automatically included in this multispecies model and do not need to be manually specified here.}
+\item{random_effect_stay}{A character string specifying the column name in \code{stay_data} to use as a grouping factor for a station-level random intercept on staying time (e.g., \code{"Station"}). Default is \code{NULL}. Note: species-level random effects are automatically included in this multispecies model.}
 
 \item{activity_data}{A data frame containing a \code{time} column, representing detection times transformed into radians. Typically, this is the output of the \code{format_activity} function.}
 
@@ -69,7 +70,7 @@ bayes_rest_multi(
 
 \item{C}{An integer specifying the maximum number of von Mises components to use in the mixture model. Required only if \code{activity_estimation = "mixture"}. Default is 10.}
 
-\item{stay_family}{A character string specifying the probability distribution used to model staying times (e.g., \code{"exponential"}, \code{"gamma"}, \code{"lognormal"}, \code{"weibull"}). This should ideally be selected based on the output of the \code{bayes_stay_selection} function. Default is \code{"lognormal"}.}
+\item{stay_family}{A character string specifying the probability distribution used to model staying times (e.g., \code{"exponential"}, \code{"gamma"}, \code{"lognormal"}, \code{"weibull"}). Default is \code{"lognormal"}.}
 
 \item{focal_area}{A numeric value representing the size of the focal area, in square meters.}
 
@@ -81,60 +82,27 @@ bayes_rest_multi(
 
 \item{chains}{An integer specifying the number of MCMC chains. Default is 3.}
 
-\item{thin}{An integer specifying the thinning interval for MCMC sampling. Default is 4 (meaning every 4th sample is kept).}
+\item{thin}{An integer specifying the thinning interval for MCMC sampling. Default is 4.}
+
+\item{model}{A character string specifying the model to be used. Choose either \code{"REST"} or \code{"RAD-REST"}. Default is \code{"RAD-REST"}.}
 
 \item{target_species}{A character vector specifying the species to be analyzed. Multiple species must be specified for this multispecies model.}
 }
 \value{
-A list of class \code{"ResultDensity"}, which includes the following components:
+A list of class \code{"ResultDensity"} with the following components:
 \describe{
-\item{\code{WAIC}}{An object containing WAIC (Widely Applicable Information Criterion) results for model evaluation.}
-\item{\code{summary_result}}{A data frame summarizing the posterior estimates, including the mean staying time and density across species.}
-\item{\code{samples}}{A \code{coda::mcmc.list} object containing full MCMC posterior samples for all model parameters.}
+\item{\code{WAIC}}{A numeric WAIC value for the fitted model.}
+\item{\code{summary_result}}{A data frame summarizing posterior estimates (mean, sd, lower, median, upper, Rhat, n.eff, cv) for density, mean_stay, and (for RAD-REST) mean_pass across species and stations.}
+\item{\code{samples}}{A \code{coda::mcmc.list} object of full MCMC posterior samples.}
+\item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC samples, with columns \code{parameter}, \code{value}, and \code{iteration}.}
+\item{\code{scaling_params}}{A list of centering and scaling parameters used to standardize design matrices.}
 }
-The returned object has a custom print method that displays the WAIC and a summary of the parameter estimates.
-You can access the full MCMC samples via \code{$samples} and visually analyze convergence using the \code{MCMCvis} package.
 }
 \description{
 Bayesian Parameter Estimation of a Multispecies REST/RAD-REST Model via MCMC Sampling using \code{nimble}
 }
 \examples{
 \dontrun{
-station_data_RAD <- format_station_data(
-  detection_data = detection_data,
-  station_data = station_data,
-  col_name_station = "Station",
-  col_name_species = "Species",
-  col_name_y = "y",
-  model = "RAD-REST"
-)
-
-station_effort_RAD <- add_effort(
-  detection_data = detection_data,
-  station_data_formatted = station_data_RAD,
-  col_name_station = "Station",
-  col_name_term = "Term",
-  col_name_datetime = "DateTime",
-  plot = TRUE
-)
-
-stay_data <- format_stay(
-  detection_data = detection_data,
-  station_data = station_data,
-  col_name_station = "Station",
-  col_name_species = "Species",
-  col_name_stay = "Stay",
-  col_name_cens = "Cens"
-)
-
-activity_data <- format_activity(
-  detection_data = detection_data,
-  col_name_station = "Station",
-  col_name_species = "Species",
-  col_name_datetime = "DateTime",
-  indep_time = 30
-)
-
 rest_model <- bayes_rest_multi(
   formula_stay = Stay ~ 1,
   formula_density = ~ 1,
@@ -148,8 +116,9 @@ rest_model <- bayes_rest_multi(
   iter = 5000,
   warmup = 1000,
   chains = 2,
-  thin = 1,
-  target_species = c("SP01", "SP02", "SP03", "SP04", "SP05")
+  thin = 4,
+  model = "RAD-REST",
+  target_species = c("SP01", "SP02", "SP03")
 )
 }
 }

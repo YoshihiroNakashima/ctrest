@@ -2,7 +2,7 @@
 #'
 #' @param formula_stay A model formula for staying times within the focal area (e.g., \code{Stay ~ 1 + x1}). The left-hand side must specify the column name for staying time. Random effects should be specified separately using the \code{random_effect_stay} argument.
 #' @param formula_density A model formula for animal density (e.g., \code{~ 1 + x1}). Note that the left-hand side must be omitted as density is a latent parameter.
-#' @param formula_enter A model formula for the total number of passes (\code{Y}) entering the focal area (e.g., \code{~ 1 + x1}). Note that the left-hand side must be omitted. This is particularly used for the RAD-REST model or when estimating intrusion rates.
+#' @param formula_enter A model formula for the number of passes through the focal area per video (e.g., \code{~ 1 + x1}). Required when \code{model = "RAD-REST"}; ignored when \code{model = "REST"}.
 #' @param station_effort_data A data frame containing information for each camera station. Typically, this is the output of the \code{add_effort} function. Alternatively, a manually prepared data frame may be provided with the following required columns:
 #'   \itemize{
 #'     \item For \code{model = "REST"}:
@@ -26,72 +26,38 @@
 #'     \item \code{Station} (character): Camera station ID.
 #'     \item \code{Species} (character): Species name.
 #'     \item \code{Stay} (numeric): Staying time (in seconds) within the focal area for each detected pass.
-#'     \item \code{Censored} (binary): Indicator for censored staying time (1 = censored, 0 = observed).
+#'     \item \code{Cens} (binary): Indicator for censored staying time (1 = censored, 0 = observed).
 #'   }
-#' @param random_effect_stay A character string specifying a random effect structure on mean staying time (e.g., \code{"~ (1 | Station)"}). Default is \code{NULL}. Note: Species-level random effects are automatically included in this multispecies model and do not need to be manually specified here.
+#' @param random_effect_stay A character string specifying the column name in \code{stay_data} to use as a grouping factor for a station-level random intercept on staying time (e.g., \code{"Station"}). Default is \code{NULL}. Note: species-level random effects are automatically included in this multispecies model.
 #' @param activity_data A data frame containing a \code{time} column, representing detection times transformed into radians. Typically, this is the output of the \code{format_activity} function.
 #' @param activity_estimation A character string specifying the method used to estimate activity patterns. Choose \code{"kernel"} for fixed kernel density estimation (Rowcliffe et al. 2014), or \code{"mixture"} for nonparametric Bayesian estimation using von Mises mixture models (Nakashima et al. 2025). Default is \code{"kernel"}.
 #' @param bw_adj A numeric bandwidth adjustment parameter for kernel density estimation. Default is 1.0. See Rowcliffe et al. (2014) for details.
 #' @param C An integer specifying the maximum number of von Mises components to use in the mixture model. Required only if \code{activity_estimation = "mixture"}. Default is 10.
-#' @param stay_family A character string specifying the probability distribution used to model staying times (e.g., \code{"exponential"}, \code{"gamma"}, \code{"lognormal"}, \code{"weibull"}). This should ideally be selected based on the output of the \code{bayes_stay_selection} function. Default is \code{"lognormal"}.
+#' @param stay_family A character string specifying the probability distribution used to model staying times (e.g., \code{"exponential"}, \code{"gamma"}, \code{"lognormal"}, \code{"weibull"}). Default is \code{"lognormal"}.
 #' @param focal_area A numeric value representing the size of the focal area, in square meters.
 #' @param cores An integer specifying the number of CPU cores to use for parallel computation. Default is 3.
 #' @param iter An integer specifying the total number of MCMC iterations per chain. Default is 5000.
 #' @param warmup An integer specifying the number of warm-up (burn-in) iterations per chain. Default is 1000.
 #' @param chains An integer specifying the number of MCMC chains. Default is 3.
-#' @param thin An integer specifying the thinning interval for MCMC sampling. Default is 4 (meaning every 4th sample is kept).
+#' @param thin An integer specifying the thinning interval for MCMC sampling. Default is 4.
+#' @param model A character string specifying the model to be used. Choose either \code{"REST"} or \code{"RAD-REST"}. Default is \code{"RAD-REST"}.
 #' @param target_species A character vector specifying the species to be analyzed. Multiple species must be specified for this multispecies model.
-#' @return A list of class \code{"ResultDensity"}, which includes the following components:
+#' @return A list of class \code{"ResultDensity"} with the following components:
 #' \describe{
-#'   \item{\code{WAIC}}{An object containing WAIC (Widely Applicable Information Criterion) results for model evaluation.}
-#'   \item{\code{summary_result}}{A data frame summarizing the posterior estimates, including the mean staying time and density across species.}
-#'   \item{\code{samples}}{A \code{coda::mcmc.list} object containing full MCMC posterior samples for all model parameters.}
+#'   \item{\code{WAIC}}{A numeric WAIC value for the fitted model.}
+#'   \item{\code{summary_result}}{A data frame summarizing posterior estimates (mean, sd, lower, median, upper, Rhat, n.eff, cv) for density, mean_stay, and (for RAD-REST) mean_pass across species and stations.}
+#'   \item{\code{samples}}{A \code{coda::mcmc.list} object of full MCMC posterior samples.}
+#'   \item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC samples, with columns \code{parameter}, \code{value}, and \code{iteration}.}
+#'   \item{\code{scaling_params}}{A list of centering and scaling parameters used to standardize design matrices.}
 #' }
-#' The returned object has a custom print method that displays the WAIC and a summary of the parameter estimates.
-#' You can access the full MCMC samples via \code{$samples} and visually analyze convergence using the \code{MCMCvis} package.
 #'
 #' @export
 #' @import nimble activity parallel MCMCvis tibble
-#' @importFrom stats as.formula formula model.frame model.matrix sd var runif median quantile model.response rexp rnorm step dexp pexp dgamma pgamma dlnorm plnorm dweibull pweibull dnbinom
-#' @importFrom dplyr select
-#' @importFrom extraDistr ddirmnom
+#' @importFrom stats as.formula formula model.frame model.matrix sd var runif median quantile model.response rexp rnorm step dexp pexp dgamma pgamma dlnorm plnorm dweibull pweibull dnbinom delete.response terms
+#' @importFrom dplyr select filter mutate arrange pull bind_rows rename
+#' @importFrom purrr map
 #' @examples
 #' \dontrun{
-#' station_data_RAD <- format_station_data(
-#'   detection_data = detection_data,
-#'   station_data = station_data,
-#'   col_name_station = "Station",
-#'   col_name_species = "Species",
-#'   col_name_y = "y",
-#'   model = "RAD-REST"
-#' )
-#'
-#' station_effort_RAD <- add_effort(
-#'   detection_data = detection_data,
-#'   station_data_formatted = station_data_RAD,
-#'   col_name_station = "Station",
-#'   col_name_term = "Term",
-#'   col_name_datetime = "DateTime",
-#'   plot = TRUE
-#' )
-#'
-#' stay_data <- format_stay(
-#'   detection_data = detection_data,
-#'   station_data = station_data,
-#'   col_name_station = "Station",
-#'   col_name_species = "Species",
-#'   col_name_stay = "Stay",
-#'   col_name_cens = "Cens"
-#' )
-#'
-#' activity_data <- format_activity(
-#'   detection_data = detection_data,
-#'   col_name_station = "Station",
-#'   col_name_species = "Species",
-#'   col_name_datetime = "DateTime",
-#'   indep_time = 30
-#' )
-#'
 #' rest_model <- bayes_rest_multi(
 #'   formula_stay = Stay ~ 1,
 #'   formula_density = ~ 1,
@@ -105,8 +71,9 @@
 #'   iter = 5000,
 #'   warmup = 1000,
 #'   chains = 2,
-#'   thin = 1,
-#'   target_species = c("SP01", "SP02", "SP03", "SP04", "SP05")
+#'   thin = 4,
+#'   model = "RAD-REST",
+#'   target_species = c("SP01", "SP02", "SP03")
 #' )
 #' }
 bayes_rest_multi <- function(formula_stay,
@@ -126,14 +93,10 @@ bayes_rest_multi <- function(formula_stay,
                              warmup = 1000,
                              chains = 3,
                              thin = 4,
+                             model = "RAD-REST",
                              target_species) {
 
-  # Define functions --------------------------------------------------------
-  ni <- iter
-  nt <- thin
-  nc <- chains
-  nb <- warmup
-  nmcmc <- (iter - warmup) * chains / thin
+  # Helper functions ----------------------------------------------------------
 
   bit.test <- function(number, n) {
     (number %/% (2^n)) %% 2
@@ -155,1199 +118,1147 @@ bayes_rest_multi <- function(formula_stay,
     )
   }
 
-  # -------------------------------------------------------------------------
-  # 共変量を標準化するヘルパー関数
-  # 切片列（全要素が1の列）を除く数値列を平均0・標準偏差1に正規化する。
-  # 標準偏差が0（定数列）の列はスケーリングをスキップして警告を出す。
-  # 戻り値: list(X = 正規化済み行列, center = 各列の平均, scale = 各列のSD)
-  # -------------------------------------------------------------------------
   standardize_design_matrix <- function(X) {
     center_vec <- rep(0, ncol(X))
     scale_vec  <- rep(1, ncol(X))
-
     for (j in seq_len(ncol(X))) {
       col_j <- X[, j]
-      # 切片列（全要素が1）はスキップ
       if (all(col_j == 1)) next
-      # 数値列のみ正規化
       if (!is.numeric(col_j)) next
-
       col_mean <- mean(col_j, na.rm = TRUE)
-      col_sd   <- sd(col_j,   na.rm = TRUE)
-
+      col_sd   <- stats::sd(col_j, na.rm = TRUE)
       if (is.na(col_sd) || col_sd == 0) {
-        warning(paste0(
-          "Column '", colnames(X)[j], "' has zero variance and will not be scaled."
-        ))
+        warning(paste0("Column '", colnames(X)[j], "' has zero variance and will not be scaled."))
         next
       }
-
-      X[, j]       <- (col_j - col_mean) / col_sd
+      X[, j]        <- (col_j - col_mean) / col_sd
       center_vec[j] <- col_mean
       scale_vec[j]  <- col_sd
     }
-
     list(X = X, center = center_vec, scale = scale_vec)
   }
-  # check options -----------------------------------------------------------
 
-  if (!inherits(formula_stay, "formula")) {
+  check_no_cov <- function(f) {
+    if (is.null(f)) return(TRUE)
+    f <- stats::as.formula(f)
+    vars <- all.vars(f[[length(f)]])
+    return(length(vars) == 0)
+  }
+
+  safe_log_mean_exp <- function(x) {
+    x <- x[is.finite(x)]
+    if (length(x) == 0) return(NA)
+    max_val <- max(x)
+    max_val + log(mean(exp(x - max_val)))
+  }
+
+  safe_var <- function(x) {
+    x <- x[is.finite(x)]
+    if (length(x) < 2) return(NA)
+    stats::var(x)
+  }
+
+  # Input validation ----------------------------------------------------------
+
+  if (!inherits(formula_stay, "formula"))
     stop("`formula_stay` must be a valid formula (e.g., Stay ~ 1 + x1).")
-  }
-
-  if (!inherits(formula_density, "formula")) {
+  if (!inherits(formula_density, "formula"))
     stop("`formula_density` must be a valid formula (e.g., ~ 1 + x1).")
-  }
-
-  if (!is.data.frame(station_effort_data)) {
+  if (!model %in% c("REST", "RAD-REST"))
+    stop("`model` must be either 'REST' or 'RAD-REST'.")
+  if (model == "RAD-REST" && !inherits(formula_enter, "formula"))
+    stop("`formula_enter` must be a valid model formula when model is 'RAD-REST'.")
+  if (!is.data.frame(station_effort_data))
     stop("`station_effort_data` must be a data frame.")
-  }
-
-  if (!is.data.frame(stay_data)) {
+  if (!is.data.frame(stay_data))
     stop("`stay_data` must be a data frame.")
-  }
-
-  if (!is.character(random_effect_stay) && !is.null(random_effect_stay)) {
+  if (!is.character(random_effect_stay) && !is.null(random_effect_stay))
     stop("`random_effect_stay` must be a character vector or NULL.")
-  }
-
-  if (!is.data.frame(activity_data)) {
+  if (!is.data.frame(activity_data))
     stop("`activity_data` must be a data frame.")
-  }
-
-  if (!(activity_estimation %in% c("kernel", "mixture"))) {
+  if (!activity_estimation %in% c("kernel", "mixture"))
     stop("`activity_estimation` must be either 'kernel' or 'mixture'.")
-  }
-
-  if (!is.numeric(bw_adj) || length(bw_adj) != 1 || bw_adj <= 0) {
+  if (!is.numeric(bw_adj) || length(bw_adj) != 1 || bw_adj <= 0)
     stop("`bw_adj` must be a positive number.")
-  }
-
-  if (activity_estimation == "mixture" && (missing(C) || !is.numeric(C) || length(C) != 1 || C <= 0)) {
+  if (activity_estimation == "mixture" && (missing(C) || !is.numeric(C) || C <= 0))
     stop("`C` must be a positive integer when `activity_estimation = 'mixture'`.")
-  }
-
-  if (!is.character(stay_family) || length(stay_family) != 1) {
-    stop("`stay_family` must be a single string.")
-  }
-
-  if (!is.numeric(focal_area) || length(focal_area) != 1 || focal_area <= 0) {
+  if (!stay_family %in% c("lognormal", "gamma", "weibull", "exponential"))
+    stop(paste0("Input stay_family type (", stay_family, ") is incorrect."))
+  if (!is.numeric(focal_area) || length(focal_area) != 1 || focal_area <= 0)
     stop("`focal_area` must be a positive number.")
-  }
-
-  if (!is.numeric(cores) || length(cores) != 1 || cores < 1) {
-    stop("`cores` must be a positive integer.")
-  }
-
-  if (!is.numeric(iter) || iter <= 0) {
-    stop("`iter` must be a positive integer.")
-  }
-
-  if (!is.numeric(warmup) || warmup <= 0) {
-    stop("`warmup` must be a positive integer.")
-  }
-
-  if (!is.numeric(chains) || chains <= 0) {
-    stop("`chains` must be a positive integer.")
-  }
-
-  if (!is.numeric(thin) || thin <= 0) {
-    stop("`thin` must be a positive integer.")
-  }
-
-
-  if (!is.character(target_species) || length(target_species) < 2) {
+  if (!is.numeric(cores)  || cores  < 1) stop("`cores` must be a positive integer.")
+  if (!is.numeric(iter)   || iter   <= 0) stop("`iter` must be a positive integer.")
+  if (!is.numeric(warmup) || warmup <= 0) stop("`warmup` must be a positive integer.")
+  if (!is.numeric(chains) || chains <= 0) stop("`chains` must be a positive integer.")
+  if (!is.numeric(thin)   || thin   <= 0) stop("`thin` must be a positive integer.")
+  if (!is.character(target_species) || length(target_species) < 2)
     stop("`target_species` must be a character vector with at least two species.")
-  }
 
-  # Activity proportion estimation ------------------------------------------
-
+  # MCMC settings
   ni <- iter
   nt <- thin
   nc <- chains
   nb <- warmup
-  nmcmc <- (iter - warmup) * chains / thin
+
+  # Activity proportion estimation (mixture) ---------------------------------
+
   actv_out_trace <- list(0)
 
-  if(activity_estimation == "mixture") {
-    out_trace_0 <- list(0)
-    for(m in 1:length(target_species)) {
-
+  if (activity_estimation == "mixture") {
+    out_trace_0 <- list()
+    for (m in seq_along(target_species)) {
       act_data <- activity_data %>%
-        filter(Species == target_species[m]) %>%
-        pull(time)
+        dplyr::filter(Species == target_species[m]) %>%
+        dplyr::pull(time)
       dens.x <- seq(0, 2 * pi, 0.02)
-      ndens <- length(dens.x)
-      N <- length(act_data)
-      constants <- list(N = N, C = C, dens.x = dens.x, ndens = ndens)
-      data <- list(act_data = act_data)
+      ndens  <- length(dens.x)
+      N_act  <- length(act_data)
+      constants_act <- list(N = N_act, C = C, dens.x = dens.x, ndens = ndens)
+      data_act <- list(act_data = act_data)
 
-      code <- nimbleCode({
-        for(k in 1:(C-1)) {
-          v[k] ~ dbeta(1, alpha)
-        }
+      code_act <- nimble::nimbleCode({
+        for (k in 1:(C - 1)) { v[k] ~ dbeta(1, alpha) }
         alpha ~ dgamma(1, 1)
-        w[1:C] <- stick_breaking(v[1:(C-1)])
-        for(k in 1:C) {
-          mu_mix[k] ~ dunif(0, 2 * 3.141592654)
+        w[1:C] <- stick_breaking(v[1:(C - 1)])
+        for (k in 1:C) {
+          mu_mix[k]    ~ dunif(0, 2 * 3.141592654)
           kappa_mix[k] ~ dgamma(1, 0.01)
         }
-        for(n in 1:N) {
+        for (n in 1:N) {
           group[n] ~ dcat(w[1:C])
           act_data[n] ~ dvonMises(mu_mix[group[n]], kappa_mix[group[n]])
-
-          act_data_pred[n] ~ dvonMises(mu_mix[group[n]], kappa_mix[group[n]])
           loglike_obs_act[n] <- dvonMises(act_data[n], mu_mix[group[n]], kappa_mix[group[n]], log = 1)
-          loglike_pred_act[n] <- dvonMises(act_data_pred[n], mu_mix[group[n]], kappa_mix[group[n]], log = 1)
         }
         for (j in 1:ndens) {
           for (i in 1:C) {
-            dens.cpt[i, j] <- w[i] * dvonMises(dens.x[j] , mu_mix[i], kappa_mix[i], log = 0)
+            dens.cpt[i, j] <- w[i] * dvonMises(dens.x[j], mu_mix[i], kappa_mix[i], log = 0)
           }
           activity_density[j] <- sum(dens.cpt[1:C, j])
         }
-        activity_proportion <- 1.0 / (2 * 3.141592654 * max(activity_density[1:ndens]));
+        activity_proportion <- 1.0 / (2 * 3.141592654 * max(activity_density[1:ndens]))
       })
 
-      inits_f <- function() {
-        list(
-          mu_mix = runif(constants$C, 0, 2 * pi),
-          kappa_mix = rgamma(constants$C, 1, 0.01),
-          group = sample(1:constants$C, size = constants$N, replace = TRUE),
-          v = rbeta(constants$C-1, 1, 1),
-          alpha = 1
-        )
+      inits_act <- function() {
+        list(mu_mix = stats::runif(C, 0, 2 * pi),
+             kappa_mix = stats::rgamma(C, 1, 0.01),
+             group = sample(1:C, size = N_act, replace = TRUE),
+             v = stats::rbeta(C - 1, 1, 1),
+             alpha = 1)
       }
-
-      # Define the von Mises distribution function using nimbleFunction
-      dvonMises <- nimbleFunction(
-        run = function(x = double(0), kappa = double(0), mu = double(0), log = integer(0)) {
-          returnType(double(0))
-          ccrit <- 1E-6
-          s <- 1
-          i <- 1
-          inc <- 1
-          x_2i <- 0
-          satisfied <- FALSE
-          while(!satisfied) {
-            x_2i <- kappa / (2 * i)
-            inc <- inc * x_2i * x_2i
-            s <- s + inc
-            i <- i + 1
-            satisfied <- inc < ccrit
-          }
-          prob <- exp(kappa * cos(x - mu)) / (2 * pi * s)
-          if (log) {
-            return(log(prob))
-          } else {
-            return(prob)
-          }
-        }
-      )
-
-      rvonMises <- nimbleFunction(
-        run = function(n = integer(0), kappa = double(0), mu = double(0)) {
-          returnType(double(0))
-          return(0)
-        }
-      )
-
-      suppressMessages(registerDistributions(list(
-        dvonMises = list(
-          BUGSdist = "dvonMises(kappa, mu)",
-          types = c('value = double(0)', 'kappa = double(0)', 'mu = double(0)'),
-          pqAvail = FALSE
-        )
-      )))
 
       run_MCMC_vonMises <- function(info, data, constants, code, params, ni, nt, nb) {
-        myModel <- nimbleModel(code = code,
-                               data = data,
-                               constants = constants,
-                               inits = info$inits)
-
-        CmyModel <- compileNimble(myModel)
-
-        configModel <- configureMCMC(myModel, monitors = params)
-        myMCMC <- buildMCMC(configModel, monitors = params)
-        CmyMCMC <- compileNimble(myMCMC)
-
-        results <- runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt, nchains = 1, setSeed = info$seed, samplesAsCodaMCMC = TRUE)
+        myModel   <- nimble::nimbleModel(code = code, data = data, constants = constants, inits = info$inits)
+        CmyModel  <- nimble::compileNimble(myModel)
+        configModel <- nimble::configureMCMC(myModel, monitors = params)
+        myMCMC    <- nimble::buildMCMC(configModel, monitors = params)
+        CmyMCMC   <- nimble::compileNimble(myMCMC)
+        nimble::runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt,
+                        nchains = 1, setSeed = info$seed, samplesAsCodaMCMC = TRUE)
       }
 
-      per_chain_info <- lapply(1:nc, function(i) {
-        list(
-          seed = sample(1:9999, 1),
-          inits = inits_f()
-        )
-      })
+      per_chain_act <- lapply(seq_len(nc), function(i) list(seed = sample(1:9999, 1), inits = inits_act()))
+      params_act <- c("activity_density", "activity_proportion", "mu_mix", "kappa_mix", "w")
 
-      params <- c("activity_density", "activity_proportion", "mu_mix", "kappa_mix", "w", "loglike_obs_act")
+      this_cluster_act <- parallel::makeCluster(nc)
+      on.exit(try(parallel::stopCluster(this_cluster_act), silent = TRUE), add = TRUE)
 
-
-      this_cluster <- makeCluster(nc)
-      clusterEvalQ(this_cluster, {
+      parallel::clusterEvalQ(this_cluster_act, {
         library(nimble)
+        dvonMises <- nimble::nimbleFunction(
+          run = function(x = double(0), kappa = double(0), mu = double(0), log = integer(0)) {
+            returnType(double(0))
+            ccrit <- 1E-6; s <- 1; i <- 1; inc <- 1; x_2i <- 0; satisfied <- FALSE
+            while (!satisfied) {
+              x_2i <- kappa / (2 * i); inc <- inc * x_2i * x_2i; s <- s + inc; i <- i + 1
+              satisfied <- inc < ccrit
+            }
+            prob <- exp(kappa * cos(x - mu)) / (2 * pi * s)
+            if (log) return(log(prob)) else return(prob)
+          }
+        )
+        rvonMises <- nimble::nimbleFunction(
+          run = function(n = integer(0), kappa = double(0), mu = double(0)) {
+            returnType(double(0)); return(0)
+          }
+        )
+        suppressMessages(nimble::registerDistributions(list(
+          dvonMises = list(
+            BUGSdist = "dvonMises(kappa, mu)",
+            types    = c("value = double(0)", "kappa = double(0)", "mu = double(0)"),
+            pqAvail  = FALSE
+          )
+        )))
       })
-      clusterExport(this_cluster,
-                    c("dvonMises", "rvonMises", "registerDistributions", "run_MCMC_vonMises"),
-                    envir = environment())
 
-      actv_chain_output <- parLapply(cl = this_cluster, X = per_chain_info,
-                                     fun = run_MCMC_vonMises,
-                                     data = data, code = code,
-                                     constants = constants, params = params,
-                                     ni = ni, nt = nt, nb = nb)
-      stopCluster(this_cluster)
+      parallel::clusterExport(this_cluster_act, c("run_MCMC_vonMises"), envir = environment())
+      actv_chain_output <- parallel::parLapply(
+        cl = this_cluster_act, X = per_chain_act,
+        fun = run_MCMC_vonMises, data = data_act, code = code_act,
+        constants = constants_act, params = params_act,
+        ni = ni, nt = nt, nb = nb)
+      parallel::stopCluster(this_cluster_act)
+      on.exit(NULL, add = FALSE)
 
       out_trace_0[[m]] <- actv_chain_output %>%
-        map(~ .[, grep(paste("activity_proportion", collapse = "|"), colnames(.))])
-
+        purrr::map(~ .[, grep("activity_proportion", colnames(.), fixed = TRUE), drop = FALSE])
     }
 
-    for (j in 1:length(actv_chain_output)) {
-      actv_list <- lapply(out_trace_0, function(species_results) {
-        as.vector(species_results[[j]])
-      })
-
+    for (j in 1:nc) {
+      actv_list   <- lapply(out_trace_0, function(sp) as.vector(sp[[j]]))
       actv_matrix <- do.call(cbind, actv_list)
-      colnames(actv_matrix) <- paste0("activity_proportion[", 1:length(target_species), "]")
+      colnames(actv_matrix) <- paste0("activity_proportion[", seq_along(target_species), "]")
       actv_out_trace[[j]] <- coda::mcmc(actv_matrix)
     }
   }
 
-  # Define data for stay ----------------------------------------------------
+  # Data preparation ----------------------------------------------------------
 
   target_species <- sort(target_species)
 
   station_effort_data <- station_effort_data %>%
-    filter(Species %in% target_species) %>%
-    arrange(Species, Station)
+    dplyr::filter(Species %in% target_species) %>%
+    dplyr::arrange(Species, Station)
 
   stay_data_join <- stay_data %>%
-    filter(Species %in% target_species) %>%
-    left_join(station_effort_data, by = intersect(names(stay_data), names(station_effort_data))) %>%
-    filter(!is.na(Stay)) %>%
-    arrange(Species, Station)
+    dplyr::filter(Species %in% target_species) %>%
+    dplyr::left_join(station_effort_data,
+                     by = intersect(names(stay_data), names(station_effort_data))) %>%
+    dplyr::filter(!is.na(Stay)) %>%
+    dplyr::arrange(Species, Station)
 
-  if (!(stay_family %in% c("lognormal", "gamma", "weibull", "exponential"))) {
-    stop(paste0("Input family type(", stay_family, ") is incorrect."))
-  }
-
-  # =========================================================================
-  # 1. 基本的な次元（N_stationなど）を先に定義する
-  # =========================================================================
   N_station_species <- nrow(station_effort_data)
-  N_station <- length(unique(station_effort_data$Station))
-  nSpecies <- length(target_species)
+  N_station         <- length(unique(station_effort_data$Station))
+  nSpecies          <- length(target_species)
+  unique_stations   <- unique(station_effort_data$Station[order(match(station_effort_data$Station,
+                                                                       unique(station_effort_data$Station)))])[1:N_station]
+  unique_stations   <- station_effort_data$Station[!duplicated(station_effort_data$Station)][1:N_station]
 
-  station.id <- station_effort_data %>%
-    arrange(Species, Station) %>%
-    pull(Station)
+  # Stay data
+  model_frame_stay <- stats::model.frame(formula_stay, stay_data_join)
+  X_stay_raw       <- stats::model.matrix(stats::as.formula(formula_stay), model_frame_stay)
+  stay             <- stats::model.response(model_frame_stay)
+  censored         <- stay_data_join[["Cens"]]
+  is.censored      <- censored
 
-  # =========================================================================
-  # 2. Stay（観測データレベル）のデータ準備と標準化
-  # =========================================================================
-  # Extract variable names for stay
-  vars_stay <- all.vars(formula_stay)
-  response_stay <- vars_stay[1]
-  predictors_stay <- vars_stay[-1]
+  scaled_stay  <- standardize_design_matrix(X_stay_raw)
+  X_stay       <- scaled_stay$X
+  scaling_stay <- list(center = scaled_stay$center, scale = scaled_stay$scale)
+  nPreds_stay  <- ncol(X_stay)
+  if (nPreds_stay > 1) cat("Covariates in formula_stay have been standardized (mean=0, sd=1).\n")
 
-  model_frame_stay <- model.frame(formula_stay, stay_data_join)
-  X_stay_raw <- model.matrix(as.formula(formula_stay), model_frame_stay)
-  stay <- model.response(model_frame_stay)
-  censored <- stay_data_join[["Cens"]]
-  is.censored <- stay_data_join[["Cens"]]
-
-  # ----- 滞在時間の共変量を標準化 -----
-  scaled_stay   <- standardize_design_matrix(X_stay_raw)
-  X_stay        <- scaled_stay$X
-  scaling_stay  <- list(center = scaled_stay$center, scale = scaled_stay$scale)
-  nPreds_stay   <- ncol(X_stay)
-  if (nPreds_stay > 1) {
-    cat("Covariates in formula_stay have been standardized (mean=0, sd=1).\n")
-  }
-
-  # stay関連の変数整理
   names(stay) <- NULL
   c_time <- stay
   c_time[is.censored == 0] <- c_time[is.censored == 0] + 1
-  stay[is.censored == 1] <- NA
+  stay[is.censored == 1]   <- NA
   N_stay <- length(stay)
 
-  # =========================================================================
-  # 3. Stay（ステーションレベル）のデータ準備（X_stay_station）
-  # =========================================================================
-  # formula_stay から応答変数 (Stay) を取り除き、右辺の共変量だけにする
-  formula_stay_rhs <- delete.response(terms(as.formula(formula_stay)))
+  # X_stay_station: station-level stay covariates (first N_station rows)
+  formula_stay_rhs     <- stats::delete.response(stats::terms(stats::as.formula(formula_stay)))
+  model_frame_stay_st  <- stats::model.frame(formula_stay_rhs, station_effort_data,
+                                              na.action = stats::na.pass)
+  X_stay_station_raw   <- stats::model.matrix(formula_stay_rhs, model_frame_stay_st)
+  X_stay_station_raw   <- X_stay_station_raw[1:N_station, , drop = FALSE]
+  X_stay_station       <- scale(X_stay_station_raw,
+                                center = scaling_stay$center,
+                                scale  = scaling_stay$scale)
+  X_stay_station       <- matrix(as.numeric(X_stay_station),
+                                 nrow = N_station, ncol = ncol(X_stay_station_raw))
 
-  # 応答変数を除いた数式を使って、station_effort_data から共変量を抽出
-  model_frame_stay_st <- model.frame(formula_stay_rhs, station_effort_data)
-  X_stay_station_raw  <- model.matrix(formula_stay_rhs, model_frame_stay_st)
-
-  # 最初のN_station行を抽出（ここで上で定義した N_station を使用）
-  X_stay_station_raw <- X_stay_station_raw[1:N_station , , drop = FALSE]
-
-  # X_stay と全く同じ基準（平均と標準偏差）で標準化する
-  X_stay_station <- scale(X_stay_station_raw,
-                          center = scaling_stay$center,
-                          scale = scaling_stay$scale)
-
-  # scale()関数特有の属性を消して純粋な行列にする
-  X_stay_station <- matrix(as.numeric(X_stay_station),
-                           nrow = N_station,
-                           ncol = ncol(X_stay_station_raw))
-
-  # =========================================================================
-  # 4. その他のモデリング変数の準備
-  # =========================================================================
-  # N of random effects
+  # Random effects for stay
   if (!is.null(random_effect_stay)) {
-    levels <- unique(stay_data_join[[random_effect_stay]])
-    nLevels_stay <- length(levels)
+    re_levels_stay  <- unique(stay_data_join[[random_effect_stay]])
+    nLevels_stay    <- length(re_levels_stay)
   } else {
     nLevels_stay <- 0
   }
 
-  y <- station_effort_data %>% dplyr::select(starts_with("y_")) %>% as.matrix()
-  N_judge <- apply(y, 1, sum)
-  N_group <- ncol(y)
-  N_detection <- station_effort_data %>% pull(N)
+  # Density design matrix
+  model_frame_density <- stats::model.frame(formula_density, station_effort_data)
+  X_density_raw       <- stats::model.matrix(stats::as.formula(formula_density), model_frame_density)
+  X_density_raw       <- X_density_raw[1:N_station, , drop = FALSE]
+  scaled_density      <- standardize_design_matrix(X_density_raw)
+  X_density           <- scaled_density$X
+  scaling_density     <- list(center = scaled_density$center, scale = scaled_density$scale)
+  nPreds_density      <- ncol(X_density)
+  if (nPreds_density > 1) cat("Covariates in formula_density have been standardized (mean=0, sd=1).\n")
 
-  if(activity_estimation == "kernel") {
-    activity_proportion <- numeric(0)
-    for(i in 1:nSpecies) {
-      act_sp <- activity_data %>%
-        filter(Species == target_species[i])
-      model_act <- fitact(act_sp %>% pull(time), bw = NULL, adj = bw_adj, reps = 1)
+  # Activity proportions (kernel)
+  if (activity_estimation == "kernel") {
+    activity_proportion <- numeric(nSpecies)
+    for (i in seq_len(nSpecies)) {
+      act_sp <- activity_data %>% dplyr::filter(Species == target_species[i])
+      model_act <- activity::fitact(act_sp %>% dplyr::pull(time),
+                                    bw = bw_adj * activity::bwcalc(act_sp %>% dplyr::pull(time), K = 3),
+                                    reps = 1)
       activity_proportion[i] <- model_act@act
     }
   }
 
-  vars_density <- all.vars(formula_density)
-  predictors_density <- vars_density
-
-  vars_enter <- all.vars(formula_enter)
-  predictors_enter <- vars_enter
-
-  # MCMCの計算結果を格納するためのリスト等
-  samples <- list()
-  density_estimates <- list()
-
-  # === Density data preparation ===
-  model_frame_density <- model.frame(formula_density, station_effort_data)
-  X_density_raw <- model.matrix(formula_density, model_frame_density)
-  nPreds_density_raw <- ncol(X_density_raw)
-  X_density_raw <- X_density_raw[1:N_station , , drop = FALSE]
-
-  # ----- 密度の共変量を標準化 -----
-  scaled_density   <- standardize_design_matrix(X_density_raw)
-  X_density        <- scaled_density$X
-  scaling_density  <- list(center = scaled_density$center, scale = scaled_density$scale)
-  nPreds_density   <- ncol(X_density)
-  if (nPreds_density > 1) {
-    cat("Covariates in formula_density have been standardized (mean=0, sd=1).\n")
-  }
-
-  # === Enter (Dirichlet Alpha) data preparation ===
-  model_frame_enter <- model.frame(formula_enter, station_effort_data)
-  X_alpha_raw <- model.matrix(formula_enter, model_frame_enter)
-  X_alpha_raw <- X_alpha_raw[1:N_station , , drop = FALSE]
-
-  # ----- 進入率の共変量を標準化 -----
-  scaled_alpha   <- standardize_design_matrix(X_alpha_raw)
-  X_alpha        <- scaled_alpha$X
-  scaling_alpha  <- list(center = scaled_alpha$center, scale = scaled_alpha$scale)
-  nPreds_alpha   <- ncol(X_alpha)
-  if (nPreds_alpha > 1) {
-    cat("Covariates in formula_enter have been standardized (mean=0, sd=1).\n")
-  }
-
-  S <- focal_area * 10^-6
+  S        <- focal_area * 1e-6
   N_period <- station_effort_data$Effort[1:N_station] * 60 * 60 * 24
-  N_detection_matrix <- matrix(N_detection, ncol = nSpecies, byrow = FALSE)
 
-  species_id_stay <- stay_data_join %>% pull(Species) %>% factor() %>% as.numeric()
-  species_id_ey <- station_effort_data %>% pull(Species) %>% factor() %>% as.numeric()
+  species_id_stay    <- as.numeric(factor(stay_data_join$Species, levels = target_species))
+  species_id_ey      <- as.numeric(factor(station_effort_data$Species, levels = target_species))
+  station_id_ey      <- as.numeric(factor(station_effort_data$Station,
+                                          levels = unique(station_effort_data$Station[1:N_station])))
 
-  # 地点IDの作成 (Station列を使用)
-  station_id_ey <- station_effort_data %>% pull(Station) %>% factor() %>% as.numeric()
+  # Model-specific data
+  if (model == "RAD-REST") {
+    # Enter design matrix
+    model_frame_enter <- stats::model.frame(formula_enter, station_effort_data)
+    X_alpha_raw       <- stats::model.matrix(stats::as.formula(formula_enter), model_frame_enter)
+    X_alpha_raw       <- X_alpha_raw[1:N_station, , drop = FALSE]
+    scaled_alpha      <- standardize_design_matrix(X_alpha_raw)
+    X_alpha           <- scaled_alpha$X
+    scaling_alpha     <- list(center = scaled_alpha$center, scale = scaled_alpha$scale)
+    nPreds_alpha      <- ncol(X_alpha)
+    if (nPreds_alpha > 1) cat("Covariates in formula_enter have been standardized (mean=0, sd=1).\n")
 
-  # =========================================================================
-  # 5. Stan/JAGSへ渡すデータリストの構築
-  # =========================================================================
-  data_density <- list(stay = stay, is.censored = is.censored, y = y, N_judge = N_judge, N_detection_matrix = N_detection_matrix)
+    y_mat        <- station_effort_data %>% dplyr::select(dplyr::starts_with("y_")) %>% as.matrix()
+    N_judge      <- apply(y_mat, 1, sum)
+    N_group      <- ncol(y_mat)
+    N_detection  <- station_effort_data %>% dplyr::pull(N)
+    N_detection_matrix <- matrix(N_detection, nrow = N_station, ncol = nSpecies, byrow = FALSE)
 
-  if(nPreds_density > 1) data_density$X_density <- X_density
-  if(nPreds_alpha > 1)   data_density$X_alpha <- X_alpha
+    data_density <- list(
+      stay             = stay,
+      is.censored      = is.censored,
+      y                = y_mat,
+      N_judge          = N_judge,
+      N_detection_matrix = N_detection_matrix
+    )
+    if (nPreds_density > 1) data_density$X_density    <- X_density
+    if (nPreds_alpha   > 1) data_density$X_alpha      <- X_alpha
+    if (nPreds_stay    > 1) {
+      data_density$X_stay         <- X_stay
+      data_density$X_stay_station <- X_stay_station
+    }
 
-  # stayの共変量がある場合は X_stay と X_stay_station の両方を渡す
-  if (nPreds_stay > 1) {
-    data_density$X_stay         <- X_stay
-    data_density$X_stay_station <- X_stay_station
-  }
+    cons_density <- list(
+      N_stay            = N_stay,
+      nPreds_stay       = nPreds_stay,
+      N_station_species = N_station_species,
+      N_station         = N_station,
+      c_time            = c_time,
+      stay_family       = stay_family,
+      N_group           = N_group,
+      nSpecies          = nSpecies,
+      species_id_stay   = species_id_stay,
+      species_id_ey     = species_id_ey,
+      station_id_ey     = station_id_ey,
+      S                 = S,
+      N_period          = N_period,
+      nPreds_density    = nPreds_density,
+      nPreds_alpha      = nPreds_alpha,
+      nLevels_stay      = nLevels_stay
+    )
+    if (activity_estimation == "kernel") cons_density$activity_proportion <- activity_proportion
+    if (!is.null(random_effect_stay)) {
+      cons_density$group_stay <- as.numeric(factor(stay_data_join[[random_effect_stay]],
+                                                    levels = re_levels_stay))
+    }
 
-  cons_density <- list(
-    N_stay = N_stay,
-    nPreds_stay = nPreds_stay,
-    N_station_species = N_station_species,
-    N_station = N_station,
-    c_time = c_time,
-    stay_family = stay_family,
-    N_group = N_group,
-    nSpecies = nSpecies,
-    species_id_stay = species_id_stay,
-    species_id_ey = species_id_ey,
-    station_id_ey = station_id_ey,
-    S = S,
-    N_period = N_period,
-    nPreds_density = nPreds_density,
-    nPreds_alpha = nPreds_alpha
-  )
-
-  if(activity_estimation == "kernel") {
-    cons_density$activity_proportion <- activity_proportion
-  }
-
-  if (!is.null(random_effect_stay)) {
-    cons_density$group <- as.numeric(factor(stay_data_join[[random_effect_stay]]))
-    cons_density$nLevels_stay <- nLevels_stay
   } else {
-    cons_density$nLevels_stay <- 0
-  }
-
-  get_rest_code <- function(stay_family) {
-
-    if (stay_family == "exponential") {
-      code <- nimbleCode({
-        # ==========================================
-        # [1] Stay Model: Exponential
-        # ==========================================
-        for (i in 1:N_stay) {
-          censored[i] ~ dinterval(stay[i], c_time[i])
-          stay[i]      ~ dexp(rate = 1 / scale[i])
-          pred_t[i]    ~ dexp(rate = 1 / scale[i])
-          loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dexp(stay[i], rate = 1 / scale[i], log = 1) +
-            step(censored[i] - 0.5)  * log(1 - pexp(c_time[i], rate = 1 / scale[i]))
-          loglike_pred_stay[i] <- dexp(pred_t[i], rate = 1 / scale[i], log = 1)
-
-          if (nPreds_stay > 1) {
-            if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
-            else { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] }
-          } else {
-            if (nLevels_stay == 0) { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] }
-            else { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] + random_effect_stay[group_stay[i]] }
-          }
-        }
-
-        # Station-level prediction for mean_stay
-        if (nPreds_stay == 1) {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) { mean_stay[i, m] <- exp(beta_stay[1] + species_effect_stay[m, 1]) }
-          }
-        } else {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) { mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])) }
-          }
-        }
-
-        # ==========================================
-        # [Common Model] (全分布共通)
-        # ==========================================
-        # Stay Priors (ランダム効果の分散を共変量ごとに独立化)
-        for (j in 1:nPreds_stay) {
-          beta_stay[j] ~ dnorm(0, sd = 5)
-          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) {
-            species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j])
-          }
-        }
-        if (nLevels_stay > 0) {
-          for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
-          sigma_stay ~ T(dnorm(0, sd = 2), 0, )
-        }
-
-        # Alpha (Enter) Model
-        for (m in 1:nSpecies) {
-          theta_enter[m] ~ dgamma(2, 2)
-        }
-        cutpoint[1] <- 0
-        for (g in 2:N_group) {
-          cutpoint[g] ~ dnorm(0, sd = 5)
-        }
-
-        if (nPreds_alpha == 1) {
-          for (i in 1:N_station) {
-            for (m in 1:nSpecies) {
-              eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
-              for (g in 1:N_group) {
-                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
-                phi[i, m, g] <- exp(log_phi[i, m, g])
-              }
-              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-              for (g in 1:N_group) {
-                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
-                c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
-                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
-              }
-              mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
-            }
-          }
-        } else {
-          for (i in 1:N_station) {
-            for (m in 1:nSpecies) {
-              eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
-              for (g in 1:N_group) {
-                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
-                phi[i, m, g] <- exp(log_phi[i, m, g])
-              }
-              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-              for (g in 1:N_group) {
-                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
-                c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
-                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
-              }
-              mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
-            }
-          }
-        }
-
-        for (k in 1:nPreds_alpha) {
-          beta_enter[k] ~ dnorm(0, sd = 5)
-          sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) {
-            species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k])
-          }
-        }
-
-        # Model for y
-        for (j in 1:N_station_species) {
-          y[j, 1:N_group]      ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
-          pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
-          loglike_obs_y[j]  <- ddirchmulti(y[j,      1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
-          loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
-        }
-
-        # Model for N_detection
-        for (m in 1:nSpecies) {
-          for (i in 1:N_station) {
-            N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
-            p[i, m] <- size[m] / (size[m] + mu[i, m])
-            N_detection_rep[i, m]    ~ dnbinom(size = size[m], prob = p[i, m])
-            loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
-            loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
-          }
-          size[m] ~ dgamma(1, 1)
-        }
-
-        # REST formula & Density Priors (次元を統一)
-        if (nPreds_density == 1) {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) {
-              log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
-              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
-            }
-          }
-        } else {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) {
-              log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
-              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
-            }
-          }
-        }
-
-        for (j in 1:nPreds_density) {
-          beta_density[j] ~ dnorm(0, sd = 5)
-          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) {
-            species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j])
-          }
-        }
-      })
-      return(code)
-
-    } else if (stay_family == "gamma") {
-      code <- nimbleCode({
-        # ==========================================
-        # [1] Stay Model: Gamma
-        # ==========================================
-        for (i in 1:N_stay) {
-          censored[i] ~ dinterval(stay[i], c_time[i])
-          stay[i]      ~ dgamma(shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i])
-          pred_t[i]    ~ dgamma(shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i])
-          loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dgamma(stay[i], shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i], log = 1) +
-            step(censored[i] - 0.5)  * log(1 - pgamma(c_time[i], shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i]))
-          loglike_pred_stay[i] <- dgamma(pred_t[i], shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i], log = 1)
-
-          if (nPreds_stay > 1) {
-            if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
-            else { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] }
-          } else {
-            if (nLevels_stay == 0) { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] }
-            else { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] + random_effect_stay[group_stay[i]] }
-          }
-        }
-        for (m in 1:nSpecies) {
-          theta_stay[m] ~ dgamma(shape_stay, rate_stay)
-          shape[m] <- theta_stay[m]
-        }
-        shape_stay ~ dgamma(2, 0.5)
-        rate_stay  ~ dgamma(2, 0.5)
-
-        # Station-level prediction for mean_stay
-        if (nPreds_stay == 1) {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) { mean_stay[i, m] <- theta_stay[m] * exp(beta_stay[1] + species_effect_stay[m, 1]) }
-          }
-        } else {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) { mean_stay[i, m] <- theta_stay[m] * exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])) }
-          }
-        }
-
-        # ==========================================
-        # [Common Model] (全分布共通)
-        # ==========================================
-        for (j in 1:nPreds_stay) {
-          beta_stay[j] ~ dnorm(0, sd = 5)
-          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
-        }
-        if (nLevels_stay > 0) {
-          for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
-          sigma_stay ~ T(dnorm(0, sd = 2), 0, )
-        }
-
-        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
-        cutpoint[1] <- 0
-        for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
-
-        if (nPreds_alpha == 1) {
-          for (i in 1:N_station) {
-            for (m in 1:nSpecies) {
-              eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
-              for (g in 1:N_group) {
-                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
-                phi[i, m, g] <- exp(log_phi[i, m, g])
-              }
-              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-              for (g in 1:N_group) {
-                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
-                c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
-                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
-              }
-              mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
-            }
-          }
-        } else {
-          for (i in 1:N_station) {
-            for (m in 1:nSpecies) {
-              eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
-              for (g in 1:N_group) {
-                log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]
-                phi[i, m, g] <- exp(log_phi[i, m, g])
-              }
-              sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
-              for (g in 1:N_group) {
-                p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]
-                c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1)
-                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
-              }
-              mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
-            }
-          }
-        }
-
-        for (k in 1:nPreds_alpha) {
-          beta_enter[k] ~ dnorm(0, sd = 5)
-          sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
-        }
-
-        for (j in 1:N_station_species) {
-          y[j, 1:N_group]      ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
-          pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
-          loglike_obs_y[j]  <- ddirchmulti(y[j,      1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
-          loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
-        }
-
-        for (m in 1:nSpecies) {
-          for (i in 1:N_station) {
-            N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
-            p[i, m] <- size[m] / (size[m] + mu[i, m])
-            N_detection_rep[i, m]    ~ dnbinom(size = size[m], prob = p[i, m])
-            loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
-            loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
-          }
-          size[m] ~ dgamma(1, 1)
-        }
-
-        if (nPreds_density == 1) {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) {
-              log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
-              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
-            }
-          }
-        } else {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) {
-              log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
-              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
-            }
-          }
-        }
-
-        for (j in 1:nPreds_density) {
-          beta_density[j] ~ dnorm(0, sd = 5)
-          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
-        }
-      })
-      return(code)
-
-    } else if (stay_family == "lognormal") {
-      code <- nimbleCode({
-        # ==========================================
-        # [1] Stay Model: Lognormal
-        # ==========================================
-        for (i in 1:N_stay) {
-          censored[i] ~ dinterval(stay[i], c_time[i])
-          stay[i]      ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
-          pred_t[i]    ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
-
-          # # 修正点：log(1 - plnorm(...))のアンダーフローを防ぐため、lower.tail = 0, log.p = 1 を使用
-          # loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dlnorm(stay[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1) +
-          #   step(censored[i] - 0.5)  * plnorm(c_time[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], lower.tail = 0, log.p = 1)
-          #
-          # loglike_pred_stay[i] <- dlnorm(pred_t[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1)
-          meanlog[i] <- log(scale[i])
-
-          if (nPreds_stay > 1) {
-            if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
-            else { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] }
-          } else {
-            if (nLevels_stay == 0) { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] }
-            else { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] + random_effect_stay[group_stay[i]] }
-          }
-        }
-        for (m in 1:nSpecies) {
-          theta_stay[m] ~ dgamma(shape_stay, rate_stay)
-          sdlog[m] <- theta_stay[m]
-        }
-        shape_stay ~ dgamma(2, 0.5)
-        rate_stay  ~ dgamma(2, 0.5)
-
-        # Station-level prediction for mean_stay
-        if (nPreds_stay == 1) {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) { mean_stay[i, m] <- exp(beta_stay[1] + species_effect_stay[m, 1] + theta_stay[m]^2 / 2) }
-          }
-        } else {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) { mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay]) + theta_stay[m]^2 / 2) }
-          }
-        }
-
-        # ==========================================
-        # [Common Model] (全分布共通)
-        # ==========================================
-        for (j in 1:nPreds_stay) {
-          beta_stay[j] ~ dnorm(0, sd = 5)
-          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
-        }
-        if (nLevels_stay > 0) {
-          for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
-          sigma_stay ~ T(dnorm(0, sd = 2), 0, )
-        }
-
-        # ==========================================
-        # [2] Enter Model (Cumulative Logit / Proportional Odds)
-        # ==========================================
-
-        # --- 事前分布 ---
-        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
-
-        # cutpointの順序制約 (N_group-1 個の閾値)
-        cutpoint[1] ~ dnorm(0, sd = 3)
-        for (g in 2:(N_group - 1)) {
-          delta[g - 1] ~ dgamma(1, 1)
-          cutpoint[g] <- cutpoint[g - 1] + delta[g - 1]
-        }
-
-        # βと種特異的ランダムエフェクト
-        for (k in 1:nPreds_alpha) {
-          beta_enter[k] ~ dnorm(0, sd = 5)
-          sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
-        }
-
-        # --- カメラ地点(i) × 種(m) ごとの尤度 ---
-        if (nPreds_alpha == 1) {
-          for (i in 1:N_station) {
-            for (m in 1:nSpecies) {
-              eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
-
-              # 累積確率
-              for (g in 1:(N_group - 1)) {
-                cum_p[i, m, g] <- ilogit(cutpoint[g] - eta[i, m])
-              }
-
-              # カテゴリ確率（差分）
-              p_expected[i, m, 1] <- cum_p[i, m, 1]
-              for (g in 2:(N_group - 1)) {
-                p_expected[i, m, g] <- cum_p[i, m, g] - cum_p[i, m, g - 1]
-              }
-              p_expected[i, m, N_group] <- 1 - cum_p[i, m, N_group - 1]
-
-              # Dirichlet-Multinomialのalpha
-              for (g in 1:N_group) {
-                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
-              }
-
-              # mean_pass：侵入「回数」の期待値
-              mean_pass_raw[i, m] <- sum(p_expected[i, m, 2:N_group] * (1:(N_group - 1)))
-              mean_pass[i, m] <- max(mean_pass_raw[i, m], 0.001)  # log(0)防止
-            }
-          }
-        } else {
-          for (i in 1:N_station) {
-            for (m in 1:nSpecies) {
-              eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
-
-              # 累積確率
-              for (g in 1:(N_group - 1)) {
-                cum_p[i, m, g] <- ilogit(cutpoint[g] - eta[i, m])
-              }
-
-              # カテゴリ確率（差分）
-              p_expected[i, m, 1] <- cum_p[i, m, 1]
-              for (g in 2:(N_group - 1)) {
-                p_expected[i, m, g] <- cum_p[i, m, g] - cum_p[i, m, g - 1]
-              }
-              p_expected[i, m, N_group] <- 1 - cum_p[i, m, N_group - 1]
-
-              # Dirichlet-Multinomialのalpha
-              for (g in 1:N_group) {
-                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
-              }
-
-              # mean_pass：侵入「回数」の期待値
-              mean_pass_raw[i, m] <- sum(p_expected[i, m, 2:N_group] * (1:(N_group - 1)))
-              mean_pass[i, m] <- max(mean_pass_raw[i, m], 0.001)  # log(0)防止
-            }
-          }
-        }
-
-        # --- 観測モデル ---
-        for (j in 1:N_station_species) {
-          y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
-
-          # ==========================================
-          # 【PPC / WAIC用コード】（計算速度を優先するため通常はコメントアウト）
-          # pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
-          # loglike_obs_y[j]  <- ddirchmulti(y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
-          # loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
-          # ==========================================
-        }
-
-        # ==========================================
-        # [Density & Detection Model]
-        # ==========================================
-
-        if (nPreds_density == 1) {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) {
-              log_density_base[i, m] <- beta_density[1] + species_effect_density[m, 1]
-              log_mu_base[i, m] <- log_density_base[i, m] + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
-            }
-          }
-        } else {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) {
-              log_density_base[i, m] <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
-              log_mu_base[i, m] <- log_density_base[i, m] + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
-            }
-          }
-        }
-
-        for (m in 1:nSpecies) {
-          for (i in 1:N_station) {
-            # ポアソン分布の期待値
-            mu[i, m] <- exp(log_mu_base[i, m])
-
-            # 負の二項分布の確率パラメータ (size / (size + mu))
-            p_nb[i, m] <- size[m] / (size[m] + mu[i, m])
-
-            # 修正点：尤度は負の二項分布に周辺化し、潜在変数 rho の生成を回避（収束を圧倒的に改善）
-            N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p_nb[i, m])
-
-            # WAIC / PPC 用
-            # N_detection_rep[i, m]    ~ dnbinom(size = size[m], prob = p_nb[i, m])
-            # loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size = size[m], prob = p_nb[i, m], log = 1)
-            # loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size = size[m], prob = p_nb[i, m], log = 1)
-
-            # 修正点：MCMCを崩さずに局所密度 density[i,m] を取得する「事後期待値」の決定論的計算
-            # Gamma(size, size) 事前分布と Poisson(mu) 尤度から、事後分布の期待値は (size + y) / (size + mu) になる
-            density[i, m] <- exp(log_density_base[i, m]) * ((size[m] + N_detection_matrix[i, m]) / (size[m] + mu[i, m]))
-          }
-          size[m] ~ dgamma(1, 1)
-        }
-
-        # ==========================================
-        # 密度モデルの事前分布
-        # ==========================================
-        for (j in 1:nPreds_density) {
-          beta_density[j] ~ dnorm(0, sd = 5)
-          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
-        }
-      })
-      return(code)
-
-    } else if (stay_family == "weibull") {
-      code <- nimbleCode({
-        # ==========================================
-        # [1] Stay Model: Weibull
-        # ==========================================
-        for (i in 1:N_stay) {
-          censored[i] ~ dinterval(stay[i], c_time[i])
-          stay[i]      ~ dweibull(shape = theta_stay[species_id_stay[i]], scale = scale[i])
-          pred_t[i]    ~ dweibull(shape = theta_stay[species_id_stay[i]], scale = scale[i])
-          loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dweibull(stay[i], shape = theta_stay[species_id_stay[i]], scale = scale[i], log = 1) +
-            step(censored[i] - 0.5)  * log(1 - pweibull(c_time[i], shape = theta_stay[species_id_stay[i]], scale = scale[i]))
-          loglike_pred_stay[i] <- dweibull(pred_t[i], shape = theta_stay[species_id_stay[i]], scale = scale[i], log = 1)
-
-          if (nPreds_stay > 1) {
-            if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
-            else { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] }
-          } else {
-            if (nLevels_stay == 0) { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] }
-            else { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] + random_effect_stay[group_stay[i]] }
-          }
-        }
-        for (m in 1:nSpecies) {
-          theta_stay[m] ~ dgamma(shape_stay, rate_stay)
-          shape[m] <- theta_stay[m]
-        }
-        shape_stay ~ dgamma(2, 0.5)
-        rate_stay  ~ dgamma(2, 0.5)
-
-        # Station-level prediction for mean_stay
-        if (nPreds_stay == 1) {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) { mean_stay[i, m] <- exp(lgamma(1 + 1 / theta_stay[m]) + beta_stay[1] + species_effect_stay[m, 1]) }
-          }
-        } else {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) { mean_stay[i, m] <- exp(lgamma(1 + 1 / theta_stay[m]) + inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])) }
-          }
-        }
-
-        # ==========================================
-        # [Common Model] (全分布共通)
-        # ==========================================
-        for (j in 1:nPreds_stay) {
-          beta_stay[j] ~ dnorm(0, sd = 5)
-          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
-        }
-        if (nLevels_stay > 0) {
-          for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
-          sigma_stay ~ T(dnorm(0, sd = 2), 0, )
-        }
-
-
-        # ==========================================
-        # [2] Enter Model (Cumulative Logit / Proportional Odds)
-        # ==========================================
-
-        # --- 事前分布 ---
-        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
-
-        # cutpointの順序制約 (N_group-1 個の閾値)
-        cutpoint[1] ~ dnorm(0, sd = 3)
-        for (g in 2:(N_group - 1)) {
-          delta[g - 1] ~ dgamma(1, 1)
-          cutpoint[g] <- cutpoint[g - 1] + delta[g - 1]
-        }
-
-        # βと種特異的ランダムエフェクト
-        for (k in 1:nPreds_alpha) {
-          beta_enter[k] ~ dnorm(0, sd = 5)
-          sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
-        }
-
-        # --- カメラ地点(i) × 種(m) ごとの尤度 ---
-        if (nPreds_alpha == 1) {
-          for (i in 1:N_station) {
-            for (m in 1:nSpecies) {
-              eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
-
-              # 累積確率
-              for (g in 1:(N_group - 1)) {
-                cum_p[i, m, g] <- ilogit(cutpoint[g] - eta[i, m])
-              }
-
-              # カテゴリ確率（差分）
-              p_expected[i, m, 1] <- cum_p[i, m, 1]
-              for (g in 2:(N_group - 1)) {
-                p_expected[i, m, g] <- cum_p[i, m, g] - cum_p[i, m, g - 1]
-              }
-              p_expected[i, m, N_group] <- 1 - cum_p[i, m, N_group - 1]
-
-              # Dirichlet-Multinomialのalpha
-              for (g in 1:N_group) {
-                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
-              }
-
-              # mean_pass：侵入「回数」の期待値
-              mean_pass_raw[i, m] <- sum(p_expected[i, m, 2:N_group] * (1:(N_group - 1)))
-              mean_pass[i, m] <- max(mean_pass_raw[i, m], 0.001)  # log(0)防止
-            }
-          }
-        } else {
-          for (i in 1:N_station) {
-            for (m in 1:nSpecies) {
-              eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
-
-              # 累積確率
-              for (g in 1:(N_group - 1)) {
-                cum_p[i, m, g] <- ilogit(cutpoint[g] - eta[i, m])
-              }
-
-              # カテゴリ確率（差分）
-              p_expected[i, m, 1] <- cum_p[i, m, 1]
-              for (g in 2:(N_group - 1)) {
-                p_expected[i, m, g] <- cum_p[i, m, g] - cum_p[i, m, g - 1]
-              }
-              p_expected[i, m, N_group] <- 1 - cum_p[i, m, N_group - 1]
-
-              # Dirichlet-Multinomialのalpha
-              for (g in 1:N_group) {
-                alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g]
-              }
-
-              # mean_pass：侵入「回数」の期待値
-              mean_pass_raw[i, m] <- sum(p_expected[i, m, 2:N_group] * (1:(N_group - 1)))
-              mean_pass[i, m] <- max(mean_pass_raw[i, m], 0.001)  # log(0)防止
-            }
-          }
-        }
-
-        # --- 観測モデル ---
-        for (j in 1:N_station_species) {
-          y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
-
-          # ==========================================
-          # 【PPC / WAIC用コード】（計算速度を優先するため通常はコメントアウト）
-          # pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
-          # loglike_obs_y[j]  <- ddirchmulti(y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
-          # loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
-          # ==========================================
-        }
-
-
-        for (m in 1:nSpecies) {
-          for (i in 1:N_station) {
-            N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
-            p[i, m] <- size[m] / (size[m] + mu[i, m])
-            N_detection_rep[i, m]    ~ dnbinom(size = size[m], prob = p[i, m])
-            # loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
-            # loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
-          }
-          size[m] ~ dgamma(1, 1)
-        }
-
-        if (nPreds_density == 1) {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) {
-              log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
-              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
-            }
-          }
-        } else {
-          for (m in 1:nSpecies) {
-            for (i in 1:N_station) {
-              log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
-              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
-            }
-          }
-        }
-
-        for (j in 1:nPreds_density) {
-          beta_density[j] ~ dnorm(0, sd = 5)
-          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
-          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
-        }
-      })
-      return(code)
+    # REST mode
+    scaling_alpha <- list(center = numeric(0), scale = numeric(0))
+    nPreds_alpha  <- 0L
+    N_group       <- 0L
+
+    Y_vec    <- station_effort_data %>% dplyr::pull(Y)
+    Y_matrix <- matrix(Y_vec, nrow = N_station, ncol = nSpecies, byrow = FALSE)
+
+    data_density <- list(
+      stay        = stay,
+      is.censored = is.censored,
+      Y_matrix    = Y_matrix
+    )
+    if (nPreds_density > 1) data_density$X_density    <- X_density
+    if (nPreds_stay    > 1) {
+      data_density$X_stay         <- X_stay
+      data_density$X_stay_station <- X_stay_station
+    }
+
+    cons_density <- list(
+      N_stay            = N_stay,
+      nPreds_stay       = nPreds_stay,
+      N_station_species = N_station_species,
+      N_station         = N_station,
+      c_time            = c_time,
+      stay_family       = stay_family,
+      nSpecies          = nSpecies,
+      species_id_stay   = species_id_stay,
+      S                 = S,
+      N_period          = N_period,
+      nPreds_density    = nPreds_density,
+      nLevels_stay      = nLevels_stay
+    )
+    if (activity_estimation == "kernel") cons_density$activity_proportion <- activity_proportion
+    if (!is.null(random_effect_stay)) {
+      cons_density$group_stay <- as.numeric(factor(stay_data_join[[random_effect_stay]],
+                                                    levels = re_levels_stay))
     }
   }
 
-  # 変数 stay_family の値に基づいて動的にコードを生成
-  code <- get_rest_code(stay_family)
+  # NIMBLE model code generators ---------------------------------------------
 
+  get_RADREST_code <- function(stay_family) {
 
-  # ---------------------------------------------------------------------------
-  # Initial values
-  # ---------------------------------------------------------------------------
-  cat("Compiling the model. This may take a moment...\n")
+    if (stay_family == "exponential") {
+      nimble::nimbleCode({
+        # [1] Stay model: Exponential
+        for (i in 1:N_stay) {
+          censored[i] ~ dinterval(stay[i], c_time[i])
+          stay[i]   ~ dexp(rate = 1 / scale[i])
+          pred_t[i] ~ dexp(rate = 1 / scale[i])
+          loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dexp(stay[i], rate = 1 / scale[i], log = 1) +
+            step(censored[i] - 0.5) * log(1 - pexp(c_time[i], rate = 1 / scale[i]))
+          loglike_pred_stay[i] <- dexp(pred_t[i], rate = 1 / scale[i], log = 1)
+          if (nPreds_stay > 1) {
+            if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
+            else { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] }
+          } else {
+            if (nLevels_stay == 0) { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] }
+            else { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] + random_effect_stay[group_stay[i]] }
+          }
+        }
+        if (nPreds_stay == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(beta_stay[1] + species_effect_stay[m, 1]) } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])) } }
+        }
+        # Stay priors
+        for (j in 1:nPreds_stay) {
+          beta_stay[j] ~ dnorm(0, sd = 5)
+          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
+        }
+        if (nLevels_stay > 0) {
+          for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
+          sigma_stay ~ T(dnorm(0, sd = 2), 0, )
+        }
+        # [2] Enter model
+        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
+        cutpoint[1] <- 0
+        for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
+        if (nPreds_alpha == 1) {
+          for (i in 1:N_station) { for (m in 1:nSpecies) {
+            eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
+            for (g in 1:N_group) { log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]; phi[i, m, g] <- exp(log_phi[i, m, g]) }
+            sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
+            for (g in 1:N_group) { p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]; c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1); alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g] }
+            mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
+          } }
+        } else {
+          for (i in 1:N_station) { for (m in 1:nSpecies) {
+            eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
+            for (g in 1:N_group) { log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]; phi[i, m, g] <- exp(log_phi[i, m, g]) }
+            sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
+            for (g in 1:N_group) { p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]; c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1); alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g] }
+            mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
+          } }
+        }
+        for (k in 1:nPreds_alpha) {
+          beta_enter[k] ~ dnorm(0, sd = 5)
+          sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
+        }
+        # y model
+        for (j in 1:N_station_species) {
+          y[j, 1:N_group]      ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
+          pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
+          loglike_obs_y[j]  <- ddirchmulti(y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+          loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+        }
+        # N_detection model
+        for (m in 1:nSpecies) {
+          for (i in 1:N_station) {
+            N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
+            p[i, m] <- size[m] / (size[m] + mu[i, m])
+            N_detection_rep[i, m]   ~ dnbinom(size = size[m], prob = p[i, m])
+            loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
+            loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
+          }
+          size[m] ~ dgamma(1, 1)
+        }
+        # Density and REST formula
+        if (nPreds_density == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+          } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+          } }
+        }
+        for (j in 1:nPreds_density) {
+          beta_density[j] ~ dnorm(0, sd = 5)
+          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
+        }
+      })
+
+    } else if (stay_family == "gamma") {
+      nimble::nimbleCode({
+        # [1] Stay model: Gamma
+        for (i in 1:N_stay) {
+          censored[i] ~ dinterval(stay[i], c_time[i])
+          stay[i]   ~ dgamma(shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i])
+          pred_t[i] ~ dgamma(shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i])
+          loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dgamma(stay[i], shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i], log = 1) +
+            step(censored[i] - 0.5) * log(1 - pgamma(c_time[i], shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i]))
+          loglike_pred_stay[i] <- dgamma(pred_t[i], shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i], log = 1)
+          if (nPreds_stay > 1) {
+            if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
+            else { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] }
+          } else {
+            if (nLevels_stay == 0) { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] }
+            else { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] + random_effect_stay[group_stay[i]] }
+          }
+        }
+        for (m in 1:nSpecies) { theta_stay[m] ~ dgamma(shape_stay, rate_stay); shape[m] <- theta_stay[m] }
+        shape_stay ~ dgamma(2, 0.5); rate_stay ~ dgamma(2, 0.5)
+        if (nPreds_stay == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- theta_stay[m] * exp(beta_stay[1] + species_effect_stay[m, 1]) } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- theta_stay[m] * exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])) } }
+        }
+        for (j in 1:nPreds_stay) {
+          beta_stay[j] ~ dnorm(0, sd = 5)
+          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
+        }
+        if (nLevels_stay > 0) {
+          for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
+          sigma_stay ~ T(dnorm(0, sd = 2), 0, )
+        }
+        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
+        cutpoint[1] <- 0
+        for (g in 2:N_group) { cutpoint[g] ~ dnorm(0, sd = 5) }
+        if (nPreds_alpha == 1) {
+          for (i in 1:N_station) { for (m in 1:nSpecies) {
+            eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
+            for (g in 1:N_group) { log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]; phi[i, m, g] <- exp(log_phi[i, m, g]) }
+            sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
+            for (g in 1:N_group) { p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]; c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1); alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g] }
+            mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
+          } }
+        } else {
+          for (i in 1:N_station) { for (m in 1:nSpecies) {
+            eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
+            for (g in 1:N_group) { log_phi[i, m, g] <- cutpoint[g] + (g - 1) * eta[i, m]; phi[i, m, g] <- exp(log_phi[i, m, g]) }
+            sum_phi[i, m] <- sum(phi[i, m, 1:N_group])
+            for (g in 1:N_group) { p_expected[i, m, g] <- phi[i, m, g] / sum_phi[i, m]; c_expected[i, m, g] <- p_expected[i, m, g] * (g - 1); alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g] }
+            mean_pass[i, m] <- sum(c_expected[i, m, 1:N_group])
+          } }
+        }
+        for (k in 1:nPreds_alpha) {
+          beta_enter[k] ~ dnorm(0, sd = 5)
+          sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
+        }
+        for (j in 1:N_station_species) {
+          y[j, 1:N_group]      ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
+          pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
+          loglike_obs_y[j]  <- ddirchmulti(y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+          loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+        }
+        for (m in 1:nSpecies) {
+          for (i in 1:N_station) {
+            N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
+            p[i, m] <- size[m] / (size[m] + mu[i, m])
+            N_detection_rep[i, m]   ~ dnbinom(size = size[m], prob = p[i, m])
+            loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
+            loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
+          }
+          size[m] ~ dgamma(1, 1)
+        }
+        if (nPreds_density == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+          } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+          } }
+        }
+        for (j in 1:nPreds_density) {
+          beta_density[j] ~ dnorm(0, sd = 5)
+          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
+        }
+      })
+
+    } else if (stay_family == "lognormal") {
+      nimble::nimbleCode({
+        # [1] Stay model: Lognormal
+        for (i in 1:N_stay) {
+          censored[i] ~ dinterval(stay[i], c_time[i])
+          stay[i]   ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
+          pred_t[i] ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
+          loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dlnorm(stay[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1) +
+            step(censored[i] - 0.5) * log(1 - plnorm(c_time[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]]))
+          loglike_pred_stay[i] <- dlnorm(pred_t[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1)
+          meanlog[i] <- log(scale[i])
+          if (nPreds_stay > 1) {
+            if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
+            else { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] }
+          } else {
+            if (nLevels_stay == 0) { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] }
+            else { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] + random_effect_stay[group_stay[i]] }
+          }
+        }
+        for (m in 1:nSpecies) { theta_stay[m] ~ dgamma(shape_stay, rate_stay); sdlog[m] <- theta_stay[m] }
+        shape_stay ~ dgamma(2, 0.5); rate_stay ~ dgamma(2, 0.5)
+        if (nPreds_stay == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(beta_stay[1] + species_effect_stay[m, 1] + theta_stay[m]^2 / 2) } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay]) + theta_stay[m]^2 / 2) } }
+        }
+        for (j in 1:nPreds_stay) {
+          beta_stay[j] ~ dnorm(0, sd = 5)
+          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
+        }
+        if (nLevels_stay > 0) {
+          for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
+          sigma_stay ~ T(dnorm(0, sd = 2), 0, )
+        }
+        # [2] Enter model (cumulative logit)
+        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
+        cutpoint[1] ~ dnorm(0, sd = 3)
+        for (g in 2:(N_group - 1)) { delta[g - 1] ~ dgamma(1, 1); cutpoint[g] <- cutpoint[g - 1] + delta[g - 1] }
+        for (k in 1:nPreds_alpha) {
+          beta_enter[k] ~ dnorm(0, sd = 5)
+          sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
+        }
+        if (nPreds_alpha == 1) {
+          for (i in 1:N_station) { for (m in 1:nSpecies) {
+            eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
+            for (g in 1:(N_group - 1)) { cum_p[i, m, g] <- ilogit(cutpoint[g] - eta[i, m]) }
+            p_expected[i, m, 1] <- cum_p[i, m, 1]
+            for (g in 2:(N_group - 1)) { p_expected[i, m, g] <- cum_p[i, m, g] - cum_p[i, m, g - 1] }
+            p_expected[i, m, N_group] <- 1 - cum_p[i, m, N_group - 1]
+            for (g in 1:N_group) { alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g] }
+            mean_pass_raw[i, m] <- sum(p_expected[i, m, 2:N_group] * (1:(N_group - 1)))
+            mean_pass[i, m] <- max(mean_pass_raw[i, m], 0.001)
+          } }
+        } else {
+          for (i in 1:N_station) { for (m in 1:nSpecies) {
+            eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
+            for (g in 1:(N_group - 1)) { cum_p[i, m, g] <- ilogit(cutpoint[g] - eta[i, m]) }
+            p_expected[i, m, 1] <- cum_p[i, m, 1]
+            for (g in 2:(N_group - 1)) { p_expected[i, m, g] <- cum_p[i, m, g] - cum_p[i, m, g - 1] }
+            p_expected[i, m, N_group] <- 1 - cum_p[i, m, N_group - 1]
+            for (g in 1:N_group) { alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g] }
+            mean_pass_raw[i, m] <- sum(p_expected[i, m, 2:N_group] * (1:(N_group - 1)))
+            mean_pass[i, m] <- max(mean_pass_raw[i, m], 0.001)
+          } }
+        }
+        for (j in 1:N_station_species) {
+          y[j, 1:N_group]      ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
+          pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
+          loglike_obs_y[j]  <- ddirchmulti(y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+          loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+        }
+        for (m in 1:nSpecies) {
+          for (i in 1:N_station) {
+            N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
+            p[i, m] <- size[m] / (size[m] + mu[i, m])
+            N_detection_rep[i, m]   ~ dnbinom(size = size[m], prob = p[i, m])
+            loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
+            loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
+          }
+          size[m] ~ dgamma(1, 1)
+        }
+        if (nPreds_density == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+          } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+          } }
+        }
+        for (j in 1:nPreds_density) {
+          beta_density[j] ~ dnorm(0, sd = 5)
+          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
+        }
+      })
+
+    } else { # weibull
+      nimble::nimbleCode({
+        # [1] Stay model: Weibull
+        for (i in 1:N_stay) {
+          censored[i] ~ dinterval(stay[i], c_time[i])
+          stay[i]   ~ dweibull(shape = theta_stay[species_id_stay[i]], scale = scale[i])
+          pred_t[i] ~ dweibull(shape = theta_stay[species_id_stay[i]], scale = scale[i])
+          loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dweibull(stay[i], shape = theta_stay[species_id_stay[i]], scale = scale[i], log = 1) +
+            step(censored[i] - 0.5) * log(1 - pweibull(c_time[i], shape = theta_stay[species_id_stay[i]], scale = scale[i]))
+          loglike_pred_stay[i] <- dweibull(pred_t[i], shape = theta_stay[species_id_stay[i]], scale = scale[i], log = 1)
+          if (nPreds_stay > 1) {
+            if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
+            else { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] }
+          } else {
+            if (nLevels_stay == 0) { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] }
+            else { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] + random_effect_stay[group_stay[i]] }
+          }
+        }
+        for (m in 1:nSpecies) { theta_stay[m] ~ dgamma(shape_stay, rate_stay); shape[m] <- theta_stay[m] }
+        shape_stay ~ dgamma(2, 0.5); rate_stay ~ dgamma(2, 0.5)
+        if (nPreds_stay == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(lgamma(1 + 1 / theta_stay[m]) + beta_stay[1] + species_effect_stay[m, 1]) } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(lgamma(1 + 1 / theta_stay[m]) + inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])) } }
+        }
+        for (j in 1:nPreds_stay) {
+          beta_stay[j] ~ dnorm(0, sd = 5)
+          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
+        }
+        if (nLevels_stay > 0) {
+          for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
+          sigma_stay ~ T(dnorm(0, sd = 2), 0, )
+        }
+        # [2] Enter model (cumulative logit)
+        for (m in 1:nSpecies) { theta_enter[m] ~ dgamma(2, 2) }
+        cutpoint[1] ~ dnorm(0, sd = 3)
+        for (g in 2:(N_group - 1)) { delta[g - 1] ~ dgamma(1, 1); cutpoint[g] <- cutpoint[g - 1] + delta[g - 1] }
+        for (k in 1:nPreds_alpha) {
+          beta_enter[k] ~ dnorm(0, sd = 5)
+          sd_species_alpha[k] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_alpha[m, k] ~ dnorm(0, sd = sd_species_alpha[k]) }
+        }
+        if (nPreds_alpha == 1) {
+          for (i in 1:N_station) { for (m in 1:nSpecies) {
+            eta[i, m] <- beta_enter[1] + species_effect_alpha[m, 1]
+            for (g in 1:(N_group - 1)) { cum_p[i, m, g] <- ilogit(cutpoint[g] - eta[i, m]) }
+            p_expected[i, m, 1] <- cum_p[i, m, 1]
+            for (g in 2:(N_group - 1)) { p_expected[i, m, g] <- cum_p[i, m, g] - cum_p[i, m, g - 1] }
+            p_expected[i, m, N_group] <- 1 - cum_p[i, m, N_group - 1]
+            for (g in 1:N_group) { alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g] }
+            mean_pass_raw[i, m] <- sum(p_expected[i, m, 2:N_group] * (1:(N_group - 1)))
+            mean_pass[i, m] <- max(mean_pass_raw[i, m], 0.001)
+          } }
+        } else {
+          for (i in 1:N_station) { for (m in 1:nSpecies) {
+            eta[i, m] <- inprod(beta_enter[1:nPreds_alpha] + species_effect_alpha[m, 1:nPreds_alpha], X_alpha[i, 1:nPreds_alpha])
+            for (g in 1:(N_group - 1)) { cum_p[i, m, g] <- ilogit(cutpoint[g] - eta[i, m]) }
+            p_expected[i, m, 1] <- cum_p[i, m, 1]
+            for (g in 2:(N_group - 1)) { p_expected[i, m, g] <- cum_p[i, m, g] - cum_p[i, m, g - 1] }
+            p_expected[i, m, N_group] <- 1 - cum_p[i, m, N_group - 1]
+            for (g in 1:N_group) { alpha_mat[i, m, g] <- theta_enter[m] * p_expected[i, m, g] }
+            mean_pass_raw[i, m] <- sum(p_expected[i, m, 2:N_group] * (1:(N_group - 1)))
+            mean_pass[i, m] <- max(mean_pass_raw[i, m], 0.001)
+          } }
+        }
+        for (j in 1:N_station_species) {
+          y[j, 1:N_group]      ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
+          pred_y[j, 1:N_group] ~ ddirchmulti(alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j])
+          loglike_obs_y[j]  <- ddirchmulti(y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+          loglike_pred_y[j] <- ddirchmulti(pred_y[j, 1:N_group], alpha_mat[station_id_ey[j], species_id_ey[j], 1:N_group], N_judge[j], log = 1)
+        }
+        for (m in 1:nSpecies) {
+          for (i in 1:N_station) {
+            N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
+            p[i, m] <- size[m] / (size[m] + mu[i, m])
+            N_detection_rep[i, m]   ~ dnbinom(size = size[m], prob = p[i, m])
+            loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
+            loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
+          }
+          size[m] ~ dgamma(1, 1)
+        }
+        if (nPreds_density == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+          } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+          } }
+        }
+        for (j in 1:nPreds_density) {
+          beta_density[j] ~ dnorm(0, sd = 5)
+          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
+        }
+      })
+    }
+  } # end get_RADREST_code
+
+  get_REST_code <- function(stay_family) {
+
+    if (stay_family == "exponential") {
+      nimble::nimbleCode({
+        # [1] Stay model: Exponential
+        for (i in 1:N_stay) {
+          censored[i] ~ dinterval(stay[i], c_time[i])
+          stay[i]   ~ dexp(rate = 1 / scale[i])
+          pred_t[i] ~ dexp(rate = 1 / scale[i])
+          loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dexp(stay[i], rate = 1 / scale[i], log = 1) +
+            step(censored[i] - 0.5) * log(1 - pexp(c_time[i], rate = 1 / scale[i]))
+          loglike_pred_stay[i] <- dexp(pred_t[i], rate = 1 / scale[i], log = 1)
+          if (nPreds_stay > 1) {
+            if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
+            else { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] }
+          } else {
+            if (nLevels_stay == 0) { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] }
+            else { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] + random_effect_stay[group_stay[i]] }
+          }
+        }
+        if (nPreds_stay == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(beta_stay[1] + species_effect_stay[m, 1]) } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])) } }
+        }
+        for (j in 1:nPreds_stay) {
+          beta_stay[j] ~ dnorm(0, sd = 5)
+          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
+        }
+        if (nLevels_stay > 0) {
+          for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
+          sigma_stay ~ T(dnorm(0, sd = 2), 0, )
+        }
+        # [2] REST detection model (Y_matrix = total passes)
+        for (m in 1:nSpecies) {
+          for (i in 1:N_station) {
+            Y_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
+            p[i, m] <- size[m] / (size[m] + mu[i, m])
+            Y_rep[i, m]    ~ dnbinom(size = size[m], prob = p[i, m])
+            loglike_obs_y[i, m]  <- dnbinom(Y_matrix[i, m], size[m], p[i, m], log = 1)
+            loglike_pred_y[i, m] <- dnbinom(Y_rep[i, m],    size[m], p[i, m], log = 1)
+          }
+          size[m] ~ dgamma(1, 1)
+        }
+        # REST formula (no mean_pass term)
+        if (nPreds_density == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+          } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+          } }
+        }
+        for (j in 1:nPreds_density) {
+          beta_density[j] ~ dnorm(0, sd = 5)
+          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
+        }
+      })
+
+    } else if (stay_family == "gamma") {
+      nimble::nimbleCode({
+        for (i in 1:N_stay) {
+          censored[i] ~ dinterval(stay[i], c_time[i])
+          stay[i]   ~ dgamma(shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i])
+          pred_t[i] ~ dgamma(shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i])
+          loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dgamma(stay[i], shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i], log = 1) +
+            step(censored[i] - 0.5) * log(1 - pgamma(c_time[i], shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i]))
+          loglike_pred_stay[i] <- dgamma(pred_t[i], shape = theta_stay[species_id_stay[i]], rate = 1 / scale[i], log = 1)
+          if (nPreds_stay > 1) {
+            if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
+            else { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] }
+          } else {
+            if (nLevels_stay == 0) { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] }
+            else { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] + random_effect_stay[group_stay[i]] }
+          }
+        }
+        for (m in 1:nSpecies) { theta_stay[m] ~ dgamma(shape_stay, rate_stay); shape[m] <- theta_stay[m] }
+        shape_stay ~ dgamma(2, 0.5); rate_stay ~ dgamma(2, 0.5)
+        if (nPreds_stay == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- theta_stay[m] * exp(beta_stay[1] + species_effect_stay[m, 1]) } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- theta_stay[m] * exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])) } }
+        }
+        for (j in 1:nPreds_stay) {
+          beta_stay[j] ~ dnorm(0, sd = 5)
+          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
+        }
+        if (nLevels_stay > 0) {
+          for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
+          sigma_stay ~ T(dnorm(0, sd = 2), 0, )
+        }
+        for (m in 1:nSpecies) {
+          for (i in 1:N_station) {
+            Y_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
+            p[i, m] <- size[m] / (size[m] + mu[i, m])
+            Y_rep[i, m]    ~ dnbinom(size = size[m], prob = p[i, m])
+            loglike_obs_y[i, m]  <- dnbinom(Y_matrix[i, m], size[m], p[i, m], log = 1)
+            loglike_pred_y[i, m] <- dnbinom(Y_rep[i, m],    size[m], p[i, m], log = 1)
+          }
+          size[m] ~ dgamma(1, 1)
+        }
+        if (nPreds_density == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+          } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+          } }
+        }
+        for (j in 1:nPreds_density) {
+          beta_density[j] ~ dnorm(0, sd = 5)
+          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
+        }
+      })
+
+    } else if (stay_family == "lognormal") {
+      nimble::nimbleCode({
+        for (i in 1:N_stay) {
+          censored[i] ~ dinterval(stay[i], c_time[i])
+          stay[i]   ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
+          pred_t[i] ~ dlnorm(meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]])
+          loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dlnorm(stay[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1) +
+            step(censored[i] - 0.5) * log(1 - plnorm(c_time[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]]))
+          loglike_pred_stay[i] <- dlnorm(pred_t[i], meanlog = log(scale[i]), sdlog = theta_stay[species_id_stay[i]], log = 1)
+          meanlog[i] <- log(scale[i])
+          if (nPreds_stay > 1) {
+            if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
+            else { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] }
+          } else {
+            if (nLevels_stay == 0) { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] }
+            else { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] + random_effect_stay[group_stay[i]] }
+          }
+        }
+        for (m in 1:nSpecies) { theta_stay[m] ~ dgamma(shape_stay, rate_stay); sdlog[m] <- theta_stay[m] }
+        shape_stay ~ dgamma(2, 0.5); rate_stay ~ dgamma(2, 0.5)
+        if (nPreds_stay == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(beta_stay[1] + species_effect_stay[m, 1] + theta_stay[m]^2 / 2) } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay]) + theta_stay[m]^2 / 2) } }
+        }
+        for (j in 1:nPreds_stay) {
+          beta_stay[j] ~ dnorm(0, sd = 5)
+          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
+        }
+        if (nLevels_stay > 0) {
+          for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
+          sigma_stay ~ T(dnorm(0, sd = 2), 0, )
+        }
+        for (m in 1:nSpecies) {
+          for (i in 1:N_station) {
+            Y_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
+            p[i, m] <- size[m] / (size[m] + mu[i, m])
+            Y_rep[i, m]    ~ dnbinom(size = size[m], prob = p[i, m])
+            loglike_obs_y[i, m]  <- dnbinom(Y_matrix[i, m], size[m], p[i, m], log = 1)
+            loglike_pred_y[i, m] <- dnbinom(Y_rep[i, m],    size[m], p[i, m], log = 1)
+          }
+          size[m] ~ dgamma(1, 1)
+        }
+        if (nPreds_density == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+          } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+          } }
+        }
+        for (j in 1:nPreds_density) {
+          beta_density[j] ~ dnorm(0, sd = 5)
+          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
+        }
+      })
+
+    } else { # weibull
+      nimble::nimbleCode({
+        for (i in 1:N_stay) {
+          censored[i] ~ dinterval(stay[i], c_time[i])
+          stay[i]   ~ dweibull(shape = theta_stay[species_id_stay[i]], scale = scale[i])
+          pred_t[i] ~ dweibull(shape = theta_stay[species_id_stay[i]], scale = scale[i])
+          loglike_obs_stay[i]  <- (1 - step(censored[i] - 0.5)) * dweibull(stay[i], shape = theta_stay[species_id_stay[i]], scale = scale[i], log = 1) +
+            step(censored[i] - 0.5) * log(1 - pweibull(c_time[i], shape = theta_stay[species_id_stay[i]], scale = scale[i]))
+          loglike_pred_stay[i] <- dweibull(pred_t[i], shape = theta_stay[species_id_stay[i]], scale = scale[i], log = 1)
+          if (nPreds_stay > 1) {
+            if (nLevels_stay == 0) { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) }
+            else { log(scale[i]) <- inprod(beta_stay[1:nPreds_stay] + species_effect_stay[species_id_stay[i], 1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] }
+          } else {
+            if (nLevels_stay == 0) { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] }
+            else { log(scale[i]) <- beta_stay[1] + species_effect_stay[species_id_stay[i], 1] + random_effect_stay[group_stay[i]] }
+          }
+        }
+        for (m in 1:nSpecies) { theta_stay[m] ~ dgamma(shape_stay, rate_stay); shape[m] <- theta_stay[m] }
+        shape_stay ~ dgamma(2, 0.5); rate_stay ~ dgamma(2, 0.5)
+        if (nPreds_stay == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(lgamma(1 + 1 / theta_stay[m]) + beta_stay[1] + species_effect_stay[m, 1]) } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) { mean_stay[i, m] <- exp(lgamma(1 + 1 / theta_stay[m]) + inprod(beta_stay[1:nPreds_stay] + species_effect_stay[m, 1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])) } }
+        }
+        for (j in 1:nPreds_stay) {
+          beta_stay[j] ~ dnorm(0, sd = 5)
+          sigma_species_stay[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_stay[m, j] ~ dnorm(0, sd = sigma_species_stay[j]) }
+        }
+        if (nLevels_stay > 0) {
+          for (k in 1:nLevels_stay) { random_effect_stay[k] ~ dnorm(0, sd = sigma_stay) }
+          sigma_stay ~ T(dnorm(0, sd = 2), 0, )
+        }
+        for (m in 1:nSpecies) {
+          for (i in 1:N_station) {
+            Y_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
+            p[i, m] <- size[m] / (size[m] + mu[i, m])
+            Y_rep[i, m]    ~ dnbinom(size = size[m], prob = p[i, m])
+            loglike_obs_y[i, m]  <- dnbinom(Y_matrix[i, m], size[m], p[i, m], log = 1)
+            loglike_pred_y[i, m] <- dnbinom(Y_rep[i, m],    size[m], p[i, m], log = 1)
+          }
+          size[m] ~ dgamma(1, 1)
+        }
+        if (nPreds_density == 1) {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+          } }
+        } else {
+          for (m in 1:nSpecies) { for (i in 1:N_station) {
+            log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
+            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+          } }
+        }
+        for (j in 1:nPreds_density) {
+          beta_density[j] ~ dnorm(0, sd = 5)
+          sd_species_density[j] ~ T(dnorm(0, sd = 2), 0, )
+          for (m in 1:nSpecies) { species_effect_density[m, j] ~ dnorm(0, sd = sd_species_density[j]) }
+        }
+      })
+    }
+  } # end get_REST_code
+
+  # Select code
+  if (model == "RAD-REST") {
+    code <- get_RADREST_code(stay_family)
+  } else {
+    code <- get_REST_code(stay_family)
+  }
+
+  # Initial values ------------------------------------------------------------
 
   stay_inits <- rep(NA, N_stay)
   stay_inits[is.censored == 1] <- c_time[is.censored == 1] + 1.0
 
   inits_f <- function() {
     common_inits <- list(
-      # --- stay ---
-      beta_stay          = runif(nPreds_stay, -1, 1),
-      stay               = stay_inits,
-      theta_stay         = runif(nSpecies, 0.5, 4.0),
-      shape_stay         = runif(1, 0.5, 2.0),
-      rate_stay          = runif(1, 0.5, 2.0),
-      species_effect_stay = matrix(runif(nSpecies * nPreds_stay, -1, 1), nrow = nSpecies, ncol = nPreds_stay),
-      sigma_species_stay = runif(1, 0.01, 1),
-
-      # --- density ---
-      beta_density           = rnorm(nPreds_density, 0, 1),
-      species_effect_density = matrix(rnorm(nSpecies * nPreds_density, 0, 0.5), nrow = nSpecies, ncol = nPreds_density),
-      sd_species_density     = runif(1, 0.01, 2),
-      # ★これを追加！ (N_station行 × nSpecies列の、全て1の行列)
-      rho = matrix(1, nrow = N_station, ncol = nSpecies),
-
-      # --- alpha (enter) ---
-      theta_enter          = runif(nSpecies, 1, 5),
-      # ↓【修正】閾値が必ず昇順になるように sort() を追加しました
-      cutpoint             = c(NA, sort(rnorm(N_group - 1, 0, 0.5))),
-      beta_enter           = rnorm(nPreds_alpha, 0, 0.1),
-      species_effect_alpha = matrix(rnorm(nSpecies * nPreds_alpha, 0, 0.1), nrow = nSpecies, ncol = nPreds_alpha),
-      sd_species_alpha     = runif(nPreds_alpha, 0.01, 1),
-
-      # --- NB size ---
-      size = rgamma(nSpecies, shape = 1, rate = 1)
+      beta_stay           = stats::runif(nPreds_stay, -1, 1),
+      stay                = stay_inits,
+      theta_stay          = stats::runif(nSpecies, 0.5, 4.0),
+      shape_stay          = stats::runif(1, 0.5, 2.0),
+      rate_stay           = stats::runif(1, 0.5, 2.0),
+      species_effect_stay = matrix(stats::runif(nSpecies * nPreds_stay, -1, 1),
+                                   nrow = nSpecies, ncol = nPreds_stay),
+      sigma_species_stay  = stats::runif(nPreds_stay, 0.01, 1),
+      beta_density           = stats::rnorm(nPreds_density, 0, 1),
+      species_effect_density = matrix(stats::rnorm(nSpecies * nPreds_density, 0, 0.5),
+                                      nrow = nSpecies, ncol = nPreds_density),
+      sd_species_density     = stats::runif(nPreds_density, 0.01, 2),
+      size = stats::rgamma(nSpecies, shape = 1, rate = 1)
     )
 
-    if (nLevels_stay > 0) {
-      c(common_inits, list(
-        random_effect_stay = runif(nLevels_stay, -1, 1),
-        sigma_stay         = runif(1, 0.5, 2.5)
-      ))
-    } else {
-      common_inits
+    if (model == "RAD-REST") {
+      common_inits$theta_enter          <- stats::runif(nSpecies, 1, 5)
+      common_inits$cutpoint             <- c(NA, sort(stats::rnorm(N_group - 1, 0, 0.5)))
+      common_inits$beta_enter           <- stats::rnorm(nPreds_alpha, 0, 0.1)
+      common_inits$species_effect_alpha <- matrix(stats::rnorm(nSpecies * nPreds_alpha, 0, 0.1),
+                                                   nrow = nSpecies, ncol = nPreds_alpha)
+      common_inits$sd_species_alpha     <- stats::runif(nPreds_alpha, 0.01, 1)
     }
+
+    if (nLevels_stay > 0) {
+      common_inits$random_effect_stay <- stats::runif(nLevels_stay, -1, 1)
+      common_inits$sigma_stay         <- stats::runif(1, 0.5, 2.5)
+    }
+
+    common_inits
   }
 
-  # -------------------------------------------------------------------------
-  # クラスターの準備と実行
-  # -------------------------------------------------------------------------
-  this_cluster <- makeCluster(cores)
+  # MCMC parameters -----------------------------------------------------------
 
-  clusterEvalQ(this_cluster, {
+  if (stay_family == "exponential") {
+    prms <- c("scale", "mean_stay")
+  } else if (stay_family %in% c("gamma", "weibull")) {
+    prms <- c("scale", "shape", "mean_stay")
+  } else {
+    prms <- c("meanlog", "sdlog", "mean_stay")
+  }
+
+  prms <- c(prms, "density",
+            "beta_density", "species_effect_density",
+            "beta_stay", "species_effect_stay")
+
+  if (model == "RAD-REST") {
+    prms <- c(prms, "mean_pass", "beta_enter", "species_effect_alpha")
+    params <- c(prms, "loglike_obs_stay", "loglike_obs_y", "loglike_obs_detection",
+                "loglike_pred_stay", "loglike_pred_y", "loglike_pred_detection")
+  } else {
+    params <- c(prms, "loglike_obs_stay", "loglike_obs_y",
+                "loglike_pred_stay", "loglike_pred_y")
+  }
+
+  if (activity_estimation == "mixture") params <- c(params, "activity_proportion")
+
+  # Parallel MCMC -------------------------------------------------------------
+
+  if (activity_estimation != "mixture") {
+    per_chain_info <- lapply(seq_len(nc), function(i) {
+      list(seed = sample(1:9999, 1), inits = inits_f())
+    })
+  } else {
+    per_chain_info <- lapply(seq_along(actv_out_trace), function(i) {
+      list(seed = sample(1:9999, 1), inits = inits_f(),
+           actv_samples = as.matrix(actv_out_trace[[i]]))
+    })
+  }
+
+  is_mixture <- activity_estimation == "mixture"
+
+  run_MCMC_multi <- function(info, data, constants, code, params, ni, nt, nb, is_mixture) {
+    worker_dir <- file.path(tempdir(), paste0("nimble_worker_", Sys.getpid()))
+    dir.create(worker_dir, showWarnings = FALSE)
+
+    myModel  <- nimble::nimbleModel(code = code, data = data, constants = constants, inits = info$inits)
+    CmyModel <- nimble::compileNimble(myModel, dirName = worker_dir)
+    configModel <- nimble::configureMCMC(myModel, monitors = params)
+
+    if (is_mixture) {
+      configModel$removeSampler("activity_proportion")
+      configModel$addSampler(target = "activity_proportion", type = 'prior_samples',
+                             control = list(samples = info$actv_samples))
+    }
+
+    myMCMC  <- nimble::buildMCMC(configModel)
+    CmyMCMC <- nimble::compileNimble(myMCMC, project = myModel, dirName = worker_dir)
+    nimble::runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt, nchains = 1,
+                    setSeed = info$seed, samplesAsCodaMCMC = TRUE)
+  }
+
+  cat("Compiling the model. This may take a moment...\n")
+
+  this_cluster <- parallel::makeCluster(nc)
+  on.exit(try(parallel::stopCluster(this_cluster), silent = TRUE), add = TRUE)
+
+  parallel::clusterEvalQ(this_cluster, {
     library(nimble)
-    ddirchmulti <- nimbleFunction(
+    ddirchmulti <- nimble::nimbleFunction(
       run = function(x = double(1), alpha = double(1), size = double(0), log = integer(0)) {
         returnType(double(0))
         logProb <- lgamma(size + 1) - sum(lgamma(x + 1)) + lgamma(sum(alpha)) -
@@ -1355,7 +1266,7 @@ bayes_rest_multi <- function(formula_stay,
         if (log) return(logProb) else return(exp(logProb))
       }
     )
-    rdirchmulti <- nimbleFunction(
+    rdirchmulti <- nimble::nimbleFunction(
       run = function(n = integer(0), alpha = double(1), size = double(0)) {
         returnType(double(1))
         if (n != 1) print("rdirchmulti only allows n = 1; using n = 1.")
@@ -1363,131 +1274,81 @@ bayes_rest_multi <- function(formula_stay,
         return(rmulti(1, size = size, prob = p))
       }
     )
-    registerDistributions(list(
+    suppressMessages(nimble::registerDistributions(list(
       ddirchmulti = list(
         BUGSdist = "ddirchmulti(alpha, size)",
         types = c('value = double(1)', 'alpha = double(1)', 'size = double(0)'),
         pqAvail = FALSE
       )
-    ))
+    )))
   })
-
-  if(activity_estimation == "kernel") {
-    run_MCMC_RAD <- function(info, data, constants, code, params, ni, nt, nb) {
-      myModel <- nimbleModel(code = code, data = data, constants = constants, inits = info$inits)
-      CmyModel <- compileNimble(myModel)
-      configModel <- configureMCMC(myModel, monitors = params)
-      myMCMC <- buildMCMC(configModel, monitors = params)
-      CmyMCMC <- compileNimble(myMCMC)
-      results <- runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt, nchains = 1, setSeed = info$seed, samplesAsCodaMCMC = TRUE)
-      return(results)
-    }
-  }
-
-  if(activity_estimation == "mixture") {
-    run_MCMC_RAD <- function(info, data, constants, code, params, ni, nt, nb) {
-      myModel <- nimbleModel(code = code, data = data, constants = constants, inits = info$inits)
-      CmyModel <- compileNimble(myModel)
-      configModel <- configureMCMC(myModel, monitors = params)
-      configModel$removeSampler(c("activity_proportion"))
-      configModel$addSampler(target = c("activity_proportion"), type = 'prior_samples', samples = info$actv_samples)
-      myMCMC <- buildMCMC(configModel, monitors = params)
-      CmyMCMC <- compileNimble(myMCMC)
-      results <- runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt, nchains = 1, setSeed = info$seed, samplesAsCodaMCMC = TRUE)
-      return(results)
-    }
-  }
-
-  if(activity_estimation != "mixture") {
-    per_chain_info <- lapply(1:nc, function(i) {
-      list(seed = sample(1:9999, 1), inits = inits_f())
-    })
-  } else {
-    per_chain_info <- lapply(1:length(actv_out_trace), function(i) {
-      list(seed = sample(1:9999, 1), inits = inits_f(), actv_samples = as.matrix(actv_out_trace[[i]]))
-    })
-  }
-
-  # --- パラメータ（モニター対象）の設定 ---
-  if(stay_family == "exponential") prms <- c("scale", "mean_stay")
-  if(stay_family == "gamma" | stay_family == "weibull") prms <- c("scale", "shape", "mean_stay")
-  if(stay_family == "lognormal") prms <- c("meanlog", "sdlog", "mean_stay")
-
-  prms <- c(prms, "density", "mean_pass")
-
-  params <- c(prms,
-              # "loglike_obs_stay", "loglike_obs_y", "loglike_obs_detection",
-              # "loglike_pred_detection", "loglike_pred_stay", "loglike_pred_y",
-              "beta_density", "species_effect_density",
-              "beta_stay", "species_effect_stay",
-              "beta_enter", "species_effect_alpha")
-
-  if(activity_estimation == "mixture") { params <- c(params, "activity_proportion") }
-
-  clusterExport(this_cluster, c("ddirchmulti", "rdirchmulti", "registerDistributions", "run_MCMC_RAD"), envir = environment())
+  parallel::clusterExport(this_cluster, c("run_MCMC_multi"), envir = environment())
 
   cat("Running MCMC sampling. Please wait...\n")
-  chain_output <- parLapply(
+  chain_output <- parallel::parLapply(
     cl = this_cluster,
-    X = per_chain_info,
-    fun = run_MCMC_RAD,
-    data = data_density,
-    code = code,
+    X  = per_chain_info,
+    fun = run_MCMC_multi,
+    data      = data_density,
+    code      = code,
     constants = cons_density,
-    params = params,
-    ni = iter,
-    nt = thin,
-    nb = warmup
+    params    = params,
+    ni         = ni,
+    nt         = nt,
+    nb         = nb,
+    is_mixture = is_mixture
   )
 
-  stopCluster(this_cluster)
+  parallel::stopCluster(this_cluster)
   cat("Estimation is finished!\n")
-  ## WAIC
-  # loglfy <- MCMCchains(chain_output, params = c("loglike_obs_y"))
-  # loglfstay <- MCMCchains(chain_output, params = c("loglike_obs_stay"))
-  # loglfN <- MCMCchains(chain_output, params = c("loglike_obs_detection"))
 
-  # loglfall <- cbind(loglfstay, loglfy, loglfN) # kernel/mixture関係なく結合可能
-  #
-  # lppd <- sum(log(colMeans(exp(loglfall))))
-  # p.waic <- sum(apply(loglfall, 2, var))
-  # waic <- (-2) * lppd + 2 * p.waic
-  waic <- 1
-  # 結果の集約 -------------------------------------------------------------------
+  # WAIC computation ----------------------------------------------------------
 
-  # --- 共変量やランダム効果がない（全体共通）かの判定 ---
+  loglfstay <- MCMCvis::MCMCchains(chain_output, params = "loglike_obs_stay")
+  loglfy    <- MCMCvis::MCMCchains(chain_output, params = "loglike_obs_y")
+
+  if (model == "RAD-REST") {
+    loglfN   <- MCMCvis::MCMCchains(chain_output, params = "loglike_obs_detection")
+    loglfall <- cbind(loglfstay, loglfy, loglfN)
+  } else {
+    loglfall <- cbind(loglfstay, loglfy)
+  }
+
+  lppd   <- sum(apply(loglfall, 2, safe_log_mean_exp), na.rm = TRUE)
+  p.waic <- sum(apply(loglfall, 2, safe_var),          na.rm = TRUE)
+  waic   <- (-2) * lppd + 2 * p.waic
+
+  # tidy_samples --------------------------------------------------------------
+
+  samples_mat <- MCMCvis::MCMCchains(chain_output)
+  n_iters     <- nrow(samples_mat)
+  p_names     <- colnames(samples_mat)
+  tidy_samples <- data.frame(
+    parameter = rep(p_names, each = n_iters),
+    value     = as.vector(samples_mat),
+    iteration = rep(seq_len(n_iters), times = length(p_names)),
+    stringsAsFactors = FALSE
+  )
+
+  # mcmc.list
+  mcmc_samples <- coda::as.mcmc.list(chain_output)
+
+  # Summary -------------------------------------------------------------------
+
   check_no_cov <- function(f) {
     if (is.null(f)) return(TRUE)
-    f <- as.formula(f)
-    if (length(f) == 3) f <- f[-2]
-    length(all.vars(f)) == 0
+    f <- stats::as.formula(f)
+    vars <- all.vars(f[[length(f)]])
+    length(vars) == 0
   }
 
   is_density_global <- check_no_cov(formula_density)
-  is_stay_global    <- check_no_cov(formula_stay) && (is.null(random_effect_stay) || random_effect_stay == "NULL")
-  is_enter_global   <- if (exists("formula_enter")) check_no_cov(formula_enter) else TRUE
-  is_pass_global <- is_enter_global
+  is_stay_global    <- check_no_cov(formula_stay) && is.null(random_effect_stay)
+  is_enter_global   <- if (model == "RAD-REST") check_no_cov(formula_enter) else TRUE
+  is_pass_global    <- is_enter_global
 
-  # --- mcmc_samples の構築 ---
-  mcmc_samples <- coda::as.mcmc.list(chain_output)
-
-  if (activity_estimation == "mixture") {
-    sample_activity <- MCMCvis::MCMCchains(actv_chain_output,
-                                           mcmc.list = TRUE,
-                                           params = "activity_proportion")
-    mcmc_samples <- lapply(seq_along(mcmc_samples), function(i) {
-      coda::as.mcmc(cbind(mcmc_samples[[i]], sample_activity[[i]]))
-    })
-    mcmc_samples <- coda::as.mcmc.list(mcmc_samples)
-  }
-
-  # 全MCMCサンプルを行列として取得（種ごと係数計算に使用）
   all_samples_mat <- MCMCvis::MCMCchains(mcmc_samples)
 
-  # -------------------------------------------------------------------------
-  # ヘルパー1: MCMCsummary を実行して整形するラッパー
-  #   exact = TRUE で完全一致検索し、余分なパラメータを拾わないようにする
-  # -------------------------------------------------------------------------
   summarize_param <- function(param_name) {
     MCMCvis::MCMCsummary(
       MCMCvis::MCMCchains(mcmc_samples, mcmc.list = TRUE,
@@ -1500,102 +1361,48 @@ bayes_rest_multi <- function(formula_stay,
   }
 
   make_species_coef_summary <- function(param_type) {
-
     cfg <- switch(param_type,
-                  stay    = list(nPreds = nPreds_stay,    col_names = colnames(X_stay),
-                                 beta_pfx = "beta_stay",    eff_pfx = "species_effect_stay"),
-                  density = list(nPreds = nPreds_density,  col_names = colnames(X_density),
-                                 beta_pfx = "beta_density",  eff_pfx = "species_effect_density"),
-                  enter   = list(nPreds = nPreds_alpha,    col_names = colnames(X_alpha),
-                                 beta_pfx = "beta_enter",    eff_pfx = "species_effect_alpha")
+      stay    = list(nPreds = nPreds_stay,    col_names = colnames(X_stay),
+                     beta_pfx = "beta_stay",    eff_pfx = "species_effect_stay"),
+      density = list(nPreds = nPreds_density,  col_names = colnames(X_density),
+                     beta_pfx = "beta_density",  eff_pfx = "species_effect_density"),
+      enter   = list(nPreds = nPreds_alpha,    col_names = colnames(X_alpha),
+                     beta_pfx = "beta_enter",    eff_pfx = "species_effect_alpha")
     )
-
     rows <- list()
-
-    if (param_type %in% c("stay", "density")) {
-
-      for (m in seq_len(nSpecies)) {
-        for (j in seq_len(cfg$nPreds)) {
-
-          # nimble の出力列名：nPreds==1 のとき添字なし、複数のとき [j]
-          beta_col <- if (cfg$nPreds == 1) {
-            cfg$beta_pfx
-          } else {
-            paste0(cfg$beta_pfx, "[", j, "]")
-          }
-          eff_col <- paste0(cfg$eff_pfx, "[", m, ", ", j, "]")
-
-          if (!(beta_col %in% colnames(all_samples_mat))) next
-          if (!(eff_col  %in% colnames(all_samples_mat))) next
-
-          samps <- all_samples_mat[, beta_col] + all_samples_mat[, eff_col]
-
-          rows[[length(rows) + 1]] <- tibble::tibble(
-            Species  = target_species[m],
-            Station  = "All",
-            Variable = paste0("coef_", param_type,
-                              "[", j, "] (", cfg$col_names[j], ")"),
-            mean   = mean(samps),
-            sd     = sd(samps),
-            lower  = quantile(samps, 0.025),
-            median = quantile(samps, 0.500),
-            upper  = quantile(samps, 0.975),
-            Rhat   = NA_real_,
-            n.eff  = NA_real_
-          )
-        }
-      }
-
-    } else if (param_type == "enter") {
-
-      for (m in seq_len(nSpecies)) {
-        for (j in seq_len(cfg$nPreds)) {
-          for (g in seq_len(N_group)) {
-
-            beta_col <- paste0(cfg$beta_pfx, "[", j, ", ", g, "]")
-            eff_col  <- paste0(cfg$eff_pfx,  "[", m, ", ", j, ", ", g, "]")
-
-            if (!(beta_col %in% colnames(all_samples_mat))) next
-            if (!(eff_col  %in% colnames(all_samples_mat))) next
-
-            samps <- all_samples_mat[, beta_col] + all_samples_mat[, eff_col]
-
-            rows[[length(rows) + 1]] <- tibble::tibble(
-              Species  = target_species[m],
-              Station  = "All",
-              Variable = paste0("coef_enter[", j, ", ", g, "] (",
-                                cfg$col_names[j], ", cat", g - 1, ")"),
-              mean   = mean(samps),
-              sd     = sd(samps),
-              lower  = quantile(samps, 0.025),
-              median = quantile(samps, 0.500),
-              upper  = quantile(samps, 0.975),
-              Rhat   = NA_real_,
-              n.eff  = NA_real_
-            )
-          }
-        }
+    for (m in seq_len(nSpecies)) {
+      for (j in seq_len(cfg$nPreds)) {
+        beta_col <- if (cfg$nPreds == 1) cfg$beta_pfx else paste0(cfg$beta_pfx, "[", j, "]")
+        eff_col  <- paste0(cfg$eff_pfx, "[", m, ", ", j, "]")
+        if (!(beta_col %in% colnames(all_samples_mat))) next
+        if (!(eff_col  %in% colnames(all_samples_mat))) next
+        samps <- all_samples_mat[, beta_col] + all_samples_mat[, eff_col]
+        rows[[length(rows) + 1]] <- tibble::tibble(
+          Species  = target_species[m],
+          Station  = "All",
+          Variable = paste0("coef_", param_type, "[", j, "] (", cfg$col_names[j], ")"),
+          mean   = mean(samps),
+          sd     = stats::sd(samps),
+          lower  = stats::quantile(samps, 0.025),
+          median = stats::quantile(samps, 0.500),
+          upper  = stats::quantile(samps, 0.975),
+          Rhat   = NA_real_,
+          n.eff  = NA_real_
+        )
       }
     }
-
     dplyr::bind_rows(rows)
   }
 
-  # --- 集約の準備 ---
-  unique_stations <- station_effort_data$Station[1:N_station]
-
-  # --- density の集約 ---
+  # density summary
   raw_density <- summarize_param("density")
-
   if (nPreds_density == 1) {
-    # density[m]：m = 種インデックス
     summary_density <- raw_density %>%
       tidyr::extract(Variable, into = "Species_idx",
                      regex = "\\[(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
       dplyr::mutate(Species = target_species[Species_idx], Station = "All") %>%
       dplyr::select(-Species_idx)
   } else {
-    # density[i, m]：i = 地点インデックス, m = 種インデックス
     summary_density <- raw_density %>%
       tidyr::extract(Variable, into = c("Station_idx", "Species_idx"),
                      regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
@@ -1604,13 +1411,11 @@ bayes_rest_multi <- function(formula_stay,
       dplyr::select(-Station_idx, -Species_idx)
   }
 
-  # --- mean_stay の集約 ---
+  # mean_stay summary
   raw_stay <- summarize_param("mean_stay") %>%
     tidyr::extract(Variable, into = c("Station_idx", "Species_idx"),
                    regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE)
-
-  if (nPreds_stay == 1) {
-    # 地点間で同値（共変量なし）のため、地点1のみ採用して Station = "All" とする
+  if (is_stay_global) {
     summary_stay <- raw_stay %>%
       dplyr::filter(Station_idx == 1) %>%
       dplyr::mutate(Species  = target_species[Species_idx],
@@ -1618,79 +1423,68 @@ bayes_rest_multi <- function(formula_stay,
                     Variable = paste0("mean_stay[", Species_idx, "]")) %>%
       dplyr::select(-Station_idx, -Species_idx)
   } else {
-    # 共変量があり、地点ごとに値が異なる場合
     summary_stay <- raw_stay %>%
       dplyr::mutate(Species = target_species[Species_idx],
                     Station = unique_stations[Station_idx]) %>%
       dplyr::select(-Station_idx, -Species_idx)
   }
 
-  # --- mean_pass の集約（常に [i, m] 形式） ---
-  raw_pass <- summarize_param("mean_pass") %>%
-    tidyr::extract(Variable, into = c("Station_idx", "Species_idx"),
-                   regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE)
+  summary_coef_list <- list(summary_density, summary_stay)
 
-  if (is_pass_global) {
-    # 地点間で同値のため、地点1のみ採用して Station = "All" とする
-    summary_pass <- raw_pass %>%
-      dplyr::filter(Station_idx == 1) %>%
-      dplyr::mutate(Species  = target_species[Species_idx],
-                    Station  = "All",
-                    Variable = paste0("mean_pass[", Species_idx, "]")) %>%
-      dplyr::select(-Station_idx, -Species_idx)
-  } else {
-    summary_pass <- raw_pass %>%
-      dplyr::mutate(Species = target_species[Species_idx],
-                    Station = unique_stations[Station_idx]) %>%
-      dplyr::select(-Station_idx, -Species_idx)
+  # mean_pass summary (RAD-REST only)
+  if (model == "RAD-REST") {
+    raw_pass <- summarize_param("mean_pass") %>%
+      tidyr::extract(Variable, into = c("Station_idx", "Species_idx"),
+                     regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE)
+    if (is_pass_global) {
+      summary_pass <- raw_pass %>%
+        dplyr::filter(Station_idx == 1) %>%
+        dplyr::mutate(Species  = target_species[Species_idx],
+                      Station  = "All",
+                      Variable = paste0("mean_pass[", Species_idx, "]")) %>%
+        dplyr::select(-Station_idx, -Species_idx)
+    } else {
+      summary_pass <- raw_pass %>%
+        dplyr::mutate(Species = target_species[Species_idx],
+                      Station = unique_stations[Station_idx]) %>%
+        dplyr::select(-Station_idx, -Species_idx)
+    }
+    summary_coef_list <- c(summary_coef_list, list(summary_pass))
   }
 
-  # --- 種ごとの実効係数（beta + species_effect）---
-  # nPreds > 1 の場合のみ生成する（切片のみモデルでは不要）
-  summary_coef_list <- list(summary_density, summary_stay, summary_pass)
+  if (nPreds_stay    > 1) summary_coef_list <- c(summary_coef_list, list(make_species_coef_summary("stay")))
+  if (nPreds_density > 1) summary_coef_list <- c(summary_coef_list, list(make_species_coef_summary("density")))
+  if (model == "RAD-REST" && nPreds_alpha > 1)
+    summary_coef_list <- c(summary_coef_list, list(make_species_coef_summary("enter")))
 
-  if (nPreds_stay    > 1) {
-    summary_coef_list <- c(summary_coef_list,
-                           list(make_species_coef_summary("stay")))
-  }
-  if (nPreds_density > 1) {
-    summary_coef_list <- c(summary_coef_list,
-                           list(make_species_coef_summary("density")))
-  }
-  if (nPreds_alpha   > 1) {
-    summary_coef_list <- c(summary_coef_list,
-                           list(make_species_coef_summary("enter")))
-  }
-
-  # --- 最終結合・CV計算（cv は絶対値） ---
   summary_mean <- dplyr::bind_rows(summary_coef_list) %>%
     dplyr::mutate(cv = abs(sd / mean)) %>%
-    dplyr::select(Species, Station, Variable, mean, sd, cv, lower, median, upper, Rhat, n.eff)
+    dplyr::select(Species, Station, Variable, mean, sd, lower, median, upper, Rhat, n.eff, cv)
 
-  # --- 正規化パラメータの整形 ---
-  names(scaling_stay$center)     <- colnames(X_stay)
-  names(scaling_stay$scale)      <- colnames(X_stay)
-  names(scaling_density$center)  <- colnames(X_density)
-  names(scaling_density$scale)   <- colnames(X_density)
-  names(scaling_alpha$center)    <- colnames(X_alpha)
-  names(scaling_alpha$scale)     <- colnames(X_alpha)
+  # Scaling params
+  names(scaling_stay$center)    <- colnames(X_stay)
+  names(scaling_stay$scale)     <- colnames(X_stay)
+  names(scaling_density$center) <- colnames(X_density)
+  names(scaling_density$scale)  <- colnames(X_density)
 
-  scaling_params <- list(
-    stay    = scaling_stay,
-    density = scaling_density,
-    enter   = scaling_alpha
-  )
+  scaling_params <- list(stay = scaling_stay, density = scaling_density)
 
-  # --- 返り値の構築 ---
+  if (model == "RAD-REST") {
+    names(scaling_alpha$center) <- colnames(X_alpha)
+    names(scaling_alpha$scale)  <- colnames(X_alpha)
+    scaling_params$enter <- scaling_alpha
+  }
+
+  # Return --------------------------------------------------------------------
+
   density_result <- list(
     WAIC           = waic,
     summary_result = summary_mean,
     samples        = mcmc_samples,
+    tidy_samples   = tidy_samples,
     scaling_params = scaling_params
   )
   class(density_result) <- "ResultDensity"
 
-
   return(density_result)
-} # 関数 bayes_rest_multi の終端
-time <- Stay <- NULL
+}
