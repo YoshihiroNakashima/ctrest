@@ -390,8 +390,8 @@ The printed summary shows:
           Long-format samples: $tidy_samples
           ...
 
-- **`density`** (individuals per m²) — multiply by 10 000 to convert to
-  individuals per ha, or by 1 000 000 for individuals per km².
+- **`density`** (individuals per km²) — multiply by 0.01 to convert to
+  individuals per ha.
 - **`mean_stay`** — posterior mean of mean staying time in seconds.
 - **`mean_pass`** (RAD-REST only) — posterior mean of mean passes per
   video.
@@ -635,7 +635,7 @@ when the subsample is small. RAD-REST inference is consistent but has
 wider uncertainty intervals. With large subsamples the two should agree.
 
 **I want to convert density to abundance.** Multiply `density`
-(individuals / m²) by the area of your study region in m².
+(individuals / km²) by the area of your study region in km².
 
 ------------------------------------------------------------------------
 
