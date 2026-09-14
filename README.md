@@ -4,7 +4,7 @@
 **ctrest** is an R package for estimating the density of ground-dwelling
 mammals and birds from **camera-trap video data** using the **REST**
 (Random Encounter and Staying Time) model or the **RAD-REST** (Random
-Animal Detection REST) model.
+Encounter and Staying Time model Relying on All Detections).
 
 Both models are non-invasive, require no individual recognition, and
 work with standard video recordings from fixed camera traps.
@@ -642,18 +642,19 @@ wider uncertainty intervals. With large subsamples the two should agree.
 ## References
 
 Nakashima, Y., Fukasawa, K., & Samejima, H. (2018). Estimating animal
-density without individual recognition using information anchored by
-camera traps. *Journal of Applied Ecology*, **55**(2), 900-910.
-<https://doi.org/10.1111/1365-2664.13059>
+density without individual recognition using information derivable
+exclusively from camera traps. *Journal of Applied Ecology*, **55**(2),
+735-744. <https://doi.org/10.1111/1365-2664.13059>
 
-Nakashima, Y. (2021). Potentials and pitfalls of using camera traps for
-estimating animal density: a study using REST model across multiple
-sites and species. *bioRxiv*.
+Nakashima, Y., Yajima, G., & Hongo, S. (2021). Estimating animal density
+with camera traps: a practitioner’s guide of the REST model. *bioRxiv*.
 <https://doi.org/10.1101/2021.05.18.444583>
 
-Nakashima, Y., et al. (2026). RAD-REST: random animal detection model
-for density estimation with camera-trap videos. *Methods in Ecology and
-Evolution*. <https://doi.org/10.1111/2041-210x.70248>
+Nakashima, Y., Yajima, G., & Matsuoka, R. (2026). Reducing data
+processing effort in camera trap density estimation: Extending the REST
+model by explicitly modelling animal detection processes. *Methods in
+Ecology and Evolution*, **17**(3), 850-862.
+<https://doi.org/10.1111/2041-210x.70248>
 
 Rowcliffe, J. M., Kays, R., Kranstauber, B., Carbone, C., & Jansen, P.
 A. (2014). Quantifying levels of animal activity using camera trap data.
