@@ -58,7 +58,6 @@ For a guided tour after installation:
 
 ```{r vignette, eval = TRUE}
 library(ctrest)
-vignette("ctrest")
 ```
 
 ### System requirements
@@ -122,7 +121,7 @@ head(station_data)
 **`detection_data`** has one row per video clip and contains:
 
 | Column | Description |
-|----|----|
+|------------------------------------|------------------------------------|
 | `Station` | Camera station ID |
 | `DateTime` | Date and time of detection |
 | `Term` | Survey round / visit ID |
@@ -334,7 +333,7 @@ The `activity_estimation` argument controls how the proportion of time
 the animal is active is estimated:
 
 | Value | Method | Notes |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | `"kernel"` | Fixed kernel density (Rowcliffe et al. 2014) | Fast; `bw_adj` controls bandwidth |
 | `"mixture"` | Nonparametric von Mises mixture (Nakashima et al. 2025) | Fully Bayesian; propagates uncertainty; `C` sets max components |
 
@@ -644,7 +643,7 @@ over-representing highly active locations.
 ## Function reference
 
 | Function | Purpose |
-|----|----|
+|------------------------------------|------------------------------------|
 | `format_station_data()` | Aggregate pass counts per station; join covariates |
 | `add_effort()` | Compute camera trapping effort (days) per station |
 | `format_stay()` | Prepare staying time data with censoring |
