@@ -122,7 +122,7 @@ head(station_data)
 **`detection_data`** has one row per video clip and contains:
 
 | Column | Description |
-|----|----|
+|------------------------------------|------------------------------------|
 | `Station` | Camera station ID |
 | `DateTime` | Date and time of detection |
 | `Term` | Survey round / visit ID |
@@ -334,7 +334,7 @@ The `activity_estimation` argument controls how the proportion of time
 the animal is active is estimated:
 
 | Value | Method | Notes |
-|----|----|----|
+|------------------------|------------------------|------------------------|
 | `"kernel"` | Fixed kernel density (Rowcliffe et al. 2014) | Fast; `bw_adj` controls bandwidth |
 | `"mixture"` | Nonparametric von Mises mixture (Nakashima et al. 2025) | Fully Bayesian; propagates uncertainty; `C` sets max components |
 
@@ -644,7 +644,7 @@ over-representing highly active locations.
 ## Function reference
 
 | Function | Purpose |
-|----|----|
+|------------------------------------|------------------------------------|
 | `format_station_data()` | Aggregate pass counts per station; join covariates |
 | `add_effort()` | Compute camera trapping effort (days) per station |
 | `format_stay()` | Prepare staying time data with censoring |
@@ -690,19 +690,22 @@ wider uncertainty intervals. With large subsamples the two should agree.
 
 Nakashima, Y., Fukasawa, K., & Samejima, H. (2018). Estimating animal
 density without individual recognition using information derivable
-exclusively from camera traps. *Journal of Applied Ecology*, **55**(2),
-900-910. <https://doi.org/10.1111/1365-2664.13059>
+exclusively from camera traps. *Journal of Applied Ecology*, 55(2),
+735-744. <https://doi.org/10.1111/1365-2664.13059>
 
-Nakashima, Y. Yajima, G. & Hongo, S. (2021). Estimating animal density
+Nakashima, Y., Yajima, G., & Hongo, S. (2021). Estimating animal density
 with camera traps: a practitioner’s guide of the REST model. *bioRxiv*.
 <https://doi.org/10.1101/2021.05.18.444583>
 
-Nakashima, Y., Yajima, G. & Matsuoka, R. (2026). Reducing data
+Nakashima, Y., Yajima, G., & Matsuoka, R. (2026). Reducing data
 processing effort in camera trap density estimation: Extending the REST
 model by explicitly modelling animal detection processes. *Methods in
-Ecology and Evolution*. <https://doi.org/10.1111/2041-210x.70248>
+Ecology and Evolution*, 17(3), 850-862.
+<https://doi.org/10.1111/2041-210x.70248>
 
 Rowcliffe, J. M., Kays, R., Kranstauber, B., Carbone, C., & Jansen, P.
 A. (2014). Quantifying levels of animal activity using camera trap data.
-*Methods in Ecology and Evolution*, **5**(11), 1170-1179.
-<https://doi.org/10.1111/2041-210X.12278>
+*Methods in Ecology and Evolution*, 5(11), 1170-1179.
+<https://doi.org/10.1111/2041-210X.12278>\
+\
+
