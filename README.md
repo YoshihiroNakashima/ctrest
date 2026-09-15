@@ -110,7 +110,7 @@ head(station_data)
 | `DateTime` | Date and time of detection |
 | `Term` | Survey round / visit ID |
 | `Species` | Species detected |
-| `Nfocal` | Number of passes through the focal area in this clip |
+| `y` | Number of passes through the focal area in this clip |
 | `Stay` | Staying time (seconds) inside the focal area |
 | `Cens` | Censoring flag: `1` = right-censored (animal still in frame at clip end), `0` = observed |
 
@@ -140,7 +140,7 @@ station_data_rest <- format_station_data(
   station_data     = station_data,
   col_name_station = "Station",
   col_name_species = "Species",
-  col_name_y       = "Nfocal",
+  col_name_y       = "y",
   model            = "REST"
 )
 
@@ -154,7 +154,7 @@ station_data_rad <- format_station_data(
   station_data     = station_data,
   col_name_station = "Station",
   col_name_species = "Species",
-  col_name_y       = "Nfocal",
+  col_name_y       = "y",
   model            = "RAD-REST"
 )
 

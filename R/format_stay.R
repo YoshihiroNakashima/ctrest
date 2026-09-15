@@ -164,7 +164,7 @@ format_stay <- function(detection_data,
   if (length(extra_in_det) > 0)
     warning(
       sprintf(
-        "Station(s) present in 'detection_data' but not in 'station_data' — covariate columns will be NA: %s",
+        "Station(s) present in 'detection_data' but not in 'station_data'. Covariate columns will be NA: %s",
         paste(extra_in_det, collapse = ", ")
       ),
       call. = FALSE

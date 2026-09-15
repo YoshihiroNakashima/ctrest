@@ -9,7 +9,7 @@
 #' @return Invisibly returns \code{x}.
 #' @export
 print.ResultDensity <- function(x, ...) {
-  species_label <- if (!is.null(x$target_species)) x$target_species else "Unknown"
+  species_label <-   species_label <- if (!is.null(x$target_species)) paste(x$target_species, collapse = ", ") else "Unknown"
   model_label   <- if (!is.null(x$model))          x$model          else "Unknown"
   family_label  <- if (!is.null(x$stay_family))    x$stay_family    else "Unknown"
 
@@ -21,16 +21,21 @@ print.ResultDensity <- function(x, ...) {
   # --- Model comparison (WAIC) -----------------------------------------------
 
   .section("Model comparison (WAIC)")
-  waic_df  <- x$WAIC
-  best_row <- which.min(waic_df$WAIC)
-  mark     <- rep("", nrow(waic_df))
-  mark[best_row] <- "<- best"
-  print_df <- cbind(waic_df, Note = mark)
-  print(print_df, row.names = FALSE, right = FALSE)
+  waic_df <- x$WAIC
+  if (is.data.frame(waic_df)) {
+    best_row <- which.min(waic_df$WAIC)
+    mark     <- rep("", nrow(waic_df))
+    mark[best_row] <- "<- best"
+    print(cbind(waic_df, Note = mark), row.names = FALSE, right = FALSE)
+  } else if (is.numeric(waic_df) && length(waic_df) == 1) {
+    cat(sprintf("  WAIC: %.2f\n", waic_df))
+  } else {
+    cat("  Not available.\n")
+  }
 
   # --- Posterior estimates ----------------------------------------------------
 
-  .section("Posterior estimates (best model)")
+  .section(if (is.data.frame(x$WAIC)) "Posterior estimates (best model)" else "Posterior estimates")
   sr       <- x$summary_result
   max_rows <- 15L
   if (!is.null(sr) && nrow(sr) > 0) {

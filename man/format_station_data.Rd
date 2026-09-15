@@ -28,7 +28,9 @@ in \code{detection_data}.}
 
 \item{col_name_y}{A string specifying the column name for the number of animal
 passes per video in \code{detection_data}. Values must be non-negative. For
-RAD-REST, values must be non-negative integers.}
+RAD-REST, values must be non-negative integers. Records with \code{NA} in
+this column are removed before aggregation, and the number of removed
+records is reported as a message.}
 
 \item{model}{A string specifying the model type: \code{"REST"} or
 \code{"RAD-REST"}.}

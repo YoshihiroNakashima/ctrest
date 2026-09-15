@@ -16,12 +16,10 @@ Imports:
     lubridate,
     activity,
     stats,
-    extraDistr,
     parallel,
     MCMCvis,
     coda,
     tibble,
-    gtools,
     rlang
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

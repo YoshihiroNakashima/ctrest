@@ -95,7 +95,7 @@ bayes_rest(
 A list of class \code{"ResultDensity"} with the following components:
 \describe{
 \item{\code{WAIC}}{A data frame of WAIC values for each candidate density model (rows sorted from best to worst), with columns \code{Model}, \code{random_effect_stay}, and \code{WAIC}.}
-\item{\code{summary_result}}{A data frame of posterior summaries (mean, sd, 2.5\\%, 50\\%, 97.5\\%, Rhat, n.eff, cv) for \code{density (individuals per km^2)} and \code{mean_stay (seconds)} (and \code{mean_pass} for RAD-REST). When density or stay covariates are present, one row is returned per station; otherwise a single row labelled \code{Station = "All"}.}
+\item{\code{summary_result}}{A data frame of posterior summaries (mean, sd, 2.5\%, 50\%, 97.5\%, Rhat, n.eff, cv) for \code{density} (individuals per km^2) and \code{mean_stay} (seconds), and \code{mean_pass} for RAD-REST. When density or stay covariates are present, one row is returned per station; otherwise a single row labelled \code{Station = "All"}.}
 \item{\code{samples}}{A \code{coda::mcmc.list} object of full MCMC posterior samples from the best model. Use the \code{MCMCvis} package for convergence diagnostics.}
 \item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC samples from the best model, with columns \code{parameter}, \code{value}, and \code{iteration}.}
 \item{\code{activity_curve}}{(Returned only when \code{activity_estimation = "mixture"}.) A data frame of the estimated activity density curve with columns \code{variable}, \code{x}, and posterior summary statistics.}

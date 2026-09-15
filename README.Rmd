@@ -1,5 +1,8 @@
 ---
 output: github_document
+editor_options: 
+  markdown: 
+    wrap: 72
 ---
 
 ```{r setup, include = FALSE}
@@ -12,34 +15,37 @@ knitr::opts_chunk$set(
 
 # ctrest
 
-**ctrest** is an R package for estimating the density of ground-dwelling mammals
-and birds from **camera-trap video data** using the
-**REST** (Random Encounter and Staying Time) model or the
-**RAD-REST** (Random Animal Detection REST) model.
+**ctrest** is an R package for estimating the density of ground-dwelling
+mammals and birds from **camera-trap video data** using the **REST**
+(Random Encounter and Staying Time) model or the **RAD-REST** (Random
+Animal Detection REST) model.
 
-Both models are non-invasive, require no individual recognition, and work with
-standard video recordings from fixed camera traps.
+Both models are non-invasive, require no individual recognition, and
+work with standard video recordings from fixed camera traps.
 
----
+------------------------------------------------------------------------
 
 ## Background
 
-The REST model estimates animal density from two key measurements recorded for
-every video clip:
+The REST model estimates animal density from two key measurements
+recorded for every video clip:
 
-1. **Number of passes** — how many times the animal entered the focal area
-   (the area clearly visible in the camera's field of view) in that clip.
-2. **Staying time** — how long the animal spent inside the focal area.
+1.  **Number of passes** — how many times the animal entered the focal
+    area (the area clearly visible in the camera's field of view) in
+    that clip.
+2.  **Staying time** — how long the animal spent inside the focal area.
 
 Combined with **camera trapping effort** (days) and an estimate of the
-**proportion of time the animal is active**, the REST model derives density
-without requiring a conventional distance-sampling survey (Nakashima et al. 2018).
+**proportion of time the animal is active**, the REST model derives
+density without requiring a conventional distance-sampling survey
+(Nakashima et al. 2018).
 
-The **RAD-REST** model is an extension that relaxes the requirement of counting
-passes in every video: it is sufficient to count passes in a random subsample,
-which greatly reduces the annotation workload (Nakashima et al. 2026).
+The **RAD-REST** model is an extension that relaxes the requirement of
+counting passes in every video: it is sufficient to count passes in a
+random subsample, which greatly reduces the annotation workload
+(Nakashima et al. 2026).
 
----
+------------------------------------------------------------------------
 
 ## Installation
 
@@ -57,30 +63,32 @@ vignette("ctrest")
 
 ### System requirements
 
-- R ≥ 4.1
-- [NIMBLE](https://r-nimble.org/) is used internally for Bayesian MCMC.
-  On Windows, [Rtools](https://cran.r-project.org/bin/windows/Rtools/) must be
-  installed. On macOS, Xcode Command Line Tools are required.
-- A multi-core CPU is strongly recommended because chains are run in parallel.
+-   R ≥ 4.1
+-   [NIMBLE](https://r-nimble.org/) is used internally for
+    Bayesian MCMC. On Windows,
+    [Rtools](https://cran.r-project.org/bin/windows/Rtools/) must be
+    installed. On macOS, Xcode Command Line Tools are required.
+-   A multi-core CPU is strongly recommended because chains are run in
+    parallel.
 
----
+------------------------------------------------------------------------
 
 ## Choosing between REST and RAD-REST
 
-| Situation | Recommended model |
-|---|---|
-| Passes are counted for every video | REST |
-| Passes are counted for a random subsample only | RAD-REST |
-| You want to minimise annotation time | RAD-REST |
-| You want the simplest possible workflow | REST |
+| Situation                                      | Recommended model |
+|------------------------------------------------|-------------------|
+| Passes are counted for every video             | REST              |
+| Passes are counted for a random subsample only | RAD-REST          |
+| You want to minimise annotation time           | RAD-REST          |
+| You want the simplest possible workflow        | REST              |
 
 REST data can always be analysed with RAD-REST (but not vice versa).
 
----
+------------------------------------------------------------------------
 
 ## Workflow overview
 
-```
+```         
 detection_data ──┬── format_station_data() ──── add_effort() ──────────────────┐
                  ├── format_stay()                                               │
                  │         └── bayes_stay_selection()   (optional)              ├──▶ bayes_rest()
@@ -91,13 +99,14 @@ station_data   ──┘                                                        
 
 The analysis has five stages:
 
-1. **Format station data** (`format_station_data` + `add_effort`)
-2. **Format staying time data** (`format_stay`)
-3. **Format activity data** (`format_activity`)
-4. *(Optional)* **Select the staying time distribution** (`bayes_stay_selection`)
-5. **Estimate density** (`bayes_rest` or `bayes_rest_multi`)
+1.  **Format station data** (`format_station_data` + `add_effort`)
+2.  **Format staying time data** (`format_stay`)
+3.  **Format activity data** (`format_activity`)
+4.  *(Optional)* **Select the staying time distribution**
+    (`bayes_stay_selection`)
+5.  **Estimate density** (`bayes_rest` or `bayes_rest_multi`)
 
----
+------------------------------------------------------------------------
 
 ## Example datasets
 
@@ -113,24 +122,24 @@ head(station_data)
 **`detection_data`** has one row per video clip and contains:
 
 | Column | Description |
-|--------|-------------|
+|----------------------------|--------------------------------------------|
 | `Station` | Camera station ID |
 | `DateTime` | Date and time of detection |
 | `Term` | Survey round / visit ID |
 | `Species` | Species detected |
-| `Nfocal` | Number of passes through the focal area in this clip |
+| `y` | Number of passes through the focal area in this clip |
 | `Stay` | Staying time (seconds) inside the focal area |
 | `Cens` | Censoring flag: `1` = right-censored (animal still in frame at clip end), `0` = observed |
 
 **`station_data`** has one row per camera station and contains:
 
-| Column | Description |
-|--------|-------------|
+| Column    | Description                                          |
+|-----------|------------------------------------------------------|
 | `Station` | Camera station ID (matches `detection_data$Station`) |
-| `x1` | A continuous environmental covariate |
-| `x2` | A categorical environmental covariate |
+| `x1`      | A continuous environmental covariate                 |
+| `x2`      | A categorical environmental covariate                |
 
----
+------------------------------------------------------------------------
 
 ## Stage 1: Format station data
 
@@ -148,7 +157,7 @@ station_data_rest <- format_station_data(
   station_data     = station_data,
   col_name_station = "Station",
   col_name_species = "Species",
-  col_name_y       = "Nfocal",
+  col_name_y       = "y",
   model            = "REST"
 )
 
@@ -162,7 +171,7 @@ station_data_rad <- format_station_data(
   station_data     = station_data,
   col_name_station = "Station",
   col_name_species = "Species",
-  col_name_y       = "Nfocal",
+  col_name_y       = "y",
   model            = "RAD-REST"
 )
 
@@ -172,11 +181,11 @@ head(station_data_rad)
 ### Compute camera trapping effort
 
 `add_effort()` calculates **how many days each camera was operating** by
-computing the span between the first and last detection at each station (within
-each survey term, if `col_name_term` is supplied).
+computing the span between the first and last detection at each station
+(within each survey term, if `col_name_term` is supplied).
 
-Set `plot = TRUE` to display a Gantt-style timeline of camera operation — a
-useful sanity check before running models.
+Set `plot = TRUE` to display a Gantt-style timeline of camera operation
+— a useful sanity check before running models.
 
 ```{r add-effort}
 station_effort_rest <- add_effort(
@@ -192,16 +201,16 @@ head(station_effort_rest)
 ```
 
 > **Note.** The effort estimate (last detection − first detection) is an
-> approximation. For more accurate estimates, provide actual camera operation
-> logs directly.
+> approximation. For more accurate estimates, provide actual camera
+> operation logs directly.
 
----
+------------------------------------------------------------------------
 
 ## Stage 2: Format staying time data
 
-`format_stay()` joins the detection records to station metadata, renames the
-key columns to the standard names expected by the model functions, and flags
-any data quality issues.
+`format_stay()` joins the detection records to station metadata, renames
+the key columns to the standard names expected by the model functions,
+and flags any data quality issues.
 
 ```{r format-stay}
 stay_data <- format_stay(
@@ -216,17 +225,19 @@ stay_data <- format_stay(
 head(stay_data)
 ```
 
-The output contains `Station`, `Species`, `Stay` (seconds), `Cens` (0/1), and
-all covariates from `station_data`. Rows with missing or non-positive staying
-times are removed automatically, with a message reporting how many were dropped.
+The output contains `Station`, `Species`, `Stay` (seconds), `Cens`
+(0/1), and all covariates from `station_data`. Rows with missing or
+non-positive staying times are removed automatically, with a message
+reporting how many were dropped.
 
----
+------------------------------------------------------------------------
 
 ## Stage 3: Format activity data
 
-`format_activity()` converts detection datetimes to **radians on a [0, 2π] scale**
-so that 00:00 = 0 and 23:59 ≈ 2π. It also filters for independent detections
-(one detection per station per species per `indep_time`-minute window).
+`format_activity()` converts detection datetimes to **radians on a [0,
+2π] scale** so that 00:00 = 0 and 23:59 ≈ 2π. It also filters for
+independent detections (one detection per station per species per
+`indep_time`-minute window).
 
 ```{r format-activity}
 activity_data <- format_activity(
@@ -240,15 +251,16 @@ activity_data <- format_activity(
 head(activity_data)
 ```
 
----
+------------------------------------------------------------------------
 
 ## Stage 4 (optional): Select the staying time distribution
 
-Before running `bayes_rest()`, you can use `bayes_stay_selection()` to compare
-candidate probability distributions for staying time via WAIC and choose the
-best-fitting one.
+Before running `bayes_rest()`, you can use `bayes_stay_selection()` to
+compare candidate probability distributions for staying time via WAIC
+and choose the best-fitting one.
 
-Supported distributions: `"exponential"`, `"gamma"`, `"weibull"`, `"lognormal"`.
+Supported distributions: `"exponential"`, `"gamma"`, `"weibull"`,
+`"lognormal"`.
 
 ```{r stay-selection}
 stay_sel <- bayes_stay_selection(
@@ -265,16 +277,16 @@ stay_sel <- bayes_stay_selection(
   target_species     = "SP01"
 )
 
-print(stay_sel)
+print.ResultStay(stay_sel)
 ```
 
 The printed output shows:
 
-- A WAIC table comparing all candidate models (covariate subsets × random
-  effect options), with the best model marked.
-- Posterior estimates of the mean staying time from the best model.
-- Convergence diagnostics (Rhat).
-- A Bayesian p-value assessing model fit.
+-   A WAIC table comparing all candidate models (covariate subsets ×
+    random effect options), with the best model marked.
+-   Posterior estimates of the mean staying time from the best model.
+-   Convergence diagnostics (Rhat).
+-   A Bayesian p-value assessing model fit.
 
 You can access the raw MCMC samples for further diagnostics:
 
@@ -282,15 +294,15 @@ You can access the raw MCMC samples for further diagnostics:
 MCMCvis::MCMCtrace(stay_sel$samples, pdf = FALSE)
 ```
 
----
+------------------------------------------------------------------------
 
 ## Stage 5: Estimate density
 
 ### REST model
 
-Pass the data prepared above to `bayes_rest()`. Set `focal_area` to the size of
-the camera's focal area in **square metres** — this is the area visible to the
-camera within which passes and staying time are measured.
+Pass the data prepared above to `bayes_rest()`. Set `focal_area` to the
+size of the camera's focal area in **square metres** — this is the area
+visible to the camera within which passes and staying time are measured.
 
 ```{r bayes-rest}
 result_rest <- bayes_rest(
@@ -318,8 +330,8 @@ result_rest <- bayes_rest(
 ### RAD-REST model
 
 Use `station_effort_rad` (the RAD-REST formatted station data) and set
-`model = "RAD-REST"`. Now `formula_enter` specifies covariates on the mean
-number of passes per video.
+`model = "RAD-REST"`. Now `formula_enter` specifies covariates on the
+mean number of passes per video.
 
 ```{r bayes-rad-rest}
 station_effort_rad <- add_effort(
@@ -352,29 +364,30 @@ result_rad <- bayes_rest(
 
 ### Activity estimation: kernel vs mixture
 
-The `activity_estimation` argument controls how the proportion of time the
-animal is active is estimated:
+The `activity_estimation` argument controls how the proportion of time
+the animal is active is estimated:
 
 | Value | Method | Notes |
-|---|---|---|
+|------------------------|------------------------|------------------------|
 | `"kernel"` | Fixed kernel density (Rowcliffe et al. 2014) | Fast; `bw_adj` controls bandwidth |
 | `"mixture"` | Nonparametric von Mises mixture (Nakashima et al. 2025) | Fully Bayesian; propagates uncertainty; `C` sets max components |
 
-The mixture method is recommended when activity patterns are complex (e.g.,
-multimodal) or when you want activity uncertainty to propagate into the density
-estimate.
+The mixture method is recommended when activity patterns are complex
+(e.g., multimodal) or when you want activity uncertainty to propagate
+into the density estimate.
 
----
+------------------------------------------------------------------------
 
 ## Interpreting the output
 
 ```{r print-result}
-print(result_rest)
+print.ResultDensity(result_rest)
+print.ResultDensity(result_rad)
 ```
 
 The printed summary shows:
 
-```
+```         
 === ctrest: Density estimation ===
 Species    : SP01
 Model      : REST
@@ -397,14 +410,17 @@ Note: Full MCMC samples : $samples
       ...
 ```
 
-- **`density`** (individuals per m²) — multiply by 10 000 to convert to
-  individuals per ha, or by 1 000 000 for individuals per km².
-- **`mean_stay`** — posterior mean of mean staying time in seconds.
-- **`mean_pass`** (RAD-REST only) — posterior mean of mean passes per video.
-- **Rhat** — the Gelman-Rubin convergence diagnostic. Values ≤ 1.1 indicate
-  good convergence. If Rhat is large, increase `iter` or `chains`.
-- **n.eff** — effective sample size. Values ≥ 1000 are generally acceptable.
-- **cv** — coefficient of variation (sd / mean).
+-   **`density`** (individuals per km²) — divide by 100 to convert to
+    individuals per ha.
+-   **`mean_stay`** — posterior mean of mean staying time in seconds.
+-   **`mean_pass`** (RAD-REST only) — posterior mean of mean passes per
+    video.
+-   **Rhat** — the Gelman-Rubin convergence diagnostic. Values ≤ 1.1
+    indicate good convergence. If Rhat is large, increase `iter` or
+    `chains`.
+-   **n.eff** — effective sample size. Values ≥ 1000 are generally
+    acceptable.
+-   **cv** — coefficient of variation (sd / mean).
 
 ### Accessing raw MCMC samples
 
@@ -427,9 +443,9 @@ print(result_rest$summary_result)
 
 ### Activity curve (mixture method only)
 
-When `activity_estimation = "mixture"`, the output includes `$activity_curve`,
-a data frame of the posterior activity density function evaluated on a fine time
-grid. This can be plotted directly:
+When `activity_estimation = "mixture"`, the output includes
+`$activity_curve`, a data frame of the posterior activity density
+function evaluated on a fine time grid. This can be plotted directly:
 
 ```{r plot-activity-curve}
 library(ggplot2)
@@ -448,9 +464,9 @@ ggplot(result_rest$activity_curve, aes(x = x)) +
 
 ### Covariates in the density model
 
-When covariates are included in `formula_density` (or `formula_stay`), one row
-per station is returned in `$summary_result`, showing station-specific
-estimates:
+When covariates are included in `formula_density` (or `formula_stay`),
+one row per station is returned in `$summary_result`, showing
+station-specific estimates:
 
 ```{r covariate-example}
 result_cov <- bayes_rest(
@@ -470,12 +486,13 @@ result_cov <- bayes_rest(
   target_species      = "SP01"
 )
 
+print.ResultDensity(result_cov)
 # One row per station
 print(result_cov$summary_result)
 ```
 
-Use `all_comb = TRUE` to automatically compare all possible covariate subsets
-via WAIC and select the best model:
+Use `all_comb = TRUE` to automatically compare all possible covariate
+subsets via WAIC and select the best model:
 
 ```{r all-comb}
 result_allcomb <- bayes_rest(
@@ -495,18 +512,19 @@ result_allcomb <- bayes_rest(
   all_comb            = TRUE,             # fit all 4 subsets: ~1, ~x1, ~x2, ~x1+x2
   target_species      = "SP01"
 )
-
+print.ResultDensity(result_allcomb)
 # WAIC table for all candidate models
 print(result_allcomb$WAIC)
 ```
 
----
+------------------------------------------------------------------------
 
 ## Standalone activity estimation
 
 You can also estimate activity patterns independently of density using
-`bayes_activity()`. This is useful for comparing activity patterns across
-species or seasons, or for quick checks before running the full model.
+`bayes_activity()`. This is useful for comparing activity patterns
+across species or seasons, or for quick checks before running the full
+model.
 
 ```{r bayes-activity}
 act_result <- bayes_activity(
@@ -523,7 +541,7 @@ act_result <- bayes_activity(
 Print a text summary (no plot):
 
 ```{r print-activity}
-print(act_result)
+printResultActivity(act_result, plot = FALSE, bw_adj = 1.0)
 ```
 
 Print a summary with the activity curve plot:
@@ -532,22 +550,22 @@ Print a summary with the activity curve plot:
 printResultActivity(act_result, plot = TRUE, bw_adj = 1.0)
 ```
 
-The plot shows:
-- **Blue ribbon**: 95% credible interval of the posterior activity density.
-- **Blue line**: Posterior mean activity density.
-- **Dashed grey line**: Non-parametric kernel density estimate for comparison.
-- **Rug**: Raw detection times.
+The plot shows: - **Blue ribbon**: 95% credible interval of the
+posterior activity density. - **Blue line**: Posterior mean activity
+density. - **Dashed grey line**: Non-parametric kernel density estimate
+for comparison. - **Rug**: Raw detection times.
 
-The activity proportion (probability that the animal is active at a random
-moment) is reported in `$summary_result`.
+The activity proportion (probability that the animal is active at a
+random moment) is reported in `$summary_result`.
 
----
+------------------------------------------------------------------------
 
 ## Multi-species density estimation
 
-`bayes_rest_multi()` estimates density for several species simultaneously using
-a **hierarchical model** in which species-level random effects are shared
-across species, stabilising estimates for rare species.
+`bayes_rest_multi()` estimates density for several species
+simultaneously using a **hierarchical model** in which species-level
+random effects are shared across species, stabilising estimates for rare
+species.
 
 ```{r bayes-rest-multi}
 result_multi <- bayes_rest_multi(
@@ -567,20 +585,19 @@ result_multi <- bayes_rest_multi(
   model               = "RAD-REST",
   target_species      = c("SP01", "SP02", "SP03")
 )
-
-print(result_multi)
+print.ResultDensity(result_multi)
 ```
 
-The output structure is identical to `bayes_rest()`. Density estimates for all
-species are returned in `$summary_result`.
+The output structure is identical to `bayes_rest()`. Density estimates
+for all species are returned in `$summary_result`.
 
----
+------------------------------------------------------------------------
 
 ## Video subsampling for RAD-REST
 
-If you collected REST-format data (passes counted for all videos) but want to
-apply RAD-REST to a subsample, use `select_videos()` to draw a balanced random
-subsample:
+If you collected REST-format data (passes counted for all videos) but
+want to apply RAD-REST to a subsample, use `select_videos()` to draw a
+balanced random subsample:
 
 ```{r select-videos}
 sampled <- select_videos(
@@ -595,15 +612,15 @@ sampled <- select_videos(
 )
 ```
 
-The function samples videos evenly across stations to avoid over-representing
-highly active locations.
+The function samples videos evenly across stations to avoid
+over-representing highly active locations.
 
----
+------------------------------------------------------------------------
 
 ## Function reference
 
 | Function | Purpose |
-|---|---|
+|------------------------------------|------------------------------------|
 | `format_station_data()` | Aggregate pass counts per station; join covariates |
 | `add_effort()` | Compute camera trapping effort (days) per station |
 | `format_stay()` | Prepare staying time data with censoring |
@@ -613,54 +630,55 @@ highly active locations.
 | `bayes_rest()` | Bayesian density estimation for a single species |
 | `bayes_rest_multi()` | Hierarchical Bayesian density estimation for multiple species |
 | `bayes_activity()` | Standalone Bayesian activity pattern estimation |
-| `printResultActivity()` | Print summary and activity curve plot |
+| `print.ResultStay()` | Print staying time model selection summary (`print()` also works) |
+| `print.ResultDensity()` | Print density estimation summary (`print()` also works) |
+| `print.ResultActivity()` | Print activity estimation summary without plot (`print()` also works) |
+| `printResultActivity()` | Print activity summary and optionally plot the activity curve (`plot = TRUE/FALSE`) |
 
----
+------------------------------------------------------------------------
 
 ## Tips
 
-**My Rhat values are > 1.1.**
-Increase `iter` (e.g., to 10 000) and/or `chains` (e.g., to 4). Also check
-whether the model is identifiable — highly correlated parameters or very sparse
-data can hinder convergence.
+**My Rhat values are \> 1.1.** Increase `iter` (e.g., to 10 000) and/or
+`chains` (e.g., to 4). Also check whether the model is identifiable —
+highly correlated parameters or very sparse data can hinder convergence.
 
-**MCMC compilation takes a long time.**
-This is normal for NIMBLE; the model is compiled once per chain. Subsequent
-runs with the same model structure are not faster, but you can reduce `warmup`
-for exploratory runs.
+**MCMC compilation takes a long time.** This is normal for NIMBLE; the
+model is compiled once per chain. Subsequent runs with the same model
+structure are not faster, but you can reduce `warmup` for exploratory
+runs.
 
 **The activity proportion estimate seems unreasonably high or low.**
-Check `$activity_curve`: if the estimated density curve has unrealistic peaks
-(e.g., very narrow spikes), try reducing `C` (fewer mixture components) or
-using `activity_estimation = "kernel"` instead.
+Check `$activity_curve`: if the estimated density curve has unrealistic
+peaks (e.g., very narrow spikes), try reducing `C` (fewer mixture
+components) or using `activity_estimation = "kernel"` instead.
 
-**Density estimates differ between REST and RAD-REST.**
-This is expected when the subsample is small. RAD-REST inference is consistent
-but has wider uncertainty intervals. With large subsamples the two should agree.
+**Density estimates differ between REST and RAD-REST.** This is expected
+when the subsample is small. RAD-REST inference is consistent but has
+wider uncertainty intervals. With large subsamples the two should agree.
 
-**I want to convert density to abundance.**
-Multiply `density` (individuals / m²) by the area of your study region in m².
+**I want to convert density to abundance.** Multiply `density`
+(individuals / km²) by the area of your study region in km².
 
----
+------------------------------------------------------------------------
 
 ## References
 
-Nakashima, Y., Fukasawa, K., & Samejima, H. (2018). Estimating animal density
-without individual recognition using information anchored by camera traps.
-*Journal of Applied Ecology*, **55**(2), 900-910.
+Nakashima, Y., Fukasawa, K., & Samejima, H. (2018). Estimating animal
+density without individual recognition using information anchored by
+camera traps. *Journal of Applied Ecology*, **55**(2), 900-910.
 <https://doi.org/10.1111/1365-2664.13059>
 
 Nakashima, Y. (2021). Potentials and pitfalls of using camera traps for
-estimating animal density: a study using REST model across multiple sites and
-species. *bioRxiv*.
+estimating animal density: a study using REST model across multiple
+sites and species. *bioRxiv*.
 <https://doi.org/10.1101/2021.05.18.444583>
 
-Nakashima, Y., et al. (2026). RAD-REST: random animal detection model for
-density estimation with camera-trap videos.
-*Methods in Ecology and Evolution*.
-<https://doi.org/10.1111/2041-210x.70248>
+Nakashima, Y., et al. (2026). RAD-REST: random animal detection model
+for density estimation with camera-trap videos. *Methods in Ecology and
+Evolution*. <https://doi.org/10.1111/2041-210x.70248>
 
-Rowcliffe, J. M., Kays, R., Kranstauber, B., Carbone, C., & Jansen, P. A.
-(2014). Quantifying levels of animal activity using camera trap data.
+Rowcliffe, J. M., Kays, R., Kranstauber, B., Carbone, C., & Jansen, P.
+A. (2014). Quantifying levels of animal activity using camera trap data.
 *Methods in Ecology and Evolution*, **5**(11), 1170-1179.
 <https://doi.org/10.1111/2041-210X.12278>

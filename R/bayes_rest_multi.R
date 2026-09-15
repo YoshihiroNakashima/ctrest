@@ -1395,17 +1395,19 @@ bayes_rest_multi <- function(formula_stay,
   }
 
   # density summary
-  raw_density <- summarize_param("density")
-  if (nPreds_density == 1) {
+  raw_density <- summarize_param("density") %>%
+    tidyr::extract(Variable, into = c("Station_idx", "Species_idx"),
+                   regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE)
+
+  if (is_density_global) {
     summary_density <- raw_density %>%
-      tidyr::extract(Variable, into = "Species_idx",
-                     regex = "\\[(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
-      dplyr::mutate(Species = target_species[Species_idx], Station = "All") %>%
-      dplyr::select(-Species_idx)
+      dplyr::filter(Station_idx == 1) %>%
+      dplyr::mutate(Species  = target_species[Species_idx],
+                    Station  = "All",
+                    Variable = paste0("density[", Species_idx, "]")) %>%
+      dplyr::select(-Station_idx, -Species_idx)
   } else {
     summary_density <- raw_density %>%
-      tidyr::extract(Variable, into = c("Station_idx", "Species_idx"),
-                     regex = "\\[(\\d+),\\s*(\\d+)\\]", convert = TRUE, remove = FALSE) %>%
       dplyr::mutate(Species = target_species[Species_idx],
                     Station = unique_stations[Station_idx]) %>%
       dplyr::select(-Station_idx, -Species_idx)
@@ -1482,7 +1484,10 @@ bayes_rest_multi <- function(formula_stay,
     summary_result = summary_mean,
     samples        = mcmc_samples,
     tidy_samples   = tidy_samples,
-    scaling_params = scaling_params
+    scaling_params = scaling_params,
+    target_species = target_species,
+    model          = model,
+    stay_family    = stay_family
   )
   class(density_result) <- "ResultDensity"
 

@@ -66,16 +66,19 @@ printResultActivity <- function(x, plot = TRUE, bw_adj = 1.0, ...) {
     act_vec  <- x$act_data
 
     # Kernel density via activity package for comparison
-    bw_base <- tryCatch(
-      activity::bwcalc(act_vec),
-      error = function(e) NULL
-    )
-    if (!is.null(bw_base)) {
-      kd    <- activity::fitact(act_vec, bw = bw_base * bw_adj, adj = 1)
-      kd_df <- data.frame(x = kd@xvals, pdf = kd@pdf)
-    } else {
-      kd_df <- NULL
-    }
+    kd_df <- tryCatch({
+      bw_base <- activity::bwcalc(act_vec)
+      kd      <- activity::fitact(act_vec, bw = bw_base * bw_adj, adj = 1)
+      kd_mat  <- kd@pdf
+      if (is.matrix(kd_mat) && all(c("x", "y") %in% colnames(kd_mat))) {
+        data.frame(x = kd_mat[, "x"], pdf = kd_mat[, "y"])
+      } else {
+        NULL
+      }
+    }, error = function(e) NULL)
+
+    if (is.null(kd_df))
+      message("Kernel density estimate could not be computed; only the posterior curve is shown.")
 
     p_plot <- ggplot2::ggplot() +
       ggplot2::geom_ribbon(
@@ -99,12 +102,12 @@ printResultActivity <- function(x, plot = TRUE, bw_adj = 1.0, ...) {
       ggplot2::scale_x_continuous(
         name   = "Time of day (radians)",
         breaks = c(0, pi / 2, pi, 3 * pi / 2, 2 * pi),
-        labels = c("0", "π/2", "π", "3π/2", "2π")
+        labels = c("0", "\u03c0/2", "\u03c0", "3\u03c0/2", "2\u03c0")
       ) +
       ggplot2::ylab("Activity density") +
       ggplot2::ggtitle(
         sprintf("Activity curve: %s", species_label),
-        subtitle = "Posterior mean (blue) ± 95% CI (shaded); kernel density (dashed)"
+        subtitle = "Posterior mean (blue) \u00b1 95% CI (shaded); kernel density (dashed)"
       ) +
       ggplot2::theme_bw()
 

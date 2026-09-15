@@ -14,7 +14,9 @@
 #'   in \code{detection_data}.
 #' @param col_name_y A string specifying the column name for the number of animal
 #'   passes per video in \code{detection_data}. Values must be non-negative. For
-#'   RAD-REST, values must be non-negative integers.
+#'   RAD-REST, values must be non-negative integers. Records with \code{NA} in
+#'   this column are removed before aggregation, and the number of removed
+#'   records is reported as a message.
 #' @param model A string specifying the model type: \code{"REST"} or
 #'   \code{"RAD-REST"}.
 #'
@@ -131,7 +133,7 @@ format_station_data <- function(detection_data,
   if (length(extra_in_det) > 0)
     warning(
       sprintf(
-        "Station(s) in 'detection_data' not found in 'station_data' — these records will be excluded from the output: %s",
+        "Station(s) in 'detection_data' not found in 'station_data'. These records will be excluded from the output: %s",
         paste(extra_in_det, collapse = ", ")
       ),
       call. = FALSE
@@ -149,6 +151,17 @@ format_station_data <- function(detection_data,
       Station = as.character(.data$Station),
       Species = as.character(.data$Species),
       y       = as.numeric(.data$y)
+    )
+
+  # --- Report and remove records with NA pass counts --------------------------
+
+  n_na_y <- sum(is.na(det_clean$y) & !is.na(det_clean$Species))
+  if (n_na_y > 0)
+    message(
+      sprintf(
+        "%d record(s) with NA in '%s' were removed before aggregation.",
+        n_na_y, col_name_y
+      )
     )
 
   # --- Prepare station_data for join ------------------------------------------
@@ -176,19 +189,8 @@ format_station_data <- function(detection_data,
 
   if (model == "REST") {
 
-    n_na_y <- sum(is.na(det_clean$y) & !is.na(det_clean$Species))
-    if (n_na_y > 0)
-      warning(
-        sprintf(
-          "%d record(s) with NA in '%s' were assumed to be 1 pass (minimum detectable). Set explicit counts to suppress this warning.",
-          n_na_y, col_name_y
-        ),
-        call. = FALSE
-      )
-
     det_agg <- det_clean %>%
-      dplyr::filter(!is.na(.data$Species)) %>%
-      dplyr::mutate(y = ifelse(is.na(.data$y), 1, .data$y)) %>%
+      dplyr::filter(!is.na(.data$Species), !is.na(.data$y)) %>%
       dplyr::group_by(.data$Station, .data$Species) %>%
       dplyr::summarize(Y = sum(.data$y), .groups = "drop")
 
@@ -199,7 +201,7 @@ format_station_data <- function(detection_data,
   } else {  # RAD-REST
 
     det_N <- det_clean %>%
-      dplyr::filter(!is.na(.data$Species)) %>%
+      dplyr::filter(!is.na(.data$Species), !is.na(.data$y)) %>%
       dplyr::group_by(.data$Station, .data$Species) %>%
       dplyr::summarise(N = dplyr::n(), .groups = "drop")
 

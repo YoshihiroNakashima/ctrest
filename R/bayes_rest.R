@@ -1,4 +1,7 @@
-utils::globalVariables(c("time", "Stay", "Cens", "Species", "N", "WAIC", "sd"))
+utils::globalVariables(c("time", "Stay", "Cens", "Species", "N", "WAIC", "sd",
+                         "BaseVar", "Rhat", "Species_idx", "Station_idx", "Y_rep",
+                         "act_data", "beta_enter", "cv", "delta", "idx",
+                         "species_effect_alpha", "theta_enter"))
 
 #' Bayesian parameter estimation for the REST/RAD-REST model via MCMC sampling using `nimble`.
 #'
@@ -48,7 +51,7 @@ utils::globalVariables(c("time", "Stay", "Cens", "Species", "N", "WAIC", "sd"))
 #' @return A list of class \code{"ResultDensity"} with the following components:
 #' \describe{
 #'   \item{\code{WAIC}}{A data frame of WAIC values for each candidate density model (rows sorted from best to worst), with columns \code{Model}, \code{random_effect_stay}, and \code{WAIC}.}
-#'   \item{\code{summary_result}}{A data frame of posterior summaries (mean, sd, 2.5\%, 50\%, 97.5\%, Rhat, n.eff, cv) for \code{density (individuals per km^2)} and \code{mean_stay (seconds)} (and \code{mean_pass} for RAD-REST). When density or stay covariates are present, one row is returned per station; otherwise a single row labelled \code{Station = "All"}.}
+#'   \item{\code{summary_result}}{A data frame of posterior summaries (mean, sd, 2.5%, 50%, 97.5%, Rhat, n.eff, cv) for \code{density} (individuals per km^2) and \code{mean_stay} (seconds), and \code{mean_pass} for RAD-REST. When density or stay covariates are present, one row is returned per station; otherwise a single row labelled \code{Station = "All"}.}
 #'   \item{\code{samples}}{A \code{coda::mcmc.list} object of full MCMC posterior samples from the best model. Use the \code{MCMCvis} package for convergence diagnostics.}
 #'   \item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC samples from the best model, with columns \code{parameter}, \code{value}, and \code{iteration}.}
 #'   \item{\code{activity_curve}}{(Returned only when \code{activity_estimation = "mixture"}.) A data frame of the estimated activity density curve with columns \code{variable}, \code{x}, and posterior summary statistics.}
@@ -166,7 +169,7 @@ bayes_rest <- function(formula_stay,
     stop("`model` must be either 'REST' or 'RAD-REST'.")
   }
 
-  # Check formula_enter (RAD-RESTの場合)
+  # Check formula_enter (for RAD-REST)
   if (model == "RAD-REST" && !inherits(formula_enter, "formula")) {
     stop("`formula_enter` must be a valid model formula when model is 'RAD-REST'.")
   }
@@ -203,14 +206,14 @@ bayes_rest <- function(formula_stay,
     stop("`stay_data` must contain the following columns: 'Station', 'Species', 'Stay', and 'Cens'.")
   }
 
-  # --- 共変量やランダム効果がない（全体共通）かの判定 ---
+  # --- Check whether covariates and random effects are absent (global model) ---
   check_no_cov <- function(f) {
     if (is.null(f)) return(TRUE)
-    # 確実にフォーミュラクラスにする
+    # Make sure the object is of class formula
     f <- stats::as.formula(f)
-    # 右辺の変数を抽出
+    # Extract the variables on the right-hand side
     vars <- all.vars(f[[length(f)]])
-    return(length(vars) == 0) # 変数が0個（~1など）ならTRUE
+    return(length(vars) == 0) # TRUE if there are no variables (e.g., ~ 1)
   }
 
 
@@ -221,7 +224,7 @@ bayes_rest <- function(formula_stay,
     dplyr::pull(time)
 
   if(activity_estimation == "kernel") {
-    # activity パッケージを使用している想定で名前空間を追加
+    # Namespace added, assuming the activity package is used
     model_act <- activity::fitact(act_data, bw = bw_adj * activity::bwcalc(act_data, K = 3), reps=1)
     activity_proportion <- model_act@act
   } else {
@@ -264,8 +267,8 @@ bayes_rest <- function(formula_stay,
 
   formula_density_all <- list()
   if (all_comb == TRUE) {
-    # full_terms は外部定義されたカスタム関数と想定
-    formula_density_all <- full_terms(c(predictors_density))
+    # full_terms is assumed to be an externally defined custom function
+    formula_density_all <- .full_terms(c(predictors_density))
   } else {
     formula_density_all[[1]] <- formula_density
   }
@@ -419,7 +422,7 @@ bayes_rest <- function(formula_stay,
     tidy_samples <- mcmc_samples <- list()
     waic <- numeric(length(formula_density_all))
 
-    # dvonMises / rvonMises の定義 (Nimble環境へのエクスポート用)
+    # Define dvonMises / rvonMises (for export to the nimble environment)
     dvonMises <- nimble::nimbleFunction(
       run = function(x = double(0), kappa = double(0), mu = double(0), log = integer(0)) {
         returnType(double(0))
@@ -604,7 +607,7 @@ bayes_rest <- function(formula_stay,
         }
         if(nPreds_density > 1) {
           for(i in 1:N_station) {
-            # log(density[i]) を先に定義しておくことで mu[i] の式で参照できる
+            # Define log(density[i]) first so that it can be referenced in the expression for mu[i]
             log(density[i]) <- inprod(beta_density[1:nPreds_density], X_density[i, 1:nPreds_density])
             if(nPreds_stay == 1) {
               log(mu[i]) <- log(density[i]) + log(S) + log(N_period[i]) - log(mean_stay) + log(activity_proportion)
@@ -634,7 +637,7 @@ bayes_rest <- function(formula_stay,
         return(common_inits)
       }
 
-      # 統合されたMCMC実行関数（ワーカー内で分布を登録）
+      # Unified MCMC runner (distributions are registered inside each worker)
       run_MCMC_REST <- function(info, data, constants, code, params, ni, nt, nb) {
         suppressMessages(nimble::registerDistributions(list(
           dvonMises = list(
@@ -664,7 +667,7 @@ bayes_rest <- function(formula_stay,
                         setSeed = info$seed, samplesAsCodaMCMC = TRUE)
       }
 
-      # 並列処理の準備（条件分岐をシンプルに統合）
+      # Prepare parallel processing (conditional branches consolidated)
       if (activity_estimation == "mixture") {
         per_chain_info <- lapply(1:length(actv_out_trace), function(i) {
           list(seed = sample(1:9999, 1), inits = inits_f(), actv_samples = as.matrix(actv_out_trace[[i]]))
@@ -675,7 +678,7 @@ bayes_rest <- function(formula_stay,
         })
       }
 
-      # パラメータリストの構築 (バグ修正済)
+      # Build the parameter list
       if (stay_family == "exponential") prms <- c("scale", "mean_stay")
       if (stay_family %in% c("gamma", "weibull")) prms <- c("scale", "shape", "mean_stay")
       if (stay_family == "lognormal") prms <- c("meanlog", "sdlog", "mean_stay")
@@ -689,7 +692,7 @@ bayes_rest <- function(formula_stay,
 
       cat(sprintf("Running MCMC sampling for REST (model %d/%d). Please wait...\n", k, length(formula_density_all)))
 
-      # --- 並列処理の安全な実行 ---
+      # --- Safe execution of the parallel processing ---
       this_cluster <- parallel::makeCluster(nc)
       on.exit(try(parallel::stopCluster(this_cluster), silent = TRUE), add = TRUE)
 
@@ -706,10 +709,10 @@ bayes_rest <- function(formula_stay,
       )
 
       parallel::stopCluster(this_cluster)
-      on.exit() # 正常終了したため、on.exitの予約を解除
+      on.exit() # Cancel the on.exit registration after successful completion
       cat("Estimation is finished!\n")
 
-      # --- WAIC 計算 (log-sum-exp trick で数値安定) ---
+      # --- WAIC calculation (log-sum-exp trick for numerical stability) ---
       loglfstay <- MCMCvis::MCMCchains(chain_output, params = c("loglike_obs_stay"))
       loglfy <- MCMCvis::MCMCchains(chain_output, params = c("loglike_obs_y"))
 
@@ -735,14 +738,14 @@ bayes_rest <- function(formula_stay,
       p.waic <- sum(apply(loglfall, 2, safe_var),          na.rm = TRUE)
       waic[k] <- (-2) * lppd + 2 * p.waic
 
-      # --- Summarize the estimates (Base R による高速化・軽量化) ---
+      # --- Summarize the estimates (base R for speed and lower memory use) ---
       mcmc_samples[[k]] <- MCMCvis::MCMCchains(chain_output, mcmc.list = TRUE, params = prms)
       samples_mat <- MCMCvis::MCMCchains(chain_output)
 
       n_iters <- nrow(samples_mat)
       p_names <- colnames(samples_mat)
 
-      # pivot_longer等の代わりとなるBase R処理（劇的に速くなります）
+      # Base R replacement for pivot_longer and similar functions (much faster)
       tidy_samples[[k]] <- data.frame(
         parameter = rep(p_names, each = n_iters),
         value = as.vector(samples_mat),
@@ -755,7 +758,7 @@ bayes_rest <- function(formula_stay,
   # RAD-REST model ----------------------------------------------------------
   if (model == "RAD-REST") {
     # Extract variable names (Enter)
-    # station_effort_data_target はデータ準備セクションで定義済み
+    # station_effort_data_target is already defined in the data preparation section
     model_frame_enter <- stats::model.frame(formula_enter, data = station_effort_data_target)
     X_enter <- stats::model.matrix(stats::as.formula(formula_enter), model_frame_enter)
     nPreds_enter <- ncol(X_enter)
@@ -770,7 +773,7 @@ bayes_rest <- function(formula_stay,
 
     if (nPreds_stay > 1) {
       stay_terms <- stats::delete.response(stats::terms(stats::as.formula(formula_stay)))
-      # 欠測行が自動削除されて行列のサイズが合わなくなるのを防ぐ (na.pass)
+      # Prevent rows with missing values from being dropped, which would change the matrix size (na.pass)
       model_frame_stay_st <- stats::model.frame(stay_terms, data = station_effort_data_target, na.action = stats::na.pass)
       X_stay_station <- stats::model.matrix(stay_terms, model_frame_stay_st)
     }
@@ -826,7 +829,7 @@ bayes_rest <- function(formula_stay,
       # REST model
       Model_REST <- nimble::nimbleCode(
         {
-          ## 1. 滞在時間 (Stay time) のモデリング----
+          ## 1. Modelling of staying time ----
           for(i in 1:N_stay) {
             censored[i] ~ dinterval(stay[i], c_time[i])
 
@@ -897,7 +900,7 @@ bayes_rest <- function(formula_stay,
             sigma_stay ~ T(dnorm(0, sd = 5), 0, 10)
           }
 
-          # 期待値計算 (stay)
+          # Expected value calculation (stay)
           if (nPreds_stay == 1) {
             if(stay_family == "exponential") { mean_stay <- exp(beta_stay[1]) }
             if(stay_family == "gamma")       { mean_stay <- theta_stay * exp(beta_stay[1]) }
@@ -920,24 +923,24 @@ bayes_rest <- function(formula_stay,
           }
 
           # ==========================================
-          # enterモデル：比例オッズ (Cumulative Logit)
+          # Enter model: proportional odds (cumulative logit)
           # ==========================================
 
-          # --- 事前分布 ---
+          # --- Priors ---
           for (k in 1:nPreds_enter) {
             beta_enter[k] ~ dnorm(0, sd = 2)
           }
 
-          # cutpointの順序制約
+          # Order constraint on the cutpoints
           cutpoint[1] ~ dnorm(0, sd = 3)
-          for (g in 2:(N_group - 1)) {          # N_group=2なら実行されない（問題なし）
+          for (g in 2:(N_group - 1)) {          # Not executed when N_group = 2 (no problem)
             delta[g - 1] ~ dgamma(1, 1)
             cutpoint[g] <- cutpoint[g - 1] + delta[g - 1]
           }
 
           theta_enter ~ dgamma(2, 0.1)
 
-          # --- カメラ地点ごとの尤度 ---
+          # --- Likelihood for each camera station ---
           for (i in 1:N_station) {
 
             if (nPreds_enter == 1) {
@@ -946,31 +949,31 @@ bayes_rest <- function(formula_stay,
               eta[i] <- inprod(beta_enter[1:nPreds_enter], X_enter[i, 1:nPreds_enter])
             }
 
-            # 累積確率
+            # Cumulative probabilities
             for (g in 1:(N_group - 1)) {
               cum_p[i, g] <- ilogit(cutpoint[g] - eta[i])
             }
 
-            # カテゴリ確率（差分）
+            # Category probabilities (differences)
             p_expected[i, 1] <- cum_p[i, 1]
             for (g in 2:(N_group - 1)) {
               p_expected[i, g] <- cum_p[i, g] - cum_p[i, g - 1]
             }
             p_expected[i, N_group] <- 1 - cum_p[i, N_group - 1]
 
-            # Dirichlet-Multinomialのalpha
+            # alpha for the Dirichlet-multinomial
             for (g in 1:N_group) {
               alpha_Dirichlet[i, g] <- theta_enter * p_expected[i, g]
             }
 
-            # mean_pass: 侵入「回数」は (g-1) 回
-            # g=1 → 0回, g=2 → 1回, g=3 → 2回 ...
-            # mean_pass が 0 にならないよう下限を設ける
-            mean_pass_raw[i] <- sum(p_expected[i, 2:N_group] *        # g=1(0回)を除いた和
-                                      (1:(N_group - 1)))                 # 1回, 2回, 3回...
-            mean_pass[i] <- max(mean_pass_raw[i], 0.001)              # log(0)防止
+            # mean_pass: the number of passes is (g - 1)
+            # g = 1 gives 0 passes, g = 2 gives 1 pass, g = 3 gives 2 passes, and so on
+            # Set a lower bound so that mean_pass does not become 0
+            mean_pass_raw[i] <- sum(p_expected[i, 2:N_group] *        # Sum excluding g = 1 (0 passes)
+                                      (1:(N_group - 1)))                 # 1, 2, 3, ... passes
+            mean_pass[i] <- max(mean_pass_raw[i], 0.001)              # Prevent log(0)
 
-            # 尤度
+            # Likelihood
             y[i, 1:N_group] ~ ddirchmulti(alpha_Dirichlet[i, 1:N_group], N_judge[i])
             pred_y[i, 1:N_group] ~ ddirchmulti(alpha_Dirichlet[i, 1:N_group], N_judge[i])
             loglike_obs_y[i]  <- ddirchmulti(y[i, 1:N_group],
@@ -979,7 +982,7 @@ bayes_rest <- function(formula_stay,
                                              alpha_Dirichlet[i, 1:N_group], N_judge[i], log = TRUE)
           }
 
-          # 3. 検出回数 (N_detection) の尤度----
+          # 3. Likelihood of the number of detections (N_detection) ----
 
           for(i in 1:N_station){
             N_detection[i] ~ dnbinom(size = size, prob = p[i])
@@ -991,9 +994,9 @@ bayes_rest <- function(formula_stay,
           }
           size ~ dgamma(1, 1)
 
-          # 4. REST formula (mu の計算)----
+          # 4. REST formula (calculation of mu) ----
 
-          # mean_pass は常に地点ごとのベクトル mean_pass[i] となります
+          # mean_pass is always a station-level vector mean_pass[i]
           if(nPreds_density == 1) {
             for(i in 1:N_station) {
               if(nPreds_stay == 1) {
@@ -1021,52 +1024,52 @@ bayes_rest <- function(formula_stay,
         }#end
       )
       inits_f <- function() {
-        # 1. 滞在時間 (stay) モデルの初期値
+        # 1. Initial values for the staying time model
         stay_mean_log <- log(mean(stay_data$Stay, na.rm = TRUE))
         beta_stay_init <- stats::rnorm(nPreds_stay, 0, 0.1)
         beta_stay_init[1] <- stay_mean_log
 
-        # 2. 密度 (density) モデルの初期値
+        # 2. Initial values for the density model
         beta_density_init <- stats::rnorm(nPreds_density, 0, 0.1)
         expected_density <- 5
         beta_density_init[1] <- log(expected_density)
 
-        # 3. 侵入回数 (enter) モデルの初期値
+        # 3. Initial values for the enter model
         beta_enter_init <- rep(0, nPreds_enter)
 
-        # 均等な割合で暫定の初期値を作る（N_group=4なら 0.25, 0.50, 0.75）
+        # Provisional initial values based on equal proportions (0.25, 0.50, 0.75 when N_group = 4)
         cum_prop <- (1:(N_group - 1)) / N_group
         cutpoint_empirical <- stats::qlogis(cum_prop)
 
-        # cutpointの初期値 (1つ目だけ値を入れる)
+        # Initial values for the cutpoints (only the first element is given a value)
         cutpoint_init    <- rep(NA, N_group - 1)
         cutpoint_init[1] <- cutpoint_empirical[1]
 
-        # 共通の初期値リストを作成
+        # Build the common list of initial values
         common_inits <- list(
-          # stay 関連
+          # stay
           beta_stay  = beta_stay_init,
           stay       = ifelse(censored == 0, NA, c_time + stats::runif(N_stay, 0.1, 2.0)),
           theta_stay = stats::runif(1, 0.8, 1.2),
 
-          # density 関連
+          # density
           beta_density = beta_density_init,
 
-          # enter 関連
+          # enter
           beta_enter  = beta_enter_init,
           cutpoint    = cutpoint_init,
           theta_enter = stats::runif(1, 5, 20),
 
-          # 検出 (detection) 関連
+          # detection
           size        = stats::runif(1, 0.8, 1.2)
         )
 
-        # delta の初期値 (N_group >= 3 の場合)
+        # Initial values for delta (when N_group >= 3)
         if (N_group > 2) {
           common_inits$delta <- pmax(diff(cutpoint_empirical), 0.1)
         }
 
-        # 滞在時間のランダムエフェクトがある場合の追加
+        # Added when a random effect on staying time is present
         if (nLevels_stay > 0) {
           common_inits$random_effect_stay <- stats::runif(nLevels_stay, -0.1, 0.1)
           common_inits$sigma_stay         <- stats::runif(1, 0.8, 1.5)
@@ -1074,7 +1077,7 @@ bayes_rest <- function(formula_stay,
 
         return(common_inits)
       }
-      # 1. パラメータの整理
+      # 1. Parameter set-up
       prms <- c()
       if(stay_family == "exponential") {
         prms <- c("scale", "mean_stay")
@@ -1094,7 +1097,7 @@ bayes_rest <- function(formula_stay,
       params <- c(prms, "loglike_obs_stay", "loglike_obs_y",
                   "loglike_pred_stay", "loglike_pred_y")
 
-      # 2. 各チェーン用の情報リストの作成と nc の安全な定義
+      # 2. Build the per-chain information list and define nc safely
       if(activity_estimation == "mixture") {
         nc <- length(actv_out_trace)
       } else {
@@ -1107,10 +1110,10 @@ bayes_rest <- function(formula_stay,
              actv_samples = if(activity_estimation == "mixture") as.matrix(actv_out_trace[[i]]) else NULL)
       })
 
-      # 3. 並列処理用のMCMC実行関数
+      # 3. MCMC runner for the parallel processing
       run_MCMC_RAD <- function(info, data, constants, code, params, ni, nt, nb, is_mixture) {
 
-        # ワーカーごとに固有の一時ディレクトリを作成してコンパイル競合を回避
+        # Create a unique temporary directory for each worker to avoid compilation conflicts
         worker_dir <- file.path(tempdir(), paste0("nimble_worker_", Sys.getpid()))
         dir.create(worker_dir, showWarnings = FALSE)
 
@@ -1130,7 +1133,7 @@ bayes_rest <- function(formula_stay,
 
         myMCMC <- nimble::buildMCMC(configModel)
 
-        # C++プロジェクトを紐付けつつディレクトリを分離
+        # Link the C++ project while keeping the directories separate
         CmyMCMC <- nimble::compileNimble(myMCMC, project = myModel, dirName = worker_dir)
 
         results <- nimble::runMCMC(CmyMCMC, niter = ni, nburnin = nb, thin = nt, nchains = 1,
@@ -1140,14 +1143,14 @@ bayes_rest <- function(formula_stay,
 
       cat("Running MCMC sampling. Please wait...\n")
 
-      # 4. クラスターのセットアップと実行
+      # 4. Cluster set-up and execution
       this_cluster <- parallel::makeCluster(nc)
       on.exit(try(parallel::stopCluster(this_cluster), silent = TRUE), add = TRUE)
 
-      # 実行関数だけを送る
+      # Export only the runner function
       parallel::clusterExport(this_cluster, c("run_MCMC_RAD"), envir = environment())
 
-      # ワーカー内部でゼロからカスタム関数を定義し直して登録
+      # Redefine and register the custom functions from scratch inside each worker
       parallel::clusterEvalQ(this_cluster, {
         library(nimble)
 
@@ -1216,7 +1219,7 @@ bayes_rest <- function(formula_stay,
         suppressMessages(nimble::registerDistributions(dist_registration_list))
       })
 
-      # 並列処理の実行 (引数のマッピングを修正済)
+      # Run the parallel processing
       chain_output <- parallel::parLapply(
         cl = this_cluster,
         X = per_chain_info,
@@ -1235,22 +1238,22 @@ bayes_rest <- function(formula_stay,
       on.exit()
       cat("Estimation is finished!\n")
 
-      # --- 尤度チェーンの抽出 ---
+      # --- Extract the likelihood chains ---
       loglfstay <- MCMCvis::MCMCchains(chain_output, params = c("loglike_obs_stay"))
       loglfy <- MCMCvis::MCMCchains(chain_output, params = c("loglike_obs_y"))
 
       if (activity_estimation == "mixture") {
         if (!exists("loglact")) {
-          stop("エラー: 'loglact' が未定義です。尤度のトレースを用意してください。")
+          stop("'loglact' is not defined. Please provide the likelihood trace.")
         }
         loglfall <- cbind(loglfstay, loglfy, loglact)
       } else {
         loglfall <- cbind(loglfstay, loglfy)
       }
 
-      # --- 安全なWAICの計算 (Log-Sum-Exp Trick) ---
+      # --- Safe WAIC calculation (log-sum-exp trick) ---
       safe_log_mean_exp <- function(x) {
-        x <- x[is.finite(x)] # -InfやNaNなどの異常値を完全に除外
+        x <- x[is.finite(x)] # Completely exclude non-finite values such as -Inf and NaN
         if(length(x) == 0) return(NA)
         max_val <- max(x)
         return(max_val + log(mean(exp(x - max_val))))
@@ -1262,12 +1265,12 @@ bayes_rest <- function(formula_stay,
         return(stats::var(x))
       }
 
-      # 列(各データ点)ごとに安全な対数平均尤度を計算 (na.rm = TRUE を追加)
+      # Compute the safe log mean likelihood for each column (data point)
       lppd <- sum(apply(loglfall, 2, safe_log_mean_exp), na.rm = TRUE)
       p.waic <- sum(apply(loglfall, 2, safe_var), na.rm = TRUE)
       waic[k] <- (-2) * lppd + 2 * p.waic
 
-      # --- MCMCサンプルの抽出とプロット ---
+      # --- Extract the MCMC samples ---
       mcmc_samples[[k]] <- MCMCvis::MCMCchains(chain_output, mcmc.list = TRUE, params = prms)
       samples_mat <- MCMCvis::MCMCchains(chain_output)
 
@@ -1282,19 +1285,19 @@ bayes_rest <- function(formula_stay,
       )
     }
   }
-  # 結果集計 --------------------------------------------------------------------
+  # Summarize the results -------------------------------------------------------
 
   if (is.null(random_effect_stay)) random_effect_stay <- "NULL"
 
-  # --- 安全なベストモデル選択 ---
+  # --- Safe selection of the best model ---
   best.model <- which.min(waic)
-  # 万が一WAICがすべてNAになってしまった場合の緊急回避処理
+  # Fallback in the unlikely event that all WAIC values are NA
   if (length(best.model) == 0) {
-    warning("WAICの計算に失敗したため、便宜上1番目のモデルをベストモデルとして選択します。")
+    warning("WAIC calculation failed, so the first model is selected as the best model.")
     best.model <- 1
   }
 
-  # WAIC表の作成 (formulaを安全に文字列化)
+  # Build the WAIC table (formulas safely converted to character strings)
   WAIC <- data.frame(
     Model = sapply(formula_density_all, function(x) paste(deparse(x), collapse = " ")),
     random_effect_stay = random_effect_stay,
@@ -1302,16 +1305,16 @@ bayes_rest <- function(formula_stay,
   ) %>%
     dplyr::arrange(WAIC)
 
-  # ベストモデルのフォーミュラを使って共通判定を行う
+  # Use the formula of the best model for the global-model checks
   formula_density_best <- formula_density_all[[best.model]]
 
   is_density_global <- check_no_cov(formula_density_best)
   is_stay_global    <- check_no_cov(formula_stay) && random_effect_stay == "NULL"
 
-  # formula_enterが引数として存在するか（RAD-RESTの場合）で分岐
+  # Branch depending on whether formula_enter is supplied as an argument (RAD-REST)
   is_enter_global <- if (model == "RAD-REST") check_no_cov(formula_enter) else TRUE
 
-  # mean_passが共通になる条件
+  # Condition under which mean_pass is global
   is_pass_global <- if (model == "REST") {
     is_density_global && is_stay_global
   } else {
@@ -1325,26 +1328,26 @@ bayes_rest <- function(formula_stay,
     sample_activity <- MCMCvis::MCMCchains(actv_chain_output,
                                            mcmc.list = TRUE,
                                            params = c("activity_proportion"))
-    # mcmc.list構造を維持しつつcbindする
+    # cbind while preserving the mcmc.list structure
     mcmc_samples_best <- lapply(seq_along(mcmc_samples_best), function(i) {
       coda::as.mcmc(cbind(mcmc_samples_best[[i]], sample_activity[[i]]))
     })
     mcmc_samples_best <- coda::as.mcmc.list(mcmc_samples_best)
   }
 
-  # 取得するパラメータを指定
+  # Specify the parameters to extract
   prms_out <- c("density", "mean_stay")
   if(model == "RAD-REST") prms_out <- c(prms_out, "mean_pass")
   if(activity_estimation == "mixture") prms_out <- c(prms_out, "activity_proportion")
 
-  # MCMCsummaryに「ベストモデルのサンプル」を直接渡す
+  # Pass the samples from the best model directly to MCMCsummary
   summary_mean_temp <- MCMCvis::MCMCsummary(mcmc_samples_best, params = prms_out, round = 2) %>%
     tibble::rownames_to_column(var = "Variable") %>%
     tibble::as_tibble() %>%
     dplyr::rename(lower = `2.5%`, median = `50%`, upper = `97.5%`) %>%
     dplyr::mutate(cv = sd / mean)
 
-  # パラメータの結合と、共通パラメータの行の削減
+  # Combine the parameters and reduce the rows for global parameters
   summary_mean <- summary_mean_temp %>%
     dplyr::mutate(
       Species = target_species,
@@ -1388,6 +1391,6 @@ bayes_rest <- function(formula_stay,
   }
   class(density_result) <- "ResultDensity"
 
-  # 出力
+  # Output
   return(density_result)
 }
