@@ -36,7 +36,7 @@ utils::globalVariables(c("time", "Stay", "Cens", "Species", "N", "WAIC", "sd"))
 #' @param C The maximum number of von Mises components used for the mixture model. Required only if \code{activity_estimation = "mixture"}. Default is 10.
 #' @param bw_adj A numeric bandwidth adjustment parameter for kernel density estimation. Default is 1.0. See Rowcliffe et al. (2014) for details.
 #' @param stay_family A character string specifying the probability distribution used for modeling staying times (e.g., \code{"exponential"}, \code{"gamma"}, \code{"lognormal"}, \code{"weibull"}). This should ideally be selected based on the output of the \code{bayes_stay_selection} function. Default is \code{"lognormal"}.
-#' @param focal_area A numeric value representing the area of the camera focal area, in square meters.
+#' @param focal_area A numeric value representing the area of the camera focal area, in square metres. The value is internally converted to square kilometres, so the estimated density is returned as individuals per square kilometres.
 #' @param cores An integer specifying the number of CPU cores (validated but currently unused; the number of parallel workers equals \code{chains}). Default is 3.
 #' @param iter An integer specifying the total number of MCMC iterations per chain. Default is 5000.
 #' @param warmup An integer specifying the number of warm-up (burn-in) iterations per chain. Default is 1000.
@@ -48,7 +48,7 @@ utils::globalVariables(c("time", "Stay", "Cens", "Species", "N", "WAIC", "sd"))
 #' @return A list of class \code{"ResultDensity"} with the following components:
 #' \describe{
 #'   \item{\code{WAIC}}{A data frame of WAIC values for each candidate density model (rows sorted from best to worst), with columns \code{Model}, \code{random_effect_stay}, and \code{WAIC}.}
-#'   \item{\code{summary_result}}{A data frame of posterior summaries (mean, sd, 2.5\%, 50\%, 97.5\%, Rhat, n.eff, cv) for \code{density} and \code{mean_stay} (and \code{mean_pass} for RAD-REST). When density or stay covariates are present, one row is returned per station; otherwise a single row labelled \code{Station = "All"}.}
+#'   \item{\code{summary_result}}{A data frame of posterior summaries (mean, sd, 2.5\%, 50\%, 97.5\%, Rhat, n.eff, cv) for \code{density (individuals per km^2)} and \code{mean_stay (seconds)} (and \code{mean_pass} for RAD-REST). When density or stay covariates are present, one row is returned per station; otherwise a single row labelled \code{Station = "All"}.}
 #'   \item{\code{samples}}{A \code{coda::mcmc.list} object of full MCMC posterior samples from the best model. Use the \code{MCMCvis} package for convergence diagnostics.}
 #'   \item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC samples from the best model, with columns \code{parameter}, \code{value}, and \code{iteration}.}
 #'   \item{\code{activity_curve}}{(Returned only when \code{activity_estimation = "mixture"}.) A data frame of the estimated activity density curve with columns \code{variable}, \code{x}, and posterior summary statistics.}

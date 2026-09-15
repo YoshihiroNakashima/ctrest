@@ -72,7 +72,7 @@ bayes_rest_multi(
 
 \item{stay_family}{A character string specifying the probability distribution used to model staying times (e.g., \code{"exponential"}, \code{"gamma"}, \code{"lognormal"}, \code{"weibull"}). Default is \code{"lognormal"}.}
 
-\item{focal_area}{A numeric value representing the size of the focal area, in square meters.}
+\item{focal_area}{A numeric value representing the area of the camera focal area, in square metres. The value is internally converted to square kilometres, so the estimated density is returned as individuals per square kilometres.}
 
 \item{cores}{An integer specifying the number of CPU cores to use for parallel computation. Default is 3.}
 
@@ -92,7 +92,7 @@ bayes_rest_multi(
 A list of class \code{"ResultDensity"} with the following components:
 \describe{
 \item{\code{WAIC}}{A numeric WAIC value for the fitted model.}
-\item{\code{summary_result}}{A data frame summarizing posterior estimates (mean, sd, lower, median, upper, Rhat, n.eff, cv) for density, mean_stay, and (for RAD-REST) mean_pass across species and stations.}
+\item{\code{summary_result}}{A data frame summarizing posterior estimates (mean, sd, lower, median, upper, Rhat, n.eff, cv) for density (individuals per km^2), mean_stay (seconds), and (for RAD-REST) mean_pass across species and stations.}
 \item{\code{samples}}{A \code{coda::mcmc.list} object of full MCMC posterior samples.}
 \item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC samples, with columns \code{parameter}, \code{value}, and \code{iteration}.}
 \item{\code{scaling_params}}{A list of centering and scaling parameters used to standardize design matrices.}

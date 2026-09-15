@@ -34,7 +34,7 @@
 #' @param bw_adj A numeric bandwidth adjustment parameter for kernel density estimation. Default is 1.0. See Rowcliffe et al. (2014) for details.
 #' @param C An integer specifying the maximum number of von Mises components to use in the mixture model. Required only if \code{activity_estimation = "mixture"}. Default is 10.
 #' @param stay_family A character string specifying the probability distribution used to model staying times (e.g., \code{"exponential"}, \code{"gamma"}, \code{"lognormal"}, \code{"weibull"}). Default is \code{"lognormal"}.
-#' @param focal_area A numeric value representing the size of the focal area, in square meters.
+#' @param focal_area A numeric value representing the area of the camera focal area, in square metres. The value is internally converted to square kilometres, so the estimated density is returned as individuals per square kilometres.
 #' @param cores An integer specifying the number of CPU cores to use for parallel computation. Default is 3.
 #' @param iter An integer specifying the total number of MCMC iterations per chain. Default is 5000.
 #' @param warmup An integer specifying the number of warm-up (burn-in) iterations per chain. Default is 1000.
@@ -45,7 +45,7 @@
 #' @return A list of class \code{"ResultDensity"} with the following components:
 #' \describe{
 #'   \item{\code{WAIC}}{A numeric WAIC value for the fitted model.}
-#'   \item{\code{summary_result}}{A data frame summarizing posterior estimates (mean, sd, lower, median, upper, Rhat, n.eff, cv) for density, mean_stay, and (for RAD-REST) mean_pass across species and stations.}
+#'   \item{\code{summary_result}}{A data frame summarizing posterior estimates (mean, sd, lower, median, upper, Rhat, n.eff, cv) for density (individuals per km^2), mean_stay (seconds), and (for RAD-REST) mean_pass across species and stations.}
 #'   \item{\code{samples}}{A \code{coda::mcmc.list} object of full MCMC posterior samples.}
 #'   \item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC samples, with columns \code{parameter}, \code{value}, and \code{iteration}.}
 #'   \item{\code{scaling_params}}{A list of centering and scaling parameters used to standardize design matrices.}
