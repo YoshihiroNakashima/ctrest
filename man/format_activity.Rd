@@ -13,43 +13,37 @@ format_activity(
 )
 }
 \arguments{
-\item{detection_data}{A data frame containing information for individual videos, including:
-\itemize{
-\item Camera station ID (character)
-\item Capture datetime (character)
-\item Species name (character)
-\item Other columns (e.g., number of passes, staying time, censoring flag) are ignored by this function.
-}}
+\item{detection_data}{A data frame containing individual detection records with at
+least a station ID column, a species name column, and a datetime column.}
 
-\item{col_name_station}{A string specifying the column name that contains camera station IDs.}
+\item{col_name_station}{A string specifying the column name for camera station IDs.}
 
-\item{col_name_species}{A string specifying the column name that contains species names.}
+\item{col_name_species}{A string specifying the column name for species names.}
 
-\item{col_name_datetime}{A string specifying the column name that contains datetime information.
-If time is missing (e.g., only "2022/03/01"), "00:00" is assumed.}
+\item{col_name_datetime}{A string specifying the column name for detection datetimes.
+Accepted formats: \code{"YYYY-MM-DD HH:MM:SS"}, \code{"YYYY/MM/DD HH:MM"}, or
+\code{"YYYY-MM-DD"} (time assumed 00:00). A \code{POSIXct} column is also accepted.}
 
-\item{indep_time}{A numeric value specifying the minimum time interval (in minutes) to consider two detections as independent. Default is 30.}
+\item{indep_time}{A non-negative number specifying the minimum time interval (in
+minutes) required between two detections of the same species at the same station
+to consider them independent. Default is 30.}
 }
 \value{
-A data frame with three columns:
-\itemize{
-\item \code{Species} (character): Species name.
-\item \code{Station} (character): Camera station ID.
-\item \code{time} (numeric): Time of detection, scaled from 0 to 2π (radians) for circular activity analysis.
-Only independent detections are included.
-}
+A data frame with columns \code{Species}, \code{Station}, and \code{time}
+(detection time in radians, 0–2π), containing only independent detections.
 }
 \description{
-This function filters detection data to retain only independent detections
-of the specified species and transforms detection time into a circular format
-for use in activity modeling.
+Filters detection data to retain only independent detections and transforms
+detection time into a circular format (radians) for activity modeling.
 }
 \examples{
+\dontrun{
 format_activity(
-  detection_data = detection_data,
-  col_name_station = "Station",
-  col_name_species = "Species",
+  detection_data    = detection_data,
+  col_name_station  = "Station",
+  col_name_species  = "Species",
   col_name_datetime = "DateTime",
-  indep_time = 30
+  indep_time        = 30
 )
+}
 }

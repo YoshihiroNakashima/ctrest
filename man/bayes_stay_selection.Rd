@@ -2,14 +2,14 @@
 % Please edit documentation in R/bayes_stay_selection.R
 \name{bayes_stay_selection}
 \alias{bayes_stay_selection}
-\title{Model selection for staying time analysis using WAIC for REST/REST-RAD models based on MCMC samplings with nimble}
+\title{Model selection for staying time analysis using WAIC for REST/RAD-REST models based on MCMC samplings with nimble}
 \usage{
 bayes_stay_selection(
   formula_stay = Stay ~ 1,
-  random_effect = NULL,
+  random_effect_stay = NULL,
   stay_data = stay_data,
   col_name_cens = "Cens",
-  family = "lognormal",
+  stay_family = "lognormal",
   cores = 3,
   iter = 5000,
   warmup = 1000,
@@ -22,23 +22,23 @@ bayes_stay_selection(
 \arguments{
 \item{formula_stay}{A model formula for staying time within a focal area. For example, \code{Stay ~ 1 + x1}.}
 
-\item{random_effect}{A character string specifying the random effect on the parameter of the staying time model. For example, \code{random_effect = "Station"}.}
+\item{random_effect_stay}{A character string specifying the column name in \code{stay_data} to use as a grouping factor for a station-level random intercept on staying time (e.g., \code{"Station"}). Default is \code{NULL} (no random effects).}
 
 \item{stay_data}{A data frame returned by the \code{format_stay} function, containing the processed staying time data.}
 
 \item{col_name_cens}{A string specifying the column name in \code{stay_data} that indicates whether the observation is censored (1) or not (0).}
 
-\item{family}{A character string specifying the probability distribution of staying time. Choose from \code{"exponential"}, \code{"gamma"}, \code{"weibull"}, or \code{"lognormal"}.}
+\item{stay_family}{A character string specifying the probability distribution of staying time. Choose from \code{"exponential"}, \code{"gamma"}, \code{"weibull"}, or \code{"lognormal"}.}
 
 \item{cores}{The number of CPU cores to use for parallel computation. Default is 3.}
 
-\item{iter}{The total number of MCMC iterations per chain. Default is 5000}
+\item{iter}{The total number of MCMC iterations per chain. Default is 5000.}
 
 \item{warmup}{The number of warm-up (burn-in) iterations per chain. Default is 1000.}
 
 \item{chains}{The number of MCMC chains. Default is 3.}
 
-\item{thin}{The thinning interval for MCMC sampling. Default is 4 (no thinning).}
+\item{thin}{The thinning interval for MCMC sampling. Default is 4.}
 
 \item{all_comb}{A logical value indicating whether to compare models with all possible combinations of covariates. If \code{FALSE}, only the specified model in \code{formula_stay} is evaluated. Default is FALSE.}
 
@@ -47,16 +47,15 @@ bayes_stay_selection(
 \value{
 A list of class \code{"ResultStay"}, which includes the following components:
 \describe{
-\item{\code{WAIC}}{An object containing WAIC (Widely Applicable Information Criterion) results for model comparison.}
+\item{\code{WAIC}}{A data frame of WAIC values for each candidate stay model, sorted from best to worst.}
 \item{\code{Bayesian_p_value}}{Bayesian p-value for the best model, used to assess model fit.}
 \item{\code{summary_result}}{A data frame summarizing posterior estimates of the mean staying time.}
 \item{\code{samples}}{A \code{coda::mcmc.list} object containing MCMC samples for all parameters.}
+\item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC samples from the best model, with columns \code{parameter}, \code{value}, and \code{iteration}.}
 }
-The returned object has a custom print method that displays WAIC, Bayesian p-value, and summary of staying time estimates.
-You can access full MCMC samples via \code{$samples}, and analyze convergence using the \code{MCMCvis} package.
 }
 \description{
-Model selection for staying time analysis using WAIC for REST/REST-RAD models based on MCMC samplings with nimble
+Model selection for staying time analysis using WAIC for REST/RAD-REST models based on MCMC samplings with nimble
 }
 \examples{
 stay_data <- format_stay(
@@ -67,15 +66,17 @@ stay_data <- format_stay(
   col_name_stay = "Stay",
   col_name_cens = "Cens"
 )
-bayes_stay_selection(formula_stay = Stay ~ 1 + x1,
-                    stay_data = stay_data,
-                    col_name_cens = "Cens",
-                    family = "lognormal",
-                    cores = 2,
-                    iter = 5000,
-                    warmup = 1000,
-                    chains = 2,
-                    thin = 4,
-                    all_comb = FALSE,
-                    target_species = "SP01")
+bayes_stay_selection(
+  formula_stay   = Stay ~ 1 + x1,
+  stay_data      = stay_data,
+  col_name_cens  = "Cens",
+  stay_family    = "lognormal",
+  cores          = 2,
+  iter           = 5000,
+  warmup         = 1000,
+  chains         = 2,
+  thin           = 4,
+  all_comb       = FALSE,
+  target_species = "SP01"
+)
 }

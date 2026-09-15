@@ -8,7 +8,7 @@ select_videos(
   detection_data,
   col_name_species = "Species",
   col_name_station = "Station",
-  col_name_datetime = "DateTimeCorrected",
+  col_name_datetime = "DateTime",
   N_sampled,
   Indep_criteria = 30,
   seed = NULL,
@@ -16,64 +16,59 @@ select_videos(
 )
 }
 \arguments{
-\item{detection_data}{A data frame containing video information. Must include columns for:
-\itemize{
-\item Camera station ID
-\item Capture datetime (Character or POSIXct; handles Excel-formatted strings)
-\item Species name
-}}
+\item{detection_data}{A data frame containing video detection records.}
 
-\item{col_name_species}{String. The column name for species. Default is "Species".}
+\item{col_name_species}{A single character string. Column name for species.
+Default is \code{"Species"}.}
 
-\item{col_name_station}{String. The column name for station IDs. Default is "Station".}
+\item{col_name_station}{A single character string. Column name for camera
+station IDs. Default is \code{"Station"}.}
 
-\item{col_name_datetime}{String. The column name for datetime. Default is "DateTimeCorrected".}
+\item{col_name_datetime}{A single character string. Column name for
+detection datetimes. Accepts character or \code{POSIXct} values; common
+date-time string formats are supported automatically. Default is
+\code{"DateTime"}.}
 
-\item{N_sampled}{Integer. The total number of videos to be selected.}
+\item{N_sampled}{A positive integer. Total number of videos to select.}
 
-\item{Indep_criteria}{Numeric. The time interval (in minutes) to define independent detections. Default is 30 minutes.}
+\item{Indep_criteria}{A non-negative number. Minimum time interval (in
+minutes) between two detections of the same species at the same station
+for them to be considered independent. Default is \code{30}.}
 
-\item{seed}{Integer. Optional random seed for reproducibility. Default is NULL.}
+\item{seed}{An integer for reproducibility, or \code{NULL} (default).}
 
-\item{target_species}{Character. A specific species to filter for. If NULL, all species are processed.}
+\item{target_species}{A character string specifying a single species to
+select. If \code{NULL} (default), all species are processed together.}
 }
 \value{
-A data frame containing the selected videos.
-If the available independent data is less than \code{N_sampled}, all available data is returned.
-Returns NULL if no valid data is found.
+A data frame of selected video records. If fewer independent
+detections than \code{N_sampled} are available, all independent detections
+are returned with a warning. Returns \code{NULL} if no valid data remain
+after filtering.
 }
 \description{
-This function selects \code{N_sampled} videos from a detection dataset. It filters for
-independent events based on a time interval and ensures that the selection is
-as evenly distributed across camera stations as possible.
+Selects \code{N_sampled} videos from a detection dataset. Detections are
+first filtered for independence (one per station per species per
+\code{Indep_criteria}-minute window), and the remaining videos are then
+sampled as evenly as possible across all stations.
 }
 \details{
-\strong{1. Date Parsing:}
-Uses \code{lubridate::parse_date_time} to handle various date formats, including cases
-where Excel strips the time component from "00:00:00" entries (leaving only "YYYY-MM-DD").
-
-\strong{2. Independence Criteria:}
-Detections at the same station are considered independent if they occur at least
-\code{Indep_criteria} minutes after the previous detection.
-
-\strong{3. Sampling Strategy:}
-To prevent bias towards stations with high activity:
-\enumerate{
-\item Assigns a random priority rank (1st, 2nd, 3rd...) to videos \emph{within} each station.
-\item Collects all "1st choice" videos from all stations.
-\item Then collects all "2nd choice" videos, and so on.
-\item Slices the top \code{N_sampled} records from this interleaved list.
-}
+The sampling strategy prevents bias towards highly active stations by
+interleaving videos across stations: all "1st-choice" videos from every
+station are collected first, then "2nd-choice" videos, and so on. The
+first \code{N_sampled} rows of this interleaved list are returned.
 }
 \examples{
 \dontrun{
-# Example usage:
-selected_df <- select_videos(
-  detection_data = my_camera_data,
-  N_sampled = 100,
-  Indep_criteria = 30,
-  target_species = "Cervus nippon",
-  seed = 123
+selected <- select_videos(
+  detection_data  = detection_data,
+  col_name_species  = "Species",
+  col_name_station  = "Station",
+  col_name_datetime = "DateTime",
+  N_sampled       = 100,
+  Indep_criteria  = 30,
+  target_species  = "SP01",
+  seed            = 42
 )
 }
 }

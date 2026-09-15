@@ -2,7 +2,7 @@
 % Please edit documentation in R/format_stay.R
 \name{format_stay}
 \alias{format_stay}
-\title{Prepares data for analyzing animal staying time within the focal area}
+\title{Prepare data for analyzing animal staying time within the focal area}
 \usage{
 format_stay(
   detection_data,
@@ -14,21 +14,31 @@ format_stay(
 )
 }
 \arguments{
-\item{detection_data}{A data frame containing information for individual videos.}
+\item{detection_data}{A data frame containing individual detection records with
+at least a station ID column, a species name column, a staying time column, and
+a censoring indicator column.}
 
-\item{station_data}{A data frame containing information for each camera station.}
+\item{station_data}{A data frame with one row per camera station, containing
+station-level covariates to be joined to the detection records.}
 
-\item{col_name_station}{String. Column name for station ID.}
+\item{col_name_station}{String. Column name for station ID (must be present in
+both \code{detection_data} and \code{station_data}). Default is \code{"Station"}.}
 
-\item{col_name_species}{String. Column name for species names.}
+\item{col_name_species}{String. Column name for species names in
+\code{detection_data}. Default is \code{"Species"}.}
 
-\item{col_name_stay}{String. Column name for staying time (numeric).}
+\item{col_name_stay}{String. Column name for staying time (numeric, must be > 0).
+Default is \code{"Stay"}.}
 
-\item{col_name_cens}{String. Column name for censoring indicator (0 or 1).}
+\item{col_name_cens}{String. Column name for the censoring indicator (0 = observed,
+1 = right-censored). Default is \code{"Cens"}.}
 }
 \value{
-A joined data frame (tibble).
+A joined data frame (tibble) with standardised column names
+(\code{Station}, \code{Species}, \code{Stay}, \code{Cens}) plus any additional
+columns from \code{station_data}, sorted by \code{Species} and \code{Station}.
 }
 \description{
-Prepares data for analyzing animal staying time within the focal area
+Joins detection records with station metadata and validates staying time data
+for use with \code{bayes_rest} and \code{bayes_stay_selection}.
 }

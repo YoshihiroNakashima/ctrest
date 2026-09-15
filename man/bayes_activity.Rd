@@ -2,7 +2,7 @@
 % Please edit documentation in R/bayes_activity.R
 \name{bayes_activity}
 \alias{bayes_activity}
-\title{Activity level estimation by von Mises mixture distribution using stick-breaking prior}
+\title{Activity level estimation using a von Mises mixture distribution with a stick-breaking prior}
 \usage{
 bayes_activity(
   activity_data,
@@ -16,47 +16,73 @@ bayes_activity(
 )
 }
 \arguments{
-\item{activity_data}{A data frame containing a "time" column, representing detection times transformed into radians. Typically, this is the output of the format_activity function.}
+\item{activity_data}{A data frame containing a \code{time} column (detection times
+in radians, 0–2π) and a \code{Species} column. Typically the output of
+\code{format_activity}.}
 
-\item{C}{The maximum number of components in the von Mises mixture distribution. Defaults to 10.}
+\item{C}{The maximum number of von Mises components. Default is 10. Must be >= 2.}
 
-\item{cores}{The number of CPU cores to use for parallel computation. Default is 3.}
+\item{cores}{An integer specifying the number of CPU cores (currently unused; the
+number of parallel workers equals \code{chains}). Default is 3.}
 
-\item{iter}{The total number of MCMC iterations per chain. Default is 5000}
+\item{iter}{An integer specifying the total number of MCMC iterations per chain.
+Default is 5000.}
 
-\item{warmup}{The number of warm-up (burn-in) iterations per chain. Default is 1000.}
+\item{warmup}{An integer specifying the number of warm-up (burn-in) iterations per
+chain. Default is 1000.}
 
-\item{chains}{The number of MCMC chains. Default is 2.}
+\item{chains}{An integer specifying the number of MCMC chains. Default is 3.}
 
-\item{thin}{The thinning interval for MCMC sampling. Default is 4 (no thinning).}
+\item{thin}{An integer specifying the thinning interval. Default is 2.}
 
-\item{target_species}{The species name of interest.  Only one species can be specified.}
+\item{target_species}{A single character string specifying the species to analyse.}
 }
 \value{
-A list containing:
+A list of class \code{"ResultActivity"} with the following components:
 \describe{
-\item{summary_result}{A data frame summarizing the estimated activity proportion.}
-\item{plot}{A ggplot2 object showing the temporal variation in activity level.}
+\item{\code{summary_result}}{A data frame with the posterior summary of
+\code{activity_proportion} (mean, sd, lower, median, upper, Rhat, n.eff, cv).}
+\item{\code{activity_curve}}{A data frame with the posterior summary of the
+activity density function at each time point (columns: variable, mean, sd,
+lower, median, upper, Rhat, n.eff, x), aligned with the output of
+\code{bayes_rest} when \code{activity_estimation = "mixture"}.}
+\item{\code{WAIC}}{WAIC for the fitted mixture model.}
+\item{\code{Bayesian_p_value}}{Bayesian p-value (proportion of posterior draws
+where replicated deviance exceeds observed deviance).}
+\item{\code{samples}}{A \code{coda::mcmc.list} of the main monitored parameters
+(\code{activity_proportion}, \code{activity_density}).}
+\item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC
+samples, with columns \code{parameter}, \code{value}, and \code{iteration}.}
+\item{\code{act_data}}{Numeric vector of raw detection times (radians) for the
+target species. Used by \code{printResultActivity} to generate plots.}
+\item{\code{target_species}}{Character string of the analysed species name.}
 }
+Use \code{printResultActivity} to display a summary and activity curve plot.
 }
 \description{
-Activity level estimation by von Mises mixture distribution using stick-breaking prior
+Estimates the proportion of time an animal is active via Bayesian MCMC using a
+nonparametric von Mises mixture model (Nakashima et al. 2025). This is a standalone
+version of the activity estimation that is also embedded within \code{bayes_rest}
+when \code{activity_estimation = "mixture"}.
 }
 \examples{
+\dontrun{
 activity_data <- format_activity(
-  detection_data = detection_data,
-  col_name_station = "Station",
-  col_name_species = "Species",
+  detection_data    = detection_data,
+  col_name_station  = "Station",
+  col_name_species  = "Species",
   col_name_datetime = "DateTime",
-  indep_time = 30
+  indep_time        = 30
 )
-bayes_activity(
-  activity_data = activity_data,
-  C = 10,
-  cores = 1,
-  iter = 5000,
-  warmup = 1000,
-  chains = 1,
-  thin = 4,
-  target_species = "SP01")
+result <- bayes_activity(
+  activity_data  = activity_data,
+  C              = 10,
+  iter           = 5000,
+  warmup         = 1000,
+  chains         = 3,
+  thin           = 2,
+  target_species = "SP01"
+)
+printResultActivity(result)
+}
 }

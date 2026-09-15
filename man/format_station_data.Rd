@@ -2,7 +2,7 @@
 % Please edit documentation in R/format_station_data.R
 \name{format_station_data}
 \alias{format_station_data}
-\title{Aggregate the number of animal passes within focal areas for each station from detection data.}
+\title{Aggregate the number of animal passes within focal areas for each station}
 \usage{
 format_station_data(
   detection_data,
@@ -14,21 +14,34 @@ format_station_data(
 )
 }
 \arguments{
-\item{detection_data}{A data frame containing information for individual videos.}
+\item{detection_data}{A data frame containing individual detection records.}
 
-\item{station_data}{A data frame containing information for each camera station.}
+\item{station_data}{A data frame with one row per camera station containing
+station-level covariates. Must have a station ID column matching
+\code{col_name_station}.}
 
-\item{col_name_station}{A string specifying the column name containing station ID information.}
+\item{col_name_station}{A string specifying the column name for station IDs
+(must be present in both data frames).}
 
-\item{col_name_species}{A string specifying the column name containing detected species names.}
+\item{col_name_species}{A string specifying the column name for species names
+in \code{detection_data}.}
 
-\item{col_name_y}{A string specifying the column name containing the number of animal passes.}
+\item{col_name_y}{A string specifying the column name for the number of animal
+passes per video in \code{detection_data}. Values must be non-negative. For
+RAD-REST, values must be non-negative integers.}
 
-\item{model}{A string specifying the model type, either "REST" or "RAD-REST".}
+\item{model}{A string specifying the model type: \code{"REST"} or
+\code{"RAD-REST"}.}
 }
 \value{
-A data frame with aggregated detection counts joined with station data.
+A data frame with aggregated detection counts joined with station
+metadata, sorted by \code{Species} and \code{Station}. For \code{"REST"},
+contains a column \code{Y} (total passes per station-species pair). For
+\code{"RAD-REST"}, contains \code{N} (total detections) and columns
+\code{y_0}, \code{y_1}, ... (counts per pass category).
 }
 \description{
-Aggregate the number of animal passes within focal areas for each station from detection data.
+Summarises per-video pass counts from detection records into station-level
+totals (REST) or pass-category distributions (RAD-REST) and joins with
+station metadata.
 }
