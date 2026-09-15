@@ -15,6 +15,8 @@
 #'
 #' @return Invisibly returns \code{x}.
 #' @export
+#' @importFrom ggplot2 geom_ribbon geom_line geom_rug scale_x_continuous theme_bw
+#' @importFrom stats bw.SJ density
 printResultActivity <- function(x, plot = TRUE, bw_adj = 1.0, ...) {
   if (!inherits(x, "ResultActivity"))
     stop("'x' must be a ResultActivity object returned by bayes_activity().", call. = FALSE)
@@ -65,16 +67,17 @@ printResultActivity <- function(x, plot = TRUE, bw_adj = 1.0, ...) {
     curve_df <- x$activity_curve
     act_vec  <- x$act_data
 
-    # Kernel density via activity package for comparison
+    # Wrapped circular kernel density estimate (base R; avoids actmod slot structure)
     kd_df <- tryCatch({
-      bw_base <- activity::bwcalc(act_vec)
-      kd      <- activity::fitact(act_vec, bw = bw_base * bw_adj, adj = 1)
-      kd_mat  <- kd@pdf
-      if (is.matrix(kd_mat) && all(c("x", "y") %in% colnames(kd_mat))) {
-        data.frame(x = kd_mat[, "x"], pdf = kd_mat[, "y"])
-      } else {
-        NULL
-      }
+      bw_val <- stats::bw.SJ(act_vec) * bw_adj
+      dens   <- stats::density(
+        c(act_vec - 2 * pi, act_vec, act_vec + 2 * pi),
+        bw   = bw_val,
+        from = 0,
+        to   = 2 * pi,
+        n    = 512
+      )
+      data.frame(x = dens$x, pdf = dens$y * 3)
     }, error = function(e) NULL)
 
     if (is.null(kd_df))
@@ -107,7 +110,7 @@ printResultActivity <- function(x, plot = TRUE, bw_adj = 1.0, ...) {
       ggplot2::ylab("Activity density") +
       ggplot2::ggtitle(
         sprintf("Activity curve: %s", species_label),
-        subtitle = "Posterior mean (blue) \u00b1 95% CI (shaded); kernel density (dashed)"
+        subtitle = "Posterior mean (blue) \u00b1 95% CI (shaded); circular KDE (dashed)"
       ) +
       ggplot2::theme_bw()
 

@@ -263,12 +263,29 @@ bayes_rest <- function(formula_stay,
     nLevels_stay  <- 0
   }
 
+  bit.test <- function(number, n) {
+    (number %/% (2^n)) %% 2
+  }
+
+  full_terms <- function(x) {
+    lapply(1:2^length(x), function(i) {
+      r <- ""
+      for (j in 1:length(x)) {
+        r <- paste(r,
+                   ifelse(bit.test((i - 1), (j - 1)),
+                          paste(x[j], " + ", sep = ""), ""),
+                   sep = "")
+      }
+      r <- paste("~ 1 + ", r, "1", sep = "")
+      strsplit(r, " \\+ 1$")[[1]][1]
+    })
+  }
+
   predictors_density <- all.vars(formula_density)
 
   formula_density_all <- list()
   if (all_comb == TRUE) {
-    # full_terms is assumed to be an externally defined custom function
-    formula_density_all <- .full_terms(c(predictors_density))
+    formula_density_all <- full_terms(c(predictors_density))
   } else {
     formula_density_all[[1]] <- formula_density
   }
