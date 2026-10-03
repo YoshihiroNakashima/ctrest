@@ -55,12 +55,39 @@ print.ResultDensity <- function(x, ...) {
   .section("Convergence")
   .check_convergence(x$summary_result)
 
+  # --- Station-level density -------------------------------------------------
+
+  if (!is.null(x$summary_station) && nrow(x$summary_station) > 0) {
+    .section("Station-level density  [density * exp(camera RE)]")
+    ss <- x$summary_station
+    if (nrow(ss) > max_rows) {
+      print(utils::head(ss, max_rows), row.names = FALSE)
+      cat(sprintf("  ... [%d more row(s)]. Full table: '$summary_station'.\n",
+                  nrow(ss) - max_rows))
+    } else {
+      print(ss, row.names = FALSE)
+    }
+  }
+
+  # --- Transect-level density ------------------------------------------------
+
+  if (!is.null(x$summary_transect) && nrow(x$summary_transect) > 0) {
+    .section("Transect-level density  [density * exp(transect RE)]")
+    print(x$summary_transect, row.names = FALSE)
+  }
+
   # --- Notes -----------------------------------------------------------------
 
   cat("\nNote: Full MCMC samples : $samples\n")
   cat("      Long-format samples: $tidy_samples\n")
   if (!is.null(x$activity_curve)) {
     cat("      Activity curve     : $activity_curve\n")
+  }
+  if (!is.null(x$summary_station)) {
+    cat("      Station densities  : $summary_station\n")
+  }
+  if (!is.null(x$summary_transect)) {
+    cat("      Transect densities : $summary_transect\n")
   }
   cat("      Trace plots        : MCMCvis::MCMCtrace(x$samples)\n")
   cat("\n")

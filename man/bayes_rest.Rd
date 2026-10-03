@@ -11,6 +11,7 @@ bayes_rest(
   station_effort_data,
   stay_data,
   random_effect_stay = NULL,
+  random_effect_density = NULL,
   activity_data,
   activity_estimation = "kernel",
   C = 10,
@@ -62,6 +63,8 @@ bayes_rest(
 }}
 
 \item{random_effect_stay}{A character string specifying the column name in \code{stay_data} to use as a grouping factor for a station-level random intercept on staying time (e.g., \code{"Station"}). Default is \code{NULL} (no random effects).}
+
+\item{random_effect_density}{A character string specifying the column name in \code{station_effort_data} to use as a grouping factor for a transect-level random intercept on density (e.g., \code{"Transect"}). A camera-level random intercept is always included. This argument adds an additional transect-level random intercept for cases where multiple cameras are deployed along the same transect. Default is \code{NULL} (camera-level random effect only).}
 
 \item{activity_data}{A data frame containing a \code{time} column, representing detection times transformed into radians. Typically, this is the output of the \code{format_activity} function.}
 

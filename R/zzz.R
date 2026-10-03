@@ -9,8 +9,16 @@ utils::globalVariables(c(
   "beta_dens", "beta_density", "beta_stay",
   "censored", "group_stay", "loglact",
   "n.eff", "pred_t", "pred_y", "random_effect_stay",
-  "size", "species_effect_density", "species_effect_stay",
+  "camera_effect_density", "transect_effect_density",
+  "sigma_camera_density", "sigma_transect_density",
+  "species_effect_density", "species_effect_stay",
   "theta_stay", "y_rep",
+  # bayes_rest_ssm node names
+  "log_rho", "rho", "rw_mean",
+  "mu_stay", "sigma_stay", "log_mean_stay", "mean_stay",
+  "sigma_proc", "sigma_space",
+  "log_lambda", "loglike", "loglike_stay",
+  "c_time_stay", "censored_stay", "step_rw", "log_p_actv",
   # dplyr / rlang pronouns used inside mutate/filter
   ".parsed_dt", ".diff_min", ".indep", ".pick_order"
 ))

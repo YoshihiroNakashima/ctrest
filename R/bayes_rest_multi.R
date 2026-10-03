@@ -29,6 +29,7 @@
 #'     \item \code{Cens} (binary): Indicator for censored staying time (1 = censored, 0 = observed).
 #'   }
 #' @param random_effect_stay A character string specifying the column name in \code{stay_data} to use as a grouping factor for a station-level random intercept on staying time (e.g., \code{"Station"}). Default is \code{NULL}. Note: species-level random effects are automatically included in this multispecies model.
+#' @param random_effect_density A character string specifying the column name in \code{station_effort_data} to use as a grouping factor for a transect-level random intercept on density (e.g., \code{"Transect"}). A camera-level random intercept (per camera × species) is always included. This argument adds an additional transect-level random intercept for cases where multiple cameras are deployed along the same transect. Default is \code{NULL} (camera-level random effects only).
 #' @param activity_data A data frame containing a \code{time} column, representing detection times transformed into radians. Typically, this is the output of the \code{format_activity} function.
 #' @param activity_estimation A character string specifying the method used to estimate activity patterns. Choose \code{"kernel"} for fixed kernel density estimation (Rowcliffe et al. 2014), or \code{"mixture"} for nonparametric Bayesian estimation using von Mises mixture models (Nakashima et al. 2025). Default is \code{"kernel"}.
 #' @param bw_adj A numeric bandwidth adjustment parameter for kernel density estimation. Default is 1.0. See Rowcliffe et al. (2014) for details.
@@ -46,6 +47,8 @@
 #' \describe{
 #'   \item{\code{WAIC}}{A numeric WAIC value for the fitted model.}
 #'   \item{\code{summary_result}}{A data frame summarizing posterior estimates (mean, sd, lower, median, upper, Rhat, n.eff, cv) for density (individuals per km^2), mean_stay (seconds), and (for RAD-REST) mean_pass across species and stations.}
+#'   \item{\code{summary_station}}{A data frame of station-level posterior density summaries (mean, sd, lower, median, upper), computed as \code{density[i,m] * exp(camera_effect_density[i,m])}. One row per station per species.}
+#'   \item{\code{summary_transect}}{A data frame of transect-level posterior density summaries, computed as \code{density[1,m] * exp(transect_effect_density[t,m])}. Returned only when \code{random_effect_density} is specified and \code{formula_density = ~ 1}. One row per transect per species.}
 #'   \item{\code{samples}}{A \code{coda::mcmc.list} object of full MCMC posterior samples.}
 #'   \item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC samples, with columns \code{parameter}, \code{value}, and \code{iteration}.}
 #'   \item{\code{scaling_params}}{A list of centering and scaling parameters used to standardize design matrices.}
@@ -53,7 +56,7 @@
 #'
 #' @export
 #' @import nimble activity parallel MCMCvis tibble
-#' @importFrom stats as.formula formula model.frame model.matrix sd var runif median quantile model.response rexp rnorm step dexp pexp dgamma pgamma dlnorm plnorm dweibull pweibull dnbinom delete.response terms
+#' @importFrom stats as.formula formula model.frame model.matrix sd var runif median quantile model.response rexp rnorm step dexp pexp dgamma pgamma dlnorm plnorm dweibull pweibull dpois delete.response terms
 #' @importFrom dplyr select filter mutate arrange pull bind_rows rename
 #' @importFrom purrr map
 #' @examples
@@ -82,6 +85,7 @@ bayes_rest_multi <- function(formula_stay,
                              station_effort_data,
                              stay_data,
                              random_effect_stay = NULL,
+                             random_effect_density = NULL,
                              activity_data,
                              activity_estimation = "kernel",
                              bw_adj = 1.0,
@@ -372,6 +376,15 @@ bayes_rest_multi <- function(formula_stay,
     nLevels_stay <- 0
   }
 
+  # Random effects for density (transect level)
+  if (!is.null(random_effect_density)) {
+    station_effort_unique <- station_effort_data[!duplicated(station_effort_data$Station), ][1:N_station, ]
+    transect_id_density <- as.numeric(factor(station_effort_unique[[random_effect_density]]))
+    nLevels_density <- length(unique(transect_id_density))
+  } else {
+    nLevels_density <- 0
+  }
+
   # Density design matrix
   model_frame_density <- stats::model.frame(formula_density, station_effort_data)
   X_density_raw       <- stats::model.matrix(stats::as.formula(formula_density), model_frame_density)
@@ -450,12 +463,16 @@ bayes_rest_multi <- function(formula_stay,
       N_period          = N_period,
       nPreds_density    = nPreds_density,
       nPreds_alpha      = nPreds_alpha,
-      nLevels_stay      = nLevels_stay
+      nLevels_stay      = nLevels_stay,
+      nLevels_density   = nLevels_density
     )
     if (activity_estimation == "kernel") cons_density$activity_proportion <- activity_proportion
     if (!is.null(random_effect_stay)) {
       cons_density$group_stay <- as.numeric(factor(stay_data_join[[random_effect_stay]],
                                                     levels = re_levels_stay))
+    }
+    if (!is.null(random_effect_density)) {
+      cons_density$transect_id_density <- transect_id_density
     }
 
   } else {
@@ -490,12 +507,16 @@ bayes_rest_multi <- function(formula_stay,
       S                 = S,
       N_period          = N_period,
       nPreds_density    = nPreds_density,
-      nLevels_stay      = nLevels_stay
+      nLevels_stay      = nLevels_stay,
+      nLevels_density   = nLevels_density
     )
     if (activity_estimation == "kernel") cons_density$activity_proportion <- activity_proportion
     if (!is.null(random_effect_stay)) {
       cons_density$group_stay <- as.numeric(factor(stay_data_join[[random_effect_stay]],
                                                     levels = re_levels_stay))
+    }
+    if (!is.null(random_effect_density)) {
+      cons_density$transect_id_density <- transect_id_density
     }
   }
 
@@ -572,24 +593,40 @@ bayes_rest_multi <- function(formula_stay,
         # N_detection model
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
-            N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
-            p[i, m] <- size[m] / (size[m] + mu[i, m])
-            N_detection_rep[i, m]   ~ dnbinom(size = size[m], prob = p[i, m])
-            loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
-            loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
+            camera_effect_density[i, m] ~ dnorm(0, sd = sigma_camera_density)
+            N_detection_matrix[i, m] ~ dpois(mu[i, m])
+            N_detection_rep[i, m]   ~ dpois(mu[i, m])
+            loglike_obs_detection[i, m]  <- dpois(N_detection_matrix[i, m], mu[i, m], log = 1)
+            loglike_pred_detection[i, m] <- dpois(N_detection_rep[i, m],    mu[i, m], log = 1)
           }
-          size[m] ~ dgamma(1, 1)
+        }
+        sigma_camera_density ~ T(dnorm(0, sd = 1), 0, )
+        if (nLevels_density > 0) {
+          for (m in 1:nSpecies) {
+            for (t in 1:nLevels_density) {
+              transect_effect_density[t, m] ~ dnorm(0, sd = sigma_transect_density)
+            }
+          }
+          sigma_transect_density ~ T(dnorm(0, sd = 1), 0, )
         }
         # Density and REST formula
         if (nPreds_density == 1) {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         } else {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         }
         for (j in 1:nPreds_density) {
@@ -666,23 +703,39 @@ bayes_rest_multi <- function(formula_stay,
         }
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
-            N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
-            p[i, m] <- size[m] / (size[m] + mu[i, m])
-            N_detection_rep[i, m]   ~ dnbinom(size = size[m], prob = p[i, m])
-            loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
-            loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
+            camera_effect_density[i, m] ~ dnorm(0, sd = sigma_camera_density)
+            N_detection_matrix[i, m] ~ dpois(mu[i, m])
+            N_detection_rep[i, m]   ~ dpois(mu[i, m])
+            loglike_obs_detection[i, m]  <- dpois(N_detection_matrix[i, m], mu[i, m], log = 1)
+            loglike_pred_detection[i, m] <- dpois(N_detection_rep[i, m],    mu[i, m], log = 1)
           }
-          size[m] ~ dgamma(1, 1)
+        }
+        sigma_camera_density ~ T(dnorm(0, sd = 1), 0, )
+        if (nLevels_density > 0) {
+          for (m in 1:nSpecies) {
+            for (t in 1:nLevels_density) {
+              transect_effect_density[t, m] ~ dnorm(0, sd = sigma_transect_density)
+            }
+          }
+          sigma_transect_density ~ T(dnorm(0, sd = 1), 0, )
         }
         if (nPreds_density == 1) {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         } else {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         }
         for (j in 1:nPreds_density) {
@@ -767,23 +820,39 @@ bayes_rest_multi <- function(formula_stay,
         }
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
-            N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
-            p[i, m] <- size[m] / (size[m] + mu[i, m])
-            N_detection_rep[i, m]   ~ dnbinom(size = size[m], prob = p[i, m])
-            loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
-            loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
+            camera_effect_density[i, m] ~ dnorm(0, sd = sigma_camera_density)
+            N_detection_matrix[i, m] ~ dpois(mu[i, m])
+            N_detection_rep[i, m]   ~ dpois(mu[i, m])
+            loglike_obs_detection[i, m]  <- dpois(N_detection_matrix[i, m], mu[i, m], log = 1)
+            loglike_pred_detection[i, m] <- dpois(N_detection_rep[i, m],    mu[i, m], log = 1)
           }
-          size[m] ~ dgamma(1, 1)
+        }
+        sigma_camera_density ~ T(dnorm(0, sd = 1), 0, )
+        if (nLevels_density > 0) {
+          for (m in 1:nSpecies) {
+            for (t in 1:nLevels_density) {
+              transect_effect_density[t, m] ~ dnorm(0, sd = sigma_transect_density)
+            }
+          }
+          sigma_transect_density ~ T(dnorm(0, sd = 1), 0, )
         }
         if (nPreds_density == 1) {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         } else {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         }
         for (j in 1:nPreds_density) {
@@ -867,23 +936,39 @@ bayes_rest_multi <- function(formula_stay,
         }
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
-            N_detection_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
-            p[i, m] <- size[m] / (size[m] + mu[i, m])
-            N_detection_rep[i, m]   ~ dnbinom(size = size[m], prob = p[i, m])
-            loglike_obs_detection[i, m]  <- dnbinom(N_detection_matrix[i, m], size[m], p[i, m], log = 1)
-            loglike_pred_detection[i, m] <- dnbinom(N_detection_rep[i, m],    size[m], p[i, m], log = 1)
+            camera_effect_density[i, m] ~ dnorm(0, sd = sigma_camera_density)
+            N_detection_matrix[i, m] ~ dpois(mu[i, m])
+            N_detection_rep[i, m]   ~ dpois(mu[i, m])
+            loglike_obs_detection[i, m]  <- dpois(N_detection_matrix[i, m], mu[i, m], log = 1)
+            loglike_pred_detection[i, m] <- dpois(N_detection_rep[i, m],    mu[i, m], log = 1)
           }
-          size[m] ~ dgamma(1, 1)
+        }
+        sigma_camera_density ~ T(dnorm(0, sd = 1), 0, )
+        if (nLevels_density > 0) {
+          for (m in 1:nSpecies) {
+            for (t in 1:nLevels_density) {
+              transect_effect_density[t, m] ~ dnorm(0, sd = sigma_transect_density)
+            }
+          }
+          sigma_transect_density ~ T(dnorm(0, sd = 1), 0, )
         }
         if (nPreds_density == 1) {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         } else {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) - log(mean_pass[i, m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         }
         for (j in 1:nPreds_density) {
@@ -932,24 +1017,40 @@ bayes_rest_multi <- function(formula_stay,
         # [2] REST detection model (Y_matrix = total passes)
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
-            Y_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
-            p[i, m] <- size[m] / (size[m] + mu[i, m])
-            Y_rep[i, m]    ~ dnbinom(size = size[m], prob = p[i, m])
-            loglike_obs_y[i, m]  <- dnbinom(Y_matrix[i, m], size[m], p[i, m], log = 1)
-            loglike_pred_y[i, m] <- dnbinom(Y_rep[i, m],    size[m], p[i, m], log = 1)
+            camera_effect_density[i, m] ~ dnorm(0, sd = sigma_camera_density)
+            Y_matrix[i, m] ~ dpois(mu[i, m])
+            Y_rep[i, m]    ~ dpois(mu[i, m])
+            loglike_obs_y[i, m]  <- dpois(Y_matrix[i, m], mu[i, m], log = 1)
+            loglike_pred_y[i, m] <- dpois(Y_rep[i, m],    mu[i, m], log = 1)
           }
-          size[m] ~ dgamma(1, 1)
+        }
+        sigma_camera_density ~ T(dnorm(0, sd = 1), 0, )
+        if (nLevels_density > 0) {
+          for (m in 1:nSpecies) {
+            for (t in 1:nLevels_density) {
+              transect_effect_density[t, m] ~ dnorm(0, sd = sigma_transect_density)
+            }
+          }
+          sigma_transect_density ~ T(dnorm(0, sd = 1), 0, )
         }
         # REST formula (no mean_pass term)
         if (nPreds_density == 1) {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         } else {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         }
         for (j in 1:nPreds_density) {
@@ -994,23 +1095,39 @@ bayes_rest_multi <- function(formula_stay,
         }
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
-            Y_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
-            p[i, m] <- size[m] / (size[m] + mu[i, m])
-            Y_rep[i, m]    ~ dnbinom(size = size[m], prob = p[i, m])
-            loglike_obs_y[i, m]  <- dnbinom(Y_matrix[i, m], size[m], p[i, m], log = 1)
-            loglike_pred_y[i, m] <- dnbinom(Y_rep[i, m],    size[m], p[i, m], log = 1)
+            camera_effect_density[i, m] ~ dnorm(0, sd = sigma_camera_density)
+            Y_matrix[i, m] ~ dpois(mu[i, m])
+            Y_rep[i, m]    ~ dpois(mu[i, m])
+            loglike_obs_y[i, m]  <- dpois(Y_matrix[i, m], mu[i, m], log = 1)
+            loglike_pred_y[i, m] <- dpois(Y_rep[i, m],    mu[i, m], log = 1)
           }
-          size[m] ~ dgamma(1, 1)
+        }
+        sigma_camera_density ~ T(dnorm(0, sd = 1), 0, )
+        if (nLevels_density > 0) {
+          for (m in 1:nSpecies) {
+            for (t in 1:nLevels_density) {
+              transect_effect_density[t, m] ~ dnorm(0, sd = sigma_transect_density)
+            }
+          }
+          sigma_transect_density ~ T(dnorm(0, sd = 1), 0, )
         }
         if (nPreds_density == 1) {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         } else {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         }
         for (j in 1:nPreds_density) {
@@ -1056,23 +1173,39 @@ bayes_rest_multi <- function(formula_stay,
         }
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
-            Y_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
-            p[i, m] <- size[m] / (size[m] + mu[i, m])
-            Y_rep[i, m]    ~ dnbinom(size = size[m], prob = p[i, m])
-            loglike_obs_y[i, m]  <- dnbinom(Y_matrix[i, m], size[m], p[i, m], log = 1)
-            loglike_pred_y[i, m] <- dnbinom(Y_rep[i, m],    size[m], p[i, m], log = 1)
+            camera_effect_density[i, m] ~ dnorm(0, sd = sigma_camera_density)
+            Y_matrix[i, m] ~ dpois(mu[i, m])
+            Y_rep[i, m]    ~ dpois(mu[i, m])
+            loglike_obs_y[i, m]  <- dpois(Y_matrix[i, m], mu[i, m], log = 1)
+            loglike_pred_y[i, m] <- dpois(Y_rep[i, m],    mu[i, m], log = 1)
           }
-          size[m] ~ dgamma(1, 1)
+        }
+        sigma_camera_density ~ T(dnorm(0, sd = 1), 0, )
+        if (nLevels_density > 0) {
+          for (m in 1:nSpecies) {
+            for (t in 1:nLevels_density) {
+              transect_effect_density[t, m] ~ dnorm(0, sd = sigma_transect_density)
+            }
+          }
+          sigma_transect_density ~ T(dnorm(0, sd = 1), 0, )
         }
         if (nPreds_density == 1) {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         } else {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         }
         for (j in 1:nPreds_density) {
@@ -1117,23 +1250,39 @@ bayes_rest_multi <- function(formula_stay,
         }
         for (m in 1:nSpecies) {
           for (i in 1:N_station) {
-            Y_matrix[i, m] ~ dnbinom(size = size[m], prob = p[i, m])
-            p[i, m] <- size[m] / (size[m] + mu[i, m])
-            Y_rep[i, m]    ~ dnbinom(size = size[m], prob = p[i, m])
-            loglike_obs_y[i, m]  <- dnbinom(Y_matrix[i, m], size[m], p[i, m], log = 1)
-            loglike_pred_y[i, m] <- dnbinom(Y_rep[i, m],    size[m], p[i, m], log = 1)
+            camera_effect_density[i, m] ~ dnorm(0, sd = sigma_camera_density)
+            Y_matrix[i, m] ~ dpois(mu[i, m])
+            Y_rep[i, m]    ~ dpois(mu[i, m])
+            loglike_obs_y[i, m]  <- dpois(Y_matrix[i, m], mu[i, m], log = 1)
+            loglike_pred_y[i, m] <- dpois(Y_rep[i, m],    mu[i, m], log = 1)
           }
-          size[m] ~ dgamma(1, 1)
+        }
+        sigma_camera_density ~ T(dnorm(0, sd = 1), 0, )
+        if (nLevels_density > 0) {
+          for (m in 1:nSpecies) {
+            for (t in 1:nLevels_density) {
+              transect_effect_density[t, m] ~ dnorm(0, sd = sigma_transect_density)
+            }
+          }
+          sigma_transect_density ~ T(dnorm(0, sd = 1), 0, )
         }
         if (nPreds_density == 1) {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- beta_density[1] + species_effect_density[m, 1]
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         } else {
           for (m in 1:nSpecies) { for (i in 1:N_station) {
             log(density[i, m]) <- inprod(beta_density[1:nPreds_density] + species_effect_density[m, 1:nPreds_density], X_density[i, 1:nPreds_density])
-            log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m])
+            if (nLevels_density == 0) {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m]
+            } else {
+              log(mu[i, m]) <- log(density[i, m]) + log(S) + log(N_period[i]) - log(mean_stay[i, m]) + log(activity_proportion[m]) + camera_effect_density[i, m] + transect_effect_density[transect_id_density[i], m]
+            }
           } }
         }
         for (j in 1:nPreds_density) {
@@ -1171,7 +1320,9 @@ bayes_rest_multi <- function(formula_stay,
       species_effect_density = matrix(stats::rnorm(nSpecies * nPreds_density, 0, 0.5),
                                       nrow = nSpecies, ncol = nPreds_density),
       sd_species_density     = stats::runif(nPreds_density, 0.01, 2),
-      size = stats::rgamma(nSpecies, shape = 1, rate = 1)
+      camera_effect_density  = matrix(stats::rnorm(N_station * nSpecies, 0, 0.1),
+                                      nrow = N_station, ncol = nSpecies),
+      sigma_camera_density   = stats::runif(1, 0.3, 1.0)
     )
 
     if (model == "RAD-REST") {
@@ -1186,6 +1337,12 @@ bayes_rest_multi <- function(formula_stay,
     if (nLevels_stay > 0) {
       common_inits$random_effect_stay <- stats::runif(nLevels_stay, -1, 1)
       common_inits$sigma_stay         <- stats::runif(1, 0.5, 2.5)
+    }
+
+    if (!is.null(random_effect_density)) {
+      common_inits$transect_effect_density <- matrix(stats::rnorm(nLevels_density * nSpecies, 0, 0.1),
+                                                      nrow = nLevels_density, ncol = nSpecies)
+      common_inits$sigma_transect_density  <- stats::runif(1, 0.3, 1.0)
     }
 
     common_inits
@@ -1203,7 +1360,12 @@ bayes_rest_multi <- function(formula_stay,
 
   prms <- c(prms, "density",
             "beta_density", "species_effect_density",
-            "beta_stay", "species_effect_stay")
+            "beta_stay", "species_effect_stay",
+            "camera_effect_density", "sigma_camera_density")
+
+  if (!is.null(random_effect_density)) {
+    prms <- c(prms, "transect_effect_density", "sigma_transect_density")
+  }
 
   if (model == "RAD-REST") {
     prms <- c(prms, "mean_pass", "beta_enter", "species_effect_alpha")
@@ -1463,6 +1625,72 @@ bayes_rest_multi <- function(formula_stay,
     dplyr::mutate(cv = abs(sd / mean)) %>%
     dplyr::select(Species, Station, Variable, mean, sd, lower, median, upper, Rhat, n.eff, cv)
 
+  # --- Station-level and transect-level density summaries (multi-species) ------
+  {
+    ts <- tidy_samples
+
+    cam_rows <- ts[grepl("^camera_effect_density\\[\\d+,\\s*\\d+\\]$", ts$parameter), ]
+    cam_ij   <- regmatches(cam_rows$parameter, regexpr("\\d+,\\s*\\d+", cam_rows$parameter))
+    cam_rows$i <- as.integer(sub(",.*",    "", cam_ij))
+    cam_rows$m <- as.integer(sub(".*,\\s*", "", cam_ij))
+
+    dens_rows <- ts[grepl("^density\\[\\d+,\\s*\\d+\\]$", ts$parameter), ]
+    dens_ij   <- regmatches(dens_rows$parameter, regexpr("\\d+,\\s*\\d+", dens_rows$parameter))
+    dens_rows$i    <- as.integer(sub(",.*",    "", dens_ij))
+    dens_rows$m    <- as.integer(sub(".*,\\s*", "", dens_ij))
+    dens_rows$dens <- dens_rows$value
+
+    cam_rows <- merge(cam_rows,
+                      dens_rows[, c("iteration", "i", "m", "dens")],
+                      by = c("iteration", "i", "m"))
+    cam_rows$density_station <- cam_rows$dens * exp(cam_rows$value)
+
+    summary_station <- do.call(rbind, lapply(seq_len(nSpecies), function(m_idx) {
+      do.call(rbind, lapply(seq_len(N_station), function(i_idx) {
+        d <- cam_rows$density_station[cam_rows$i == i_idx & cam_rows$m == m_idx]
+        data.frame(
+          Species = target_species[m_idx], Station = unique_stations[i_idx], Variable = "density",
+          mean   = mean(d), sd = stats::sd(d),
+          lower  = stats::quantile(d, 0.025, names = FALSE),
+          median = stats::quantile(d, 0.500, names = FALSE),
+          upper  = stats::quantile(d, 0.975, names = FALSE),
+          stringsAsFactors = FALSE
+        )
+      }))
+    }))
+    rownames(summary_station) <- NULL
+
+    summary_transect <- NULL
+    if (nLevels_density > 0 && is_density_global) {
+      tr_names <- levels(factor(
+        station_effort_data[!duplicated(station_effort_data$Station), ][1:N_station, ][[random_effect_density]]
+      ))
+      tr_rows <- ts[grepl("^transect_effect_density\\[\\d+,\\s*\\d+\\]$", ts$parameter), ]
+      tr_ij   <- regmatches(tr_rows$parameter, regexpr("\\d+,\\s*\\d+", tr_rows$parameter))
+      tr_rows$t <- as.integer(sub(",.*",    "", tr_ij))
+      tr_rows$m <- as.integer(sub(".*,\\s*", "", tr_ij))
+
+      global_dens <- dens_rows[dens_rows$i == 1, c("iteration", "m", "dens")]
+      tr_rows <- merge(tr_rows, global_dens, by = c("iteration", "m"))
+      tr_rows$density_transect <- tr_rows$dens * exp(tr_rows$value)
+
+      summary_transect <- do.call(rbind, lapply(seq_len(nSpecies), function(m_idx) {
+        do.call(rbind, lapply(seq_len(nLevels_density), function(t_idx) {
+          d <- tr_rows$density_transect[tr_rows$t == t_idx & tr_rows$m == m_idx]
+          data.frame(
+            Species = target_species[m_idx], Transect = tr_names[t_idx], Variable = "density",
+            mean   = mean(d), sd = stats::sd(d),
+            lower  = stats::quantile(d, 0.025, names = FALSE),
+            median = stats::quantile(d, 0.500, names = FALSE),
+            upper  = stats::quantile(d, 0.975, names = FALSE),
+            stringsAsFactors = FALSE
+          )
+        }))
+      }))
+      rownames(summary_transect) <- NULL
+    }
+  }
+
   # Scaling params
   names(scaling_stay$center)    <- colnames(X_stay)
   names(scaling_stay$scale)     <- colnames(X_stay)
@@ -1480,14 +1708,16 @@ bayes_rest_multi <- function(formula_stay,
   # Return --------------------------------------------------------------------
 
   density_result <- list(
-    WAIC           = waic,
-    summary_result = summary_mean,
-    samples        = mcmc_samples,
-    tidy_samples   = tidy_samples,
-    scaling_params = scaling_params,
-    target_species = target_species,
-    model          = model,
-    stay_family    = stay_family
+    WAIC             = waic,
+    summary_result   = summary_mean,
+    summary_station  = summary_station,
+    summary_transect = summary_transect,
+    samples          = mcmc_samples,
+    tidy_samples     = tidy_samples,
+    scaling_params   = scaling_params,
+    target_species   = target_species,
+    model            = model,
+    stay_family      = stay_family
   )
   class(density_result) <- "ResultDensity"
 

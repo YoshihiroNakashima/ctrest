@@ -44,8 +44,6 @@ For a guided tour after installation:
 
 ``` r
 library(ctrest)
-vignette("ctrest")
-#> Warning: vignette 'ctrest' not found
 ```
 
 ### System requirements
@@ -161,15 +159,15 @@ station_data_rad <- format_station_data(
 #> 400 record(s) with NA in 'y' were removed before aggregation.
 
 head(station_data_rad)
-#> # A tibble: 6 × 9
-#>   Station Species     N   y_0   y_1   y_2   y_3     x1 x2   
-#>   <chr>   <chr>   <int> <int> <int> <int> <int>  <dbl> <chr>
-#> 1 ST001   SP01        5     1     4     0     0  0.520 C    
-#> 2 ST002   SP01        1     1     0     0     0  0.445 C    
-#> 3 ST003   SP01       11     6     4     1     0 -1.17  A    
-#> 4 ST004   SP01       17     5    12     0     0  0.319 A    
-#> 5 ST005   SP01        4     1     1     1     1  0.332 C    
-#> 6 ST006   SP01        7     2     3     1     1 -2.02  B
+#> # A tibble: 6 × 10
+#>   Station Species     N   y_0   y_1   y_2   y_3     x1 x2    Transect
+#>   <chr>   <chr>   <int> <int> <int> <int> <int>  <dbl> <chr> <chr>   
+#> 1 ST001   SP01        5     1     4     0     0  1.37  B     TR01    
+#> 2 ST002   SP01        1     1     0     0     0 -0.565 A     TR01    
+#> 3 ST003   SP01       11     6     4     1     0  0.363 C     TR01    
+#> 4 ST004   SP01       17     5    12     0     0  0.633 A     TR01    
+#> 5 ST005   SP01        4     1     1     1     1  0.404 B     TR01    
+#> 6 ST006   SP01        7     2     3     1     1 -0.106 B     TR01
 ```
 
 ### Compute camera trapping effort
@@ -218,15 +216,15 @@ stay_data <- format_stay(
 #> 400 record(s) with missing values in 'Stay' or 'Cens' were excluded.
 
 head(stay_data)
-#> # A tibble: 6 × 6
-#>   Station Species  Stay  Cens    x1 x2   
-#>   <chr>   <chr>   <dbl> <int> <dbl> <chr>
-#> 1 ST001   SP01      6.7     0 0.520 C    
-#> 2 ST001   SP01      9.6     0 0.520 C    
-#> 3 ST001   SP01      2.1     0 0.520 C    
-#> 4 ST001   SP01      4.4     0 0.520 C    
-#> 5 ST001   SP01      3.3     0 0.520 C    
-#> 6 ST002   SP01      2.4     0 0.445 C
+#> # A tibble: 6 × 7
+#>   Station Species  Stay  Cens     x1 x2    Transect
+#>   <chr>   <chr>   <dbl> <int>  <dbl> <chr> <chr>   
+#> 1 ST001   SP01      6.7     0  1.37  B     TR01    
+#> 2 ST001   SP01      9.6     0  1.37  B     TR01    
+#> 3 ST001   SP01      2.1     0  1.37  B     TR01    
+#> 4 ST001   SP01      4.4     0  1.37  B     TR01    
+#> 5 ST001   SP01      3.3     0  1.37  B     TR01    
+#> 6 ST002   SP01      2.4     0 -0.565 A     TR01
 ```
 
 The output contains `Station`, `Species`, `Stay` (seconds), `Cens`
@@ -588,7 +586,7 @@ printResultActivity(act_result, plot = FALSE, bw_adj = 1.0)
 #> # A tibble: 1 × 9
 #>   Variable             mean     sd lower median upper  Rhat n.eff     cv
 #>   <chr>               <dbl>  <dbl> <dbl>  <dbl> <dbl> <dbl> <dbl>  <dbl>
-#> 1 activity_proportion 0.383 0.0151 0.355  0.383 0.415  1.01  3142 0.0394
+#> 1 activity_proportion 0.383 0.0154 0.355  0.383 0.415  1.01  3666 0.0402
 #> 
 #> --- Convergence ---
 #>   All 1 monitored parameter(s): Rhat <= 1.1.
@@ -614,7 +612,7 @@ printResultActivity(act_result, plot = TRUE, bw_adj = 1.0)
 #> # A tibble: 1 × 9
 #>   Variable             mean     sd lower median upper  Rhat n.eff     cv
 #>   <chr>               <dbl>  <dbl> <dbl>  <dbl> <dbl> <dbl> <dbl>  <dbl>
-#> 1 activity_proportion 0.383 0.0151 0.355  0.383 0.415  1.01  3142 0.0394
+#> 1 activity_proportion 0.383 0.0154 0.355  0.383 0.415  1.01  3666 0.0402
 #> 
 #> --- Convergence ---
 #>   All 1 monitored parameter(s): Rhat <= 1.1.
@@ -676,21 +674,21 @@ print(result_multi)
 #> Stay family: lognormal
 #> 
 #> --- Model comparison (WAIC) ---
-#>   WAIC: 12313.64
+#>   WAIC: 12110.30
 #> 
 #> --- Posterior estimates ---
 #> # A tibble: 9 × 11
-#>   Species Station Variable    mean     sd lower median  upper  Rhat n.eff     cv
-#>   <chr>   <chr>   <chr>      <dbl>  <dbl> <dbl>  <dbl>  <dbl> <dbl> <dbl>  <dbl>
-#> 1 SP01    All     density[… 10.4   0.937  8.76  10.3   12.3    1.01  1849 0.0901
-#> 2 SP02    All     density[…  6.94  0.648  5.78   6.91   8.37   1.01  1683 0.0934
-#> 3 SP03    All     density[…  3.90  0.458  3.07   3.87   4.87   1     1449 0.117 
-#> 4 SP01    All     mean_sta…  4.01  0.0875 3.84   4.01   4.18   1.02  2057 0.0218
-#> 5 SP02    All     mean_sta…  4.20  0.121  3.97   4.19   4.45   1.02  1834 0.0288
-#> 6 SP03    All     mean_sta…  3.97  0.138  3.71   3.96   4.25   1.01  1880 0.0347
-#> 7 SP01    All     mean_pas…  0.921 0.0345 0.855  0.920  0.989  1     1959 0.0375
-#> 8 SP02    All     mean_pas…  0.922 0.0386 0.845  0.921  0.999  1     2165 0.0419
-#> 9 SP03    All     mean_pas…  0.942 0.0477 0.856  0.939  1.05   1     1040 0.0507
+#>   Species Station Variable     mean     sd lower median upper  Rhat n.eff     cv
+#>   <chr>   <chr>   <chr>       <dbl>  <dbl> <dbl>  <dbl> <dbl> <dbl> <dbl>  <dbl>
+#> 1 SP01    All     density[1]  8.32  0.787  6.86   8.28  9.90   1.04   221 0.0946
+#> 2 SP02    All     density[2]  5.59  0.545  4.62   5.57  6.74   1.02   438 0.0975
+#> 3 SP03    All     density[3]  3.09  0.370  2.43   3.06  3.92   1.01   412 0.120 
+#> 4 SP01    All     mean_stay[… 4.02  0.0862 3.85   4.02  4.19   1     1647 0.0215
+#> 5 SP02    All     mean_stay[… 4.19  0.121  3.98   4.18  4.46   1.04  1650 0.0289
+#> 6 SP03    All     mean_stay[… 3.97  0.132  3.71   3.96  4.24   1.01  1631 0.0333
+#> 7 SP01    All     mean_pass[… 0.922 0.0351 0.851  0.923 0.991  1.01  1052 0.0381
+#> 8 SP02    All     mean_pass[… 0.921 0.0399 0.842  0.921 1.00   1      954 0.0433
+#> 9 SP03    All     mean_pass[… 0.942 0.0506 0.848  0.939 1.05   1.02   546 0.0537
 #> 
 #> --- Convergence ---
 #>   All 9 monitored parameter(s): Rhat <= 1.1.
@@ -778,19 +776,21 @@ wider uncertainty intervals. With large subsamples the two should agree.
 
 Nakashima, Y., Fukasawa, K., & Samejima, H. (2018). Estimating animal
 density without individual recognition using information derivable
-exclusively from camera traps. *Journal of Applied Ecology*, **55**(2),
-900-910. <https://doi.org/10.1111/1365-2664.13059>
+exclusively from camera traps. *Journal of Applied Ecology*, 55(2),
+735-744. <https://doi.org/10.1111/1365-2664.13059>
 
-Nakashima, Y. Yajima, G. & Hongo, S. (2021). Estimating animal density
+Nakashima, Y., Yajima, G., & Hongo, S. (2021). Estimating animal density
 with camera traps: a practitioner’s guide of the REST model. *bioRxiv*.
 <https://doi.org/10.1101/2021.05.18.444583>
 
-Nakashima, Y., Yajima, G. & Matsuoka, R. (2026). Reducing data
+Nakashima, Y., Yajima, G., & Matsuoka, R. (2026). Reducing data
 processing effort in camera trap density estimation: Extending the REST
 model by explicitly modelling animal detection processes. *Methods in
-Ecology and Evolution*. <https://doi.org/10.1111/2041-210x.70248>
+Ecology and Evolution*, 17(3), 850-862.
+<https://doi.org/10.1111/2041-210x.70248>
 
 Rowcliffe, J. M., Kays, R., Kranstauber, B., Carbone, C., & Jansen, P.
 A. (2014). Quantifying levels of animal activity using camera trap data.
-*Methods in Ecology and Evolution*, **5**(11), 1170-1179.
-<https://doi.org/10.1111/2041-210X.12278>
+*Methods in Ecology and Evolution*, 5(11), 1170-1179.
+<https://doi.org/10.1111/2041-210X.12278>  
+  

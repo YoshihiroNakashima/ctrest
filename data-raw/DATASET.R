@@ -146,7 +146,8 @@ detection_data <- do.call("rbind", sp) %>%
 
 station_data <- tibble(Station = station) %>%
   mutate(x1 = rnorm(n(), 0, 1)) %>%
-  mutate(x2 = sample(c("A", "B", "C"), n(), replace = TRUE))
+  mutate(x2 = sample(c("A", "B", "C"), n(), replace = TRUE)) %>%
+  mutate(Transect = paste0("TR", formatC(rep(1:10, each = 10), flag = "0", width = 2)))
 
 
 library(devtools)
