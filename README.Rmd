@@ -146,8 +146,10 @@ head(station_data)
 **station-level summaries** and joins station covariates.
 
 For the REST model it produces a column `Y` (total passes per station).
-For RAD-REST it additionally produces columns `y_0`, `y_1`, `y_2`, ...
-(counts of videos with 0, 1, 2, ... passes observed).
+For RAD-REST it produces `N` (total detections) and columns `y_0`, `y_1`,
+`y_2`, ... (counts of *judged* videos with 0, 1, 2, ... passes). Videos whose
+pass count is `NA` are not judged: they are counted in `N` but not in
+`y_*`, so the sum of `y_*` can be smaller than `N`.
 
 ```{r format-station}
 # REST

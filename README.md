@@ -129,8 +129,10 @@ head(station_data)
 **station-level summaries** and joins station covariates.
 
 For the REST model it produces a column `Y` (total passes per station).
-For RAD-REST it additionally produces columns `y_0`, `y_1`, `y_2`, …
-(counts of videos with 0, 1, 2, … passes observed).
+For RAD-REST it produces `N` (total detections) and columns `y_0`, `y_1`,
+`y_2`, … (counts of *judged* videos with 0, 1, 2, … passes). Videos whose
+pass count is `NA` are not judged: they are counted in `N` but not in
+`y_*`, so the sum of `y_*` can be smaller than `N`.
 
 ``` r
 # REST
@@ -156,7 +158,7 @@ station_data_rad <- format_station_data(
   col_name_y       = "y",
   model            = "RAD-REST"
 )
-#> 400 record(s) with NA in 'y' were removed before aggregation.
+#> 400 of 7300 record(s) have NA in 'y' (not judged): counted in N but excluded from y_0, y_1, ...
 
 head(station_data_rad)
 #> # A tibble: 6 × 10

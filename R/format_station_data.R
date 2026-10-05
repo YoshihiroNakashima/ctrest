@@ -15,7 +15,11 @@
 #' @param col_name_y A string specifying the column name for the number of animal
 #'   passes per video in \code{detection_data}. Values must be non-negative. For
 #'   RAD-REST, values must be non-negative integers. Records with \code{NA} in
-#'   this column are removed before aggregation, and the number of removed
+#'   this column are handled differently by model. For \code{"REST"}, they are
+#'   removed before aggregation. For \code{"RAD-REST"}, they are treated as
+#'   videos that were not judged: they are counted in \code{N} (total
+#'   detections) but not in \code{y_0}, \code{y_1}, ..., so pass counts can be
+#'   recorded for a random subsample of videos only. The number of such
 #'   records is reported as a message.
 #' @param model A string specifying the model type: \code{"REST"} or
 #'   \code{"RAD-REST"}.
@@ -23,8 +27,10 @@
 #' @return A data frame with aggregated detection counts joined with station
 #'   metadata, sorted by \code{Species} and \code{Station}. For \code{"REST"},
 #'   contains a column \code{Y} (total passes per station-species pair). For
-#'   \code{"RAD-REST"}, contains \code{N} (total detections) and columns
-#'   \code{y_0}, \code{y_1}, ... (counts per pass category).
+#'   \code{"RAD-REST"}, contains \code{N} (total detections, including videos
+#'   whose pass count is \code{NA}) and columns \code{y_0}, \code{y_1}, ...
+#'   (counts of judged videos per pass category, so that the sum of
+#'   \code{y_*} is at most \code{N}).
 #'
 #' @export
 #' @import dplyr tidyr stringr rlang
@@ -156,13 +162,23 @@ format_station_data <- function(detection_data,
   # --- Report and remove records with NA pass counts --------------------------
 
   n_na_y <- sum(is.na(det_clean$y) & !is.na(det_clean$Species))
-  if (n_na_y > 0)
-    message(
-      sprintf(
-        "%d record(s) with NA in '%s' were removed before aggregation.",
-        n_na_y, col_name_y
+  if (n_na_y > 0) {
+    if (model == "REST") {
+      message(
+        sprintf(
+          "%d record(s) with NA in '%s' were removed before aggregation.",
+          n_na_y, col_name_y
+        )
       )
-    )
+    } else {
+      message(
+        sprintf(
+          "%d of %d record(s) have NA in '%s' (not judged): counted in N but excluded from y_0, y_1, ...",
+          n_na_y, sum(!is.na(det_clean$Species)), col_name_y
+        )
+      )
+    }
+  }
 
   # --- Prepare station_data for join ------------------------------------------
 
@@ -200,8 +216,11 @@ format_station_data <- function(detection_data,
 
   } else {  # RAD-REST
 
+    # N counts ALL detections (including videos whose pass count is NA, i.e. not judged).
+    # Only y_0, y_1, ... are restricted to judged videos, so that pass counts can be
+    # recorded for a random subsample of videos (RAD-REST).
     det_N <- det_clean %>%
-      dplyr::filter(!is.na(.data$Species), !is.na(.data$y)) %>%
+      dplyr::filter(!is.na(.data$Species)) %>%
       dplyr::group_by(.data$Station, .data$Species) %>%
       dplyr::summarise(N = dplyr::n(), .groups = "drop")
 

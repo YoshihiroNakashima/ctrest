@@ -29,7 +29,11 @@ in \code{detection_data}.}
 \item{col_name_y}{A string specifying the column name for the number of animal
 passes per video in \code{detection_data}. Values must be non-negative. For
 RAD-REST, values must be non-negative integers. Records with \code{NA} in
-this column are removed before aggregation, and the number of removed
+this column are handled differently by model. For \code{"REST"}, they are
+removed before aggregation. For \code{"RAD-REST"}, they are treated as
+videos that were not judged: they are counted in \code{N} (total
+detections) but not in \code{y_0}, \code{y_1}, ..., so pass counts can be
+recorded for a random subsample of videos only. The number of such
 records is reported as a message.}
 
 \item{model}{A string specifying the model type: \code{"REST"} or
@@ -39,8 +43,10 @@ records is reported as a message.}
 A data frame with aggregated detection counts joined with station
 metadata, sorted by \code{Species} and \code{Station}. For \code{"REST"},
 contains a column \code{Y} (total passes per station-species pair). For
-\code{"RAD-REST"}, contains \code{N} (total detections) and columns
-\code{y_0}, \code{y_1}, ... (counts per pass category).
+\code{"RAD-REST"}, contains \code{N} (total detections, including videos
+whose pass count is \code{NA}) and columns \code{y_0}, \code{y_1}, ...
+(counts of judged videos per pass category, so that the sum of
+\code{y_*} is at most \code{N}).
 }
 \description{
 Summarises per-video pass counts from detection records into station-level
