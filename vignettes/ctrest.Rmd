@@ -59,7 +59,7 @@ The data includes StationID (station ID), DateTime ( date and time of detection)
 station_data # Camera station data
 ```
 
-The camera station data contains StationID (station ID) and two covariates (x1 and x2).
+The camera station data contains StationID (station ID), two covariates (x1 and x2) and Transect (the transect on which each camera was placed). In the example data, the density of each species depends on x1, x2 and Transect (see `?detection_data`).
 
 Below, we will explain how to prepare the necessary data for density estimation functions using REST data.
 

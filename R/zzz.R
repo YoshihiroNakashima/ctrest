@@ -13,6 +13,7 @@ utils::globalVariables(c(
   "sigma_camera_density", "sigma_transect_density",
   "species_effect_density", "species_effect_stay",
   "theta_stay", "y_rep",
+  "log_scale_station", "re_stay_station", "stay_by_station", "group_stay_station", "X_stay_station",
   # bayes_rest_ssm node names
   "log_rho", "rho", "rw_mean",
   "mu_stay", "sigma_stay", "log_mean_stay", "mean_stay",

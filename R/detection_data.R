@@ -1,15 +1,36 @@
 #' Virtual dataset of camera trapping detection data
 #'
-#' An example of dataset used for estimating animal density using REST/REST-RAD model
+#' An example of dataset used for estimating animal density using REST/REST-RAD model.
+#' It contains 12 species recorded at 100 camera stations (10 transects with 10
+#' cameras each; see \code{\link{station_data}}) in two survey terms of about one
+#' month each.
+#'
+#' The data are simulated so that the true density is known. The density of
+#' species \emph{k} at station \emph{i} follows
+#' \deqn{\log D_{ik} = \log D_k + b1_k x1_i + b2_k[x2_i] + u_k[transect_i],}{
+#' log(D_ik) = log(D_k) + b1_k * x1_i + b2_k[x2_i] + u_k[transect_i],}
+#' where \code{x1} and \code{x2} are the covariates of
+#' \code{\link{station_data}} and \eqn{u_k} are transect random effects
+#' (standard deviation 0.3). For \code{SP01}, the species used in the examples,
+#' \eqn{D_k = 10} individuals per km^2 (the density at \code{x1 = 0}, \code{x2 = "A"}
+#' and a typical transect), \eqn{b1 = 0.5}, and \eqn{b2 = (0, 0.3, -0.3)} for
+#' \code{x2 = "A", "B", "C"}. The other species have similar effects (\eqn{b1}
+#' around 0.3), so that a hierarchical model over species
+#' (\code{\link{bayes_rest_multi}}) is appropriate. Staying times follow a
+#' log-normal distribution (mean 4 s, SD 3 s) right-censored at 20 s, the focal
+#' area is 1.96 m^2, and counts of videos per camera are over-dispersed.
+#' Rows with \code{Species = "Surveyor"} record the start and the end of each
+#' survey term at each station (used to compute the camera trapping effort).
+#' The script that generated the data is \code{data-raw/DATASET.R}.
 #'
 #' @format ## `detection_data`
-#' A data frame with 5 columns:
+#' A data frame with 7 columns:
 #' \describe{
 #'   \item{Station}{station id detecting an animal pass}
 #'   \item{DateTime}{datatime infomation of detections}
 #'   \item{Term}{survey terms}
 #'   \item{Species}{species name detected}
-#'   \item{Nfocal}{the number of times an animal passed through the focal area in a single video}
+#'   \item{y}{the number of times an animal passed through the focal area in a single video}
 #'   \item{Stay}{staying time of animals within a focal area}
 #'   \item{Cens}{censored timing for staying time}
 #' }

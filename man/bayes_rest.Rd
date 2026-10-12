@@ -25,7 +25,8 @@ bayes_rest(
   thin = 2,
   model = "REST",
   all_comb = FALSE,
-  target_species
+  target_species,
+  newdata_density = NULL
 )
 }
 \arguments{
@@ -62,7 +63,7 @@ bayes_rest(
 \item \code{Cens} (binary): Indicator for censored staying time (1 = censored, 0 = observed).
 }}
 
-\item{random_effect_stay}{A character string specifying the column name in \code{stay_data} to use as a grouping factor for a station-level random intercept on staying time (e.g., \code{"Station"}). Default is \code{NULL} (no random effects).}
+\item{random_effect_stay}{A character string specifying the column name to use as a grouping factor for a random intercept on staying time (e.g., \code{"Station"}). The column must exist in both \code{stay_data} and \code{station_effort_data}: the mean staying time of each station used in the density formula includes the random effect of the group of the station (a group without staying-time records takes its value from the prior). Default is \code{NULL} (no random effects).}
 
 \item{random_effect_density}{A character string specifying the column name in \code{station_effort_data} to use as a grouping factor for a transect-level random intercept on density (e.g., \code{"Transect"}). A camera-level random intercept is always included. This argument adds an additional transect-level random intercept for cases where multiple cameras are deployed along the same transect. Default is \code{NULL} (camera-level random effect only).}
 
@@ -93,14 +94,20 @@ bayes_rest(
 \item{all_comb}{Logical. If \code{TRUE}, all possible combinations of covariates in the density model will be evaluated and compared. If \code{FALSE}, only the specific model provided in \code{formula_density} will be run. Default is \code{FALSE}.}
 
 \item{target_species}{A character string specifying the target species to be analyzed. Only a single species can be specified at a time.}
+
+\item{newdata_density}{(Optional) A data frame of covariate values (original scale) at which the density predicted from the covariates in \code{formula_density} is returned as \code{summary_prediction}. It must contain every covariate in \code{formula_density}; adding the column named in \code{random_effect_density} gives transect-level predictions. If \code{NULL} (default) and the density model has covariates, a profile of each covariate is returned (see \code{\link{predict.ResultDensity}}). Predictions for other covariate values can be obtained after estimation with \code{predict()}.}
 }
 \value{
 A list of class \code{"ResultDensity"} with the following components:
 \describe{
 \item{\code{WAIC}}{A data frame of WAIC values for each candidate density model (rows sorted from best to worst), with columns \code{Model}, \code{random_effect_stay}, and \code{WAIC}.}
 \item{\code{summary_result}}{A data frame of posterior summaries (mean, sd, 2.5\%, 50\%, 97.5\%, Rhat, n.eff, cv) for \code{density} (individuals per km^2) and \code{mean_stay} (seconds), and \code{mean_pass} for RAD-REST. When density or stay covariates are present, one row is returned per station; otherwise a single row labelled \code{Station = "All"}.}
+\item{\code{summary_station}}{A data frame of station-level posterior density summaries (mean, sd, lower, median, upper), computed as \code{density * exp(camera_effect_density[i])}. One row per station.}
+\item{\code{summary_transect}}{A data frame of transect-level posterior density summaries, computed as \code{density * exp(transect_effect_density[t])}. Returned only when \code{random_effect_density} is specified and \code{formula_density = ~ 1}. One row per transect. When the density model has covariates, use \code{predict()} with a \code{newdata} that contains the transect column.}
+\item{\code{summary_prediction}}{A data frame of the density predicted from the covariates in the density model (individuals per km^2; posterior mean, sd, lower, median, upper), at the covariate values of \code{newdata_density} or, by default, a profile of each covariate. Each row is given for two kinds of density (column \code{Type}): \code{"typical"}, the density of a typical camera (camera- and transect-level random effects set to zero; the definition of \code{density} in \code{summary_result}), and \code{"average"}, the mean density over cameras (typical density multiplied by exp(sigma^2 / 2)). See \code{\link{predict.ResultDensity}}. \code{NULL} when the density model has no covariates and \code{newdata_density} is \code{NULL}.}
 \item{\code{samples}}{A \code{coda::mcmc.list} object of full MCMC posterior samples from the best model. Use the \code{MCMCvis} package for convergence diagnostics.}
 \item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC samples from the best model, with columns \code{parameter}, \code{value}, and \code{iteration}.}
+\item{\code{density_model}}{Information on the density model of the best model (formula, covariate coding, random-effect levels) used by \code{\link{predict.ResultDensity}}.}
 \item{\code{activity_curve}}{(Returned only when \code{activity_estimation = "mixture"}.) A data frame of the estimated activity density curve with columns \code{variable}, \code{x}, and posterior summary statistics.}
 }
 }
@@ -165,4 +172,7 @@ rest_model <- bayes_rest(
   target_species = "SP01"
 )
 }
+}
+\seealso{
+\code{\link{predict.ResultDensity}} for density predicted from covariates.
 }

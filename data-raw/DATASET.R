@@ -1,4 +1,5 @@
 library(tidyverse)
+set.seed(2026)   # the example data can be reproduced
 # Animal density follows a log-normal distribution
 rlnorm2 <- function(n, mean=1, sd=1) {
   sdlog <- sqrt(log((sd/mean)^2 + 1))
@@ -67,6 +68,31 @@ species <- paste0("SP", formatC(1:N_species, flag = "0", width = 2))
 density <- rlnorm2(N_species, mean = 10, sd = 10)
 density[1] <- 10
 
+# Station covariates ------------------------------------------------------------
+# 10 transects with 10 cameras each. Generated before the detections because
+# the density depends on them.
+station_data <- tibble(Station = station) %>%
+  mutate(x1 = rnorm(n(), 0, 1)) %>%
+  mutate(x2 = sample(c("A", "B", "C"), n(), replace = TRUE)) %>%
+  mutate(Transect = paste0("TR", formatC(rep(1:10, each = 10), flag = "0", width = 2)))
+
+# Density depends on the covariates and on the transect (log scale):
+#   log(density[i, k]) = log(density[k]) + b_x1[k] * x1[i] + b_x2[k, x2[i]] + u[k, transect[i]]
+# SP01 (the species used in the README) has b_x1 = 0.5, b_x2 = (A: 0, B: 0.3, C: -0.3).
+# The other species vary around a common trend, as assumed by bayes_rest_multi().
+# "density[k]" is the density of species k at x1 = 0, x2 = "A" and a typical transect.
+b_x1 <- c(0.5, rnorm(N_species - 1, mean = 0.3, sd = 0.2))
+b_x2 <- cbind(A = 0,
+              B = c(0.3,  rnorm(N_species - 1,  0.2, 0.15)),
+              C = c(-0.3, rnorm(N_species - 1, -0.2, 0.15)))
+sd_transect <- 0.3
+u_transect  <- matrix(rnorm(N_species * 10, 0, sd_transect), nrow = N_species)
+transect_id <- as.integer(factor(station_data$Transect))
+eta <- sapply(1:N_species, function(k) {
+  b_x1[k] * station_data$x1 + b_x2[k, station_data$x2] + u_transect[k, transect_id]
+})
+density_station <- sweep(exp(eta), 2, density, "*")   # true density at each station (N_station x N_species)
+
 probability <- c(0.4, 0.4, 0.1, 0.1)
 e_y <- sum(probability * (1:length(probability) - 1))
 
@@ -83,8 +109,9 @@ sd <- 3
 sp <- list(0)
 for(k in 1:N_species) {
 
-  # Expected number of detections
-  mu <- density[k] * focal * 24 * 60 * 60 * effort %>% pull(Effort) / mean / 1000000 * activity / e_y
+  # Expected number of detections (the rows of `effort` are term1 of all stations, then term2)
+  mu <- rep(density_station[, k], 2) * focal * 24 * 60 * 60 *
+    as.numeric(effort$Effort, units = "days") / mean / 1000000 * activity / e_y
   library(MASS)
   N_detection  <- rnegbin(n = N_station * 2, mu, theta = 1.0) # Number of videos
 
@@ -142,12 +169,6 @@ detection_data <- do.call("rbind", sp) %>%
   bind_rows(d.surveyor) %>%
   arrange(Station, DateTime)
 
-
-
-station_data <- tibble(Station = station) %>%
-  mutate(x1 = rnorm(n(), 0, 1)) %>%
-  mutate(x2 = sample(c("A", "B", "C"), n(), replace = TRUE)) %>%
-  mutate(Transect = paste0("TR", formatC(rep(1:10, each = 10), flag = "0", width = 2)))
 
 
 library(devtools)

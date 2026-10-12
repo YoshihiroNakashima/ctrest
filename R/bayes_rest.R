@@ -33,7 +33,7 @@ utils::globalVariables(c("time", "Stay", "Cens", "Species", "N", "WAIC", "sd",
 #'     \item \code{Stay} (numeric): Staying time (in seconds) within the focal area for each detected pass.
 #'     \item \code{Cens} (binary): Indicator for censored staying time (1 = censored, 0 = observed).
 #'   }
-#' @param random_effect_stay A character string specifying the column name in \code{stay_data} to use as a grouping factor for a station-level random intercept on staying time (e.g., \code{"Station"}). Default is \code{NULL} (no random effects).
+#' @param random_effect_stay A character string specifying the column name to use as a grouping factor for a random intercept on staying time (e.g., \code{"Station"}). The column must exist in both \code{stay_data} and \code{station_effort_data}: the mean staying time of each station used in the density formula includes the random effect of the group of the station (a group without staying-time records takes its value from the prior). Default is \code{NULL} (no random effects).
 #' @param random_effect_density A character string specifying the column name in \code{station_effort_data} to use as a grouping factor for a transect-level random intercept on density (e.g., \code{"Transect"}). A camera-level random intercept is always included. This argument adds an additional transect-level random intercept for cases where multiple cameras are deployed along the same transect. Default is \code{NULL} (camera-level random effect only).
 #' @param activity_data A data frame containing a \code{time} column, representing detection times transformed into radians. Typically, this is the output of the \code{format_activity} function.
 #' @param activity_estimation A character string specifying the method used to estimate activity patterns. Choose \code{"kernel"} for fixed kernel density estimation (Rowcliffe et al. 2014) or \code{"mixture"} for nonparametric Bayesian estimation using von Mises mixture models (Nakashima et al. 2025). Default is \code{"kernel"}.
@@ -49,17 +49,21 @@ utils::globalVariables(c("time", "Stay", "Cens", "Species", "N", "WAIC", "sd",
 #' @param model A character string specifying the model to be used. Choose either \code{"REST"} or \code{"RAD-REST"}. Default is \code{"REST"}.
 #' @param all_comb Logical. If \code{TRUE}, all possible combinations of covariates in the density model will be evaluated and compared. If \code{FALSE}, only the specific model provided in \code{formula_density} will be run. Default is \code{FALSE}.
 #' @param target_species A character string specifying the target species to be analyzed. Only a single species can be specified at a time.
+#' @param newdata_density (Optional) A data frame of covariate values (original scale) at which the density predicted from the covariates in \code{formula_density} is returned as \code{summary_prediction}. It must contain every covariate in \code{formula_density}; adding the column named in \code{random_effect_density} gives transect-level predictions. If \code{NULL} (default) and the density model has covariates, a profile of each covariate is returned (see \code{\link{predict.ResultDensity}}). Predictions for other covariate values can be obtained after estimation with \code{predict()}.
 #' @return A list of class \code{"ResultDensity"} with the following components:
 #' \describe{
 #'   \item{\code{WAIC}}{A data frame of WAIC values for each candidate density model (rows sorted from best to worst), with columns \code{Model}, \code{random_effect_stay}, and \code{WAIC}.}
 #'   \item{\code{summary_result}}{A data frame of posterior summaries (mean, sd, 2.5%, 50%, 97.5%, Rhat, n.eff, cv) for \code{density} (individuals per km^2) and \code{mean_stay} (seconds), and \code{mean_pass} for RAD-REST. When density or stay covariates are present, one row is returned per station; otherwise a single row labelled \code{Station = "All"}.}
 #'   \item{\code{summary_station}}{A data frame of station-level posterior density summaries (mean, sd, lower, median, upper), computed as \code{density * exp(camera_effect_density[i])}. One row per station.}
-#'   \item{\code{summary_transect}}{A data frame of transect-level posterior density summaries, computed as \code{density * exp(transect_effect_density[t])}. Returned only when \code{random_effect_density} is specified and \code{formula_density = ~ 1}. One row per transect.}
+#'   \item{\code{summary_transect}}{A data frame of transect-level posterior density summaries, computed as \code{density * exp(transect_effect_density[t])}. Returned only when \code{random_effect_density} is specified and \code{formula_density = ~ 1}. One row per transect. When the density model has covariates, use \code{predict()} with a \code{newdata} that contains the transect column.}
+#'   \item{\code{summary_prediction}}{A data frame of the density predicted from the covariates in the density model (individuals per km^2; posterior mean, sd, lower, median, upper), at the covariate values of \code{newdata_density} or, by default, a profile of each covariate. Each row is given for two kinds of density (column \code{Type}): \code{"typical"}, the density of a typical camera (camera- and transect-level random effects set to zero; the definition of \code{density} in \code{summary_result}), and \code{"average"}, the mean density over cameras (typical density multiplied by exp(sigma^2 / 2)). See \code{\link{predict.ResultDensity}}. \code{NULL} when the density model has no covariates and \code{newdata_density} is \code{NULL}.}
 #'   \item{\code{samples}}{A \code{coda::mcmc.list} object of full MCMC posterior samples from the best model. Use the \code{MCMCvis} package for convergence diagnostics.}
 #'   \item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC samples from the best model, with columns \code{parameter}, \code{value}, and \code{iteration}.}
+#'   \item{\code{density_model}}{Information on the density model of the best model (formula, covariate coding, random-effect levels) used by \code{\link{predict.ResultDensity}}.}
 #'   \item{\code{activity_curve}}{(Returned only when \code{activity_estimation = "mixture"}.) A data frame of the estimated activity density curve with columns \code{variable}, \code{x}, and posterior summary statistics.}
 #' }
 #'
+#' @seealso \code{\link{predict.ResultDensity}} for density predicted from covariates.
 #' @export
 #' @import nimble activity parallel MCMCvis
 #' @importFrom stats as.formula formula model.frame model.matrix sd var runif median quantile model.response rexp rnorm step dexp pexp dgamma pgamma dlnorm plnorm dweibull pweibull dpois
@@ -143,7 +147,8 @@ bayes_rest <- function(formula_stay,
                        thin = 2,
                        model = "REST",
                        all_comb = FALSE,
-                       target_species
+                       target_species,
+                       newdata_density = NULL
 ){
   ni <- iter
   nt <- thin
@@ -259,12 +264,34 @@ bayes_rest <- function(formula_stay,
   X_stay <- stats::model.matrix(stats::as.formula(formula_stay), model_frame_stay)
   nPreds_stay <- ncol(X_stay)
 
-  # N of random effects (stay)
+  # Random effects (stay)
+  # The groups are those of the station data, so that every station has the random effect of its group
+  # (a group without staying-time records takes its value from the prior). The mean staying time of
+  # each station used in the density formula includes the random effect of the group of the station.
   if (!is.null(random_effect_stay)) {
-    levels_stay <- unique(stay_data_join[[random_effect_stay]])
-    nLevels_stay  <- length(levels_stay)
+    if (!random_effect_stay %in% names(station_effort_data_target) ||
+        !random_effect_stay %in% names(stay_data_join)) {
+      stop("`random_effect_stay` ('", random_effect_stay, "') must be a column of both `stay_data` and ",
+           "`station_effort_data`: the mean staying time of each station used for the density ",
+           "includes the random effect of the group of the station.", call. = FALSE)
+    }
+    re_levels_stay <- levels(factor(station_effort_data_target[[random_effect_stay]]))
+    nLevels_stay   <- length(re_levels_stay)
+    group_stay         <- as.numeric(factor(stay_data_join[[random_effect_stay]], levels = re_levels_stay))
+    group_stay_station <- as.numeric(factor(station_effort_data_target[[random_effect_stay]], levels = re_levels_stay))
+    if (anyNA(group_stay) || anyNA(group_stay_station)) {
+      stop("`", random_effect_stay, "` has missing values or values in `stay_data` that are not in ",
+           "`station_effort_data`.", call. = FALSE)
+    }
   } else {
     nLevels_stay  <- 0
+  }
+
+  # Staying time of each station (density formula): station-specific when the staying time has
+  # covariates or random effects, otherwise one value for all stations
+  stay_by_station <- as.integer(nPreds_stay > 1 || nLevels_stay > 0)
+  if (nPreds_stay > 1) {
+    X_stay_station <- .station_design_matrix(formula_stay, model_frame_stay, X_stay, station_effort_data_target)
   }
 
   # N of random effects (density: transect level)
@@ -301,6 +328,10 @@ bayes_rest <- function(formula_stay,
   } else {
     formula_density_all[[1]] <- formula_density
   }
+
+  # Check newdata_density before the (possibly long) MCMC run
+  .check_newdata_density(newdata_density, formula_density, station_effort_data_target,
+                         random_effect_density)
 
   # Activity proportion estimation ("mixture") ------------------------------
 
@@ -505,11 +536,11 @@ bayes_rest <- function(formula_stay,
       )
 
       # Random effects (stay)
-      if (!is.null(random_effect_stay)) {
-        cons_REST$group_stay <- as.numeric(factor(stay_data_join[[random_effect_stay]]))
-        cons_REST$nLevels_stay <- nLevels_stay
-      } else {
-        cons_REST$nLevels_stay <- 0
+      cons_REST$nLevels_stay <- nLevels_stay
+      cons_REST$stay_by_station <- stay_by_station
+      if (nLevels_stay > 0) {
+        cons_REST$group_stay <- group_stay                   # group of each staying time record
+        cons_REST$group_stay_station <- group_stay_station   # group of each station
       }
 
       # Random effects (density: transect level)
@@ -521,7 +552,8 @@ bayes_rest <- function(formula_stay,
         cons_REST$activity_proportion <- activity_proportion
       }
       if (nPreds_stay > 1) {
-        data_REST$X_stay <- X_stay
+        data_REST$X_stay <- X_stay                           # covariates of each staying time record
+        cons_REST$X_stay_station <- X_stay_station           # covariates of each station
       }
 
       Model_REST <- nimble::nimbleCode({
@@ -591,29 +623,31 @@ bayes_rest <- function(formula_stay,
           sigma_stay ~ T(dnorm(0, sd = 5), 0, 10)
         }
 
-        # Expected value calculation
-        if (nPreds_stay == 1) {
+        # Mean staying time (arithmetic mean of the staying time distribution) used in the density formula.
+        # One value for all stations unless the staying time has covariates or random effects; then it is
+        # calculated for each station from the covariates of the station (X_stay_station) and the random
+        # effect of the group of the station (group_stay_station).
+        if (stay_by_station == 0) {
           if (stay_family == "exponential") mean_stay <- exp(beta_stay[1])
           if (stay_family == "gamma")       mean_stay <- theta_stay * exp(beta_stay[1])
           if (stay_family == "lognormal")   mean_stay <- exp(beta_stay[1] + theta_stay ^ 2 / 2)
           if (stay_family == "weibull")     mean_stay <- exp(beta_stay[1] + lgamma(1 + 1 / theta_stay))
         }
-        if (nPreds_stay > 1) {
-          if (nLevels_stay == 0) {
-            for(i in 1:N_station){
-              if (stay_family == "exponential") mean_stay[i] <- exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
-              if (stay_family == "gamma")       mean_stay[i] <- theta_stay * exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]))
-              if (stay_family == "lognormal")   mean_stay[i] <- exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + theta_stay ^ 2 / 2)
-              if (stay_family == "weibull")     mean_stay[i] <- exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + lgamma(1 + 1 / theta_stay))
+        if (stay_by_station == 1) {
+          for(i in 1:N_station){
+            if (nPreds_stay > 1) {
+              if (nLevels_stay == 0) {
+                log_scale_station[i] <- inprod(beta_stay[1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])
+              } else {
+                log_scale_station[i] <- inprod(beta_stay[1:nPreds_stay], X_stay_station[i, 1:nPreds_stay]) + random_effect_stay[group_stay_station[i]]
+              }
+            } else {
+              log_scale_station[i] <- beta_stay[1] + random_effect_stay[group_stay_station[i]]
             }
-          }
-          if (nLevels_stay > 0) {
-            for(i in 1:N_station){
-              if (stay_family == "exponential") mean_stay[i] <- exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]])
-              if (stay_family == "gamma")       mean_stay[i] <- theta_stay * exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]])
-              if (stay_family == "lognormal")   mean_stay[i] <- exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] + theta_stay ^ 2 / 2)
-              if (stay_family == "weibull")     mean_stay[i] <- exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + random_effect_stay[group_stay[i]] + lgamma(1 + 1 / theta_stay))
-            }
+            if (stay_family == "exponential") mean_stay[i] <- exp(log_scale_station[i])
+            if (stay_family == "gamma")       mean_stay[i] <- theta_stay * exp(log_scale_station[i])
+            if (stay_family == "lognormal")   mean_stay[i] <- exp(log_scale_station[i] + theta_stay ^ 2 / 2)
+            if (stay_family == "weibull")     mean_stay[i] <- exp(log_scale_station[i] + lgamma(1 + 1 / theta_stay))
           }
         }
 
@@ -639,13 +673,13 @@ bayes_rest <- function(formula_stay,
         if(nPreds_density == 1) {
           for(i in 1:N_station) {
             if(nLevels_density == 0) {
-              if(nPreds_stay == 1) {
+              if(stay_by_station == 0) {
                 log(mu[i]) <- log(density) + log(S) + log(N_period[i]) - log(mean_stay) + log(activity_proportion) + camera_effect_density[i]
               } else {
                 log(mu[i]) <- log(density) + log(S) + log(N_period[i]) - log(mean_stay[i]) + log(activity_proportion) + camera_effect_density[i]
               }
             } else {
-              if(nPreds_stay == 1) {
+              if(stay_by_station == 0) {
                 log(mu[i]) <- log(density) + log(S) + log(N_period[i]) - log(mean_stay) + log(activity_proportion) + camera_effect_density[i] + transect_effect_density[transect_id_density[i]]
               } else {
                 log(mu[i]) <- log(density) + log(S) + log(N_period[i]) - log(mean_stay[i]) + log(activity_proportion) + camera_effect_density[i] + transect_effect_density[transect_id_density[i]]
@@ -659,13 +693,13 @@ bayes_rest <- function(formula_stay,
           for(i in 1:N_station) {
             log(density[i]) <- inprod(beta_density[1:nPreds_density], X_density[i, 1:nPreds_density])
             if(nLevels_density == 0) {
-              if(nPreds_stay == 1) {
+              if(stay_by_station == 0) {
                 log(mu[i]) <- log(density[i]) + log(S) + log(N_period[i]) - log(mean_stay) + log(activity_proportion) + camera_effect_density[i]
               } else {
                 log(mu[i]) <- log(density[i]) + log(S) + log(N_period[i]) - log(mean_stay[i]) + log(activity_proportion) + camera_effect_density[i]
               }
             } else {
-              if(nPreds_stay == 1) {
+              if(stay_by_station == 0) {
                 log(mu[i]) <- log(density[i]) + log(S) + log(N_period[i]) - log(mean_stay) + log(activity_proportion) + camera_effect_density[i] + transect_effect_density[transect_id_density[i]]
               } else {
                 log(mu[i]) <- log(density[i]) + log(S) + log(N_period[i]) - log(mean_stay[i]) + log(activity_proportion) + camera_effect_density[i] + transect_effect_density[transect_id_density[i]]
@@ -745,9 +779,12 @@ bayes_rest <- function(formula_stay,
       if (stay_family %in% c("gamma", "weibull")) prms <- c("scale", "shape", "mean_stay")
       if (stay_family == "lognormal") prms <- c("meanlog", "sdlog", "mean_stay")
 
-      prms <- c(prms, "density", "camera_effect_density", "sigma_camera_density")
+      prms <- c(prms, "density", "beta_density", "beta_stay", "camera_effect_density", "sigma_camera_density")
       if (!is.null(random_effect_density)) {
         prms <- c(prms, "transect_effect_density", "sigma_transect_density")
+      }
+      if (nLevels_stay > 0) {
+        prms <- c(prms, "random_effect_stay", "sigma_stay")
       }
       params <- c(prms, "loglike_obs_stay", "loglike_obs_y", "loglike_pred_stay", "loglike_pred_y")
 
@@ -836,13 +873,6 @@ bayes_rest <- function(formula_stay,
     N_group <- ncol(y)
     N_detection <- station_effort_data_target %>% dplyr::pull(N)
 
-    if (nPreds_stay > 1) {
-      stay_terms <- stats::delete.response(stats::terms(stats::as.formula(formula_stay)))
-      # Prevent rows with missing values from being dropped, which would change the matrix size (na.pass)
-      model_frame_stay_st <- stats::model.frame(stay_terms, data = station_effort_data_target, na.action = stats::na.pass)
-      X_stay_station <- stats::model.matrix(stay_terms, model_frame_stay_st)
-    }
-
     for (k in 1:length(formula_density_all)) {
 
       current_formula_density <- formula_density_all[[k]]
@@ -883,13 +913,12 @@ bayes_rest <- function(formula_stay,
         cons_REST$X_stay_station <- X_stay_station
       }
 
-      if (!is.null(random_effect_stay)) {
-        re_levels <- levels(factor(station_effort_data_target[[random_effect_stay]]))
-        cons_REST$group_stay <- as.numeric(factor(stay_data_join[[random_effect_stay]], levels = re_levels))
-        cons_REST$group_stay_station <- as.numeric(factor(station_effort_data_target[[random_effect_stay]], levels = re_levels))
-        cons_REST$nLevels_stay <- length(re_levels)
-      } else {
-        cons_REST$nLevels_stay <- 0
+      # Random effects (stay)
+      cons_REST$nLevels_stay <- nLevels_stay
+      cons_REST$stay_by_station <- stay_by_station
+      if (nLevels_stay > 0) {
+        cons_REST$group_stay <- group_stay                   # group of each staying time record
+        cons_REST$group_stay_station <- group_stay_station   # group of each station
       }
 
       if (!is.null(random_effect_density)) {
@@ -970,25 +999,31 @@ bayes_rest <- function(formula_stay,
             sigma_stay ~ T(dnorm(0, sd = 5), 0, 10)
           }
 
-          # Expected value calculation (stay)
-          if (nPreds_stay == 1) {
+          # Mean staying time (arithmetic mean of the staying time distribution) used in the density formula.
+          # One value for all stations unless the staying time has covariates or random effects; then it is
+          # calculated for each station from the covariates of the station (X_stay_station) and the random
+          # effect of the group of the station (group_stay_station).
+          if (stay_by_station == 0) {
             if(stay_family == "exponential") { mean_stay <- exp(beta_stay[1]) }
             if(stay_family == "gamma")       { mean_stay <- theta_stay * exp(beta_stay[1]) }
             if(stay_family == "lognormal")   { mean_stay <- exp(beta_stay[1] + theta_stay ^ 2 / 2) }
             if(stay_family == "weibull")     { mean_stay <- exp(beta_stay[1] + lgamma(1 + 1 / theta_stay)) }
           }
-          if (nPreds_stay > 1) {
-            if(stay_family == "exponential") {
-              for(i in 1:N_station){ mean_stay[i] <- exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay])) }
-            }
-            if(stay_family == "gamma") {
-              for(i in 1:N_station){ mean_stay[i] <- theta_stay * exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay])) }
-            }
-            if(stay_family == "lognormal") {
-              for(i in 1:N_station){ mean_stay[i] <- exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + theta_stay ^ 2 / 2) }
-            }
-            if(stay_family == "weibull") {
-              for(i in 1:N_station){ mean_stay[i] <- exp(inprod(beta_stay[1:nPreds_stay], X_stay[i, 1:nPreds_stay]) + lgamma(1 + 1 / theta_stay)) }
+          if (stay_by_station == 1) {
+            for(i in 1:N_station){
+              if (nPreds_stay > 1) {
+                if (nLevels_stay == 0) {
+                  log_scale_station[i] <- inprod(beta_stay[1:nPreds_stay], X_stay_station[i, 1:nPreds_stay])
+                } else {
+                  log_scale_station[i] <- inprod(beta_stay[1:nPreds_stay], X_stay_station[i, 1:nPreds_stay]) + random_effect_stay[group_stay_station[i]]
+                }
+              } else {
+                log_scale_station[i] <- beta_stay[1] + random_effect_stay[group_stay_station[i]]
+              }
+              if(stay_family == "exponential") { mean_stay[i] <- exp(log_scale_station[i]) }
+              if(stay_family == "gamma")       { mean_stay[i] <- theta_stay * exp(log_scale_station[i]) }
+              if(stay_family == "lognormal")   { mean_stay[i] <- exp(log_scale_station[i] + theta_stay ^ 2 / 2) }
+              if(stay_family == "weibull")     { mean_stay[i] <- exp(log_scale_station[i] + lgamma(1 + 1 / theta_stay)) }
             }
           }
 
@@ -1076,13 +1111,13 @@ bayes_rest <- function(formula_stay,
           if(nPreds_density == 1) {
             for(i in 1:N_station) {
               if(nLevels_density == 0) {
-                if(nPreds_stay == 1) {
+                if(stay_by_station == 0) {
                   log(mu[i]) <- log(density) + log(S) + log(N_period[i]) - log(mean_stay) + log(activity_proportion) - log(mean_pass[i]) + camera_effect_density[i]
                 } else {
                   log(mu[i]) <- log(density) + log(S) + log(N_period[i]) - log(mean_stay[i]) + log(activity_proportion) - log(mean_pass[i]) + camera_effect_density[i]
                 }
               } else {
-                if(nPreds_stay == 1) {
+                if(stay_by_station == 0) {
                   log(mu[i]) <- log(density) + log(S) + log(N_period[i]) - log(mean_stay) + log(activity_proportion) - log(mean_pass[i]) + camera_effect_density[i] + transect_effect_density[transect_id_density[i]]
                 } else {
                   log(mu[i]) <- log(density) + log(S) + log(N_period[i]) - log(mean_stay[i]) + log(activity_proportion) - log(mean_pass[i]) + camera_effect_density[i] + transect_effect_density[transect_id_density[i]]
@@ -1095,13 +1130,13 @@ bayes_rest <- function(formula_stay,
           if(nPreds_density > 1) {
             for(i in 1:N_station) {
               if(nLevels_density == 0) {
-                if(nPreds_stay == 1) {
+                if(stay_by_station == 0) {
                   log(mu[i]) <- log(density[i]) + log(S) + log(N_period[i]) - log(mean_stay) + log(activity_proportion) - log(mean_pass[i]) + camera_effect_density[i]
                 } else {
                   log(mu[i]) <- log(density[i]) + log(S) + log(N_period[i]) - log(mean_stay[i]) + log(activity_proportion) - log(mean_pass[i]) + camera_effect_density[i]
                 }
               } else {
-                if(nPreds_stay == 1) {
+                if(stay_by_station == 0) {
                   log(mu[i]) <- log(density[i]) + log(S) + log(N_period[i]) - log(mean_stay) + log(activity_proportion) - log(mean_pass[i]) + camera_effect_density[i] + transect_effect_density[transect_id_density[i]]
                 } else {
                   log(mu[i]) <- log(density[i]) + log(S) + log(N_period[i]) - log(mean_stay[i]) + log(activity_proportion) - log(mean_pass[i]) + camera_effect_density[i] + transect_effect_density[transect_id_density[i]]
@@ -1180,6 +1215,9 @@ bayes_rest <- function(formula_stay,
                        "beta_stay", "beta_density"))
       if (!is.null(random_effect_density)) {
         prms <- c(prms, "transect_effect_density", "sigma_transect_density")
+      }
+      if (nLevels_stay > 0) {
+        prms <- c(prms, "random_effect_stay", "sigma_stay")
       }
 
       if(activity_estimation == "mixture") {
@@ -1524,22 +1562,42 @@ bayes_rest <- function(formula_stay,
     }
   }
 
+  # --- Information for predicting density from covariates ----------------------
+  density_model <- .make_density_model_safe(
+    formula               = formula_density_best,
+    data                  = station_effort_data_target,
+    species               = target_species,
+    multi                 = FALSE,
+    random_effect_density = random_effect_density,
+    transect_levels       = if (!is.null(random_effect_density)) {
+      levels(factor(station_effort_data_target[[random_effect_density]]))
+    } else {
+      NULL
+    },
+    camera_data           = station_effort_data_target
+  )
+
   density_result <- list(
-    WAIC             = WAIC,
-    summary_result   = summary_mean,
-    summary_station  = summary_station,
-    summary_transect = summary_transect,
-    samples          = mcmc_samples_best,
-    tidy_samples     = tidy_samples_best,
-    target_species   = target_species,
-    model            = model,
-    stay_family      = stay_family
+    WAIC               = WAIC,
+    summary_result     = summary_mean,
+    summary_station    = summary_station,
+    summary_transect   = summary_transect,
+    summary_prediction = NULL,
+    samples            = mcmc_samples_best,
+    tidy_samples       = tidy_samples_best,
+    density_model      = density_model,
+    target_species     = target_species,
+    model              = model,
+    stay_family        = stay_family
   )
 
   if (activity_estimation == "mixture") {
     density_result$activity_curve <- activity_density_estimates
   }
   class(density_result) <- "ResultDensity"
+
+  # Density predicted from the covariates (a failure never discards the fitted model)
+  density_result["summary_prediction"] <- list(.summary_prediction(density_result, newdata_density))
 
   # Output
   return(density_result)

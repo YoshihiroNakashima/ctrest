@@ -24,7 +24,11 @@ bayes_rest_multi(
   chains = 3,
   thin = 4,
   model = "RAD-REST",
-  target_species
+  target_species,
+  newdata_density = NULL,
+  block_species = TRUE,
+  block_enter = TRUE,
+  block_control = list(adaptInterval = 100)
 )
 }
 \arguments{
@@ -61,7 +65,7 @@ bayes_rest_multi(
 \item \code{Cens} (binary): Indicator for censored staying time (1 = censored, 0 = observed).
 }}
 
-\item{random_effect_stay}{A character string specifying the column name in \code{stay_data} to use as a grouping factor for a station-level random intercept on staying time (e.g., \code{"Station"}). Default is \code{NULL}. Note: species-level random effects are automatically included in this multispecies model.}
+\item{random_effect_stay}{A character string specifying the column name to use as a grouping factor for a random intercept on staying time (e.g., \code{"Station"}). The column must exist in both \code{stay_data} and \code{station_effort_data}: the mean staying time of each station used in the density formula includes the random effect of the group of the station (a group without staying-time records takes its value from the prior). The random effect is shared by all species. Default is \code{NULL}. Note: species-level random effects are automatically included in this multispecies model.}
 
 \item{random_effect_density}{A character string specifying the column name in \code{station_effort_data} to use as a grouping factor for a transect-level random intercept on density (e.g., \code{"Transect"}). A camera-level random intercept (per camera × species) is always included. This argument adds an additional transect-level random intercept for cases where multiple cameras are deployed along the same transect. Default is \code{NULL} (camera-level random effects only).}
 
@@ -90,19 +94,47 @@ bayes_rest_multi(
 \item{model}{A character string specifying the model to be used. Choose either \code{"REST"} or \code{"RAD-REST"}. Default is \code{"RAD-REST"}.}
 
 \item{target_species}{A character vector specifying the species to be analyzed. Multiple species must be specified for this multispecies model.}
+
+\item{newdata_density}{(Optional) A data frame of covariate values (original scale) at which the species-specific density predicted from the covariates in \code{formula_density} is returned as \code{summary_prediction}. It must contain every covariate in \code{formula_density}; adding the column named in \code{random_effect_density} gives transect-level predictions. If \code{NULL} (default) and the density model has covariates, a profile of each covariate is returned (see \code{\link{predict.ResultDensity}}). Predictions for other covariate values can be obtained after estimation with \code{predict()}.}
+
+\item{block_species}{Logical. If \code{TRUE} (default), a species-wise block sampler (\code{RW_block}) is added for each species on top of the default univariate samplers (see Details). If \code{FALSE}, only the default samplers of \code{nimble} are used.}
+
+\item{block_enter}{Logical. If \code{TRUE} (default), the species effect on the number of passes (\code{species_effect_alpha[m, 1]}) is included in the block of each species. Ignored when \code{model = "REST"}.}
+
+\item{block_control}{A list of control parameters passed to each \code{RW_block} sampler (see \code{nimble::samplers}). If \code{propCov} is not given, the initial proposal covariance is \code{diag(0.01, k)} (k = number of parameters in the block) instead of nimble's identity matrix, because the posterior of species with many detections is narrow. Default is \code{list(adaptInterval = 100)}.}
 }
 \value{
 A list of class \code{"ResultDensity"} with the following components:
 \describe{
 \item{\code{WAIC}}{A numeric WAIC value for the fitted model.}
 \item{\code{summary_result}}{A data frame summarizing posterior estimates (mean, sd, lower, median, upper, Rhat, n.eff, cv) for density (individuals per km^2), mean_stay (seconds), and (for RAD-REST) mean_pass across species and stations.}
-\item{\code{samples}}{A \code{coda::mcmc.list} object of full MCMC posterior samples.}
-\item{\code{tidy_samples}}{A long-format data frame of all monitored MCMC samples, with columns \code{parameter}, \code{value}, and \code{iteration}.}
+\item{\code{summary_station}}{A data frame of station-level posterior density summaries (mean, sd, lower, median, upper), computed as \code{density[i,m] * exp(camera_effect_density[i,m])}. One row per station per species.}
+\item{\code{summary_transect}}{A data frame of transect-level posterior density summaries, computed as \code{density[1,m] * exp(transect_effect_density[t,m])}. Returned only when \code{random_effect_density} is specified and \code{formula_density = ~ 1}. One row per transect per species. When the density model has covariates, use \code{predict()} with a \code{newdata} that contains the transect column.}
+\item{\code{summary_prediction}}{A data frame of the species-specific density predicted from the covariates in the density model (individuals per km^2; posterior mean, sd, lower, median, upper), at the covariate values of \code{newdata_density} or, by default, a profile of each covariate. The species-level random effects are included in the prediction. Each row is given for two kinds of density (column \code{Type}): \code{"typical"}, the density of a typical camera (camera- and transect-level random effects set to zero), and \code{"average"}, the mean density over cameras (typical density multiplied by exp(sigma^2 / 2)). See \code{\link{predict.ResultDensity}}. \code{NULL} when the density model has no covariates and \code{newdata_density} is \code{NULL}.}
+\item{\code{samples}}{A \code{coda::mcmc.list} object of the MCMC posterior samples (the log-likelihoods used for WAIC are not included).}
+\item{\code{tidy_samples}}{A long-format data frame of the monitored MCMC samples (without the log-likelihoods), with columns \code{parameter}, \code{value}, and \code{iteration}.}
 \item{\code{scaling_params}}{A list of centering and scaling parameters used to standardize design matrices.}
+\item{\code{density_model}}{Information on the density model (formula, covariate coding, scaling, random-effect levels) used by \code{\link{predict.ResultDensity}}.}
 }
 }
 \description{
 Bayesian Parameter Estimation of a Multispecies REST/RAD-REST Model via MCMC Sampling using \code{nimble}
+}
+\details{
+In addition to the default univariate samplers of \code{nimble}, the MCMC uses, for each species,
+a block random-walk sampler (\code{RW_block}) that jointly updates the parameters of the species:
+the species effect on density (\code{species_effect_density[m, 1]}), the dispersion parameter of
+staying time (\code{theta_stay[m]}; sdlog for the lognormal, shape for the gamma and Weibull;
+absent for the exponential), the species effect on staying time (\code{species_effect_stay[m, 1]})
+and, for RAD-REST with \code{block_enter = TRUE}, the species effect on the number of passes
+(\code{species_effect_alpha[m, 1]}). The default univariate samplers are kept; the block samplers
+are added on top of them.
+
+For a species with many detections, the data fix the ratio of density to mean staying time (and to
+mean number of passes) tightly, so the posterior forms a narrow ridge along which density and these
+parameters move together. Univariate samplers can move along such a ridge only in very small steps.
+The block sampler learns the covariance of the parameters during sampling and proposes moves along
+the ridge. Set \code{block_species = FALSE} to use the default samplers only.
 }
 \examples{
 \dontrun{
@@ -124,4 +156,7 @@ rest_model <- bayes_rest_multi(
   target_species = c("SP01", "SP02", "SP03")
 )
 }
+}
+\seealso{
+\code{\link{predict.ResultDensity}} for density predicted from covariates.
 }
